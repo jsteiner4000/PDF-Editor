@@ -1,0 +1,88 @@
+# Paketierung der Desktop-App (electron-builder).
+# Windows: NSIS-Installer (Benutzerinstallation ohne Adminrechte, Deutsch) und Portable-EXE.
+# Vorher bauen: npm run build:desktop (macht npm run dist:win automatisch).
+appId: de.jsteiner.pdfeditor
+productName: PDF-Editor
+copyright: © 2026 jsteiner4000
+artifactName: PDF-Editor-${version}-${arch}.${ext}
+
+directories:
+  output: release
+
+# Nur die Desktop-Dateien und der fertige Editor – Bibliotheken sind im Bundle enthalten.
+files:
+  - package.json
+  - desktop/main.js
+  - desktop/file-access.js
+  - desktop/menu.js
+  - desktop/window-state.js
+  - desktop/preload.cjs
+  - dist/PDF-Editor.html
+  - assets/icon/icon.ico
+  - assets/icon/icon.png
+  - assets/icon/png/icon-128.png
+  - '!node_modules/**'
+extraResources:
+  - from: dist/licenses
+    to: Lizenzen
+  # Schriftdateien zum Installieren in Windows (Hilfe > Schriftdateien anzeigen)
+  - from: assets/fonts/full
+    to: Schriften
+asar: true
+# Keine nativen Module – nichts neu kompilieren
+npmRebuild: false
+# Electron-Fuses (Security Checklist): kein ELECTRON_RUN_AS_NODE, keine NODE_OPTIONS,
+# kein --inspect, App nur aus der geprüften app.asar laden, keine Sonderrechte für file://
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
+# Nur deutsche und englische Chromium-Sprachdateien ausliefern (Dialoge, Kontextmenüs)
+electronLanguages: [de, en-US]
+# Kein Auto-Update: keine app-update.yml, keine Veröffentlichung
+publish: null
+
+win:
+  icon: assets/icon/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  legalTrademarks: PDF-Editor
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  artifactName: PDF-Editor-Setup-${version}.exe
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: PDF-Editor
+  uninstallDisplayName: PDF-Editor
+  installerIcon: assets/icon/icon.ico
+  uninstallerIcon: assets/icon/icon.ico
+  installerLanguages: [de_DE]
+  language: '1031'
+  multiLanguageInstaller: false
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  # keine .blockmap (nur für Auto-Updates nötig)
+  differentialPackage: false
+  # Dateizuordnung .pdf als Option im Installer („Öffnen mit“), siehe desktop/installer.nsh
+  include: desktop/installer.nsh
+
+portable:
+  artifactName: PDF-Editor-${version}-portable.exe
+  requestExecutionLevel: user
+
+linux:
+  icon: assets/icon/png
+  category: Office
+  target: [dir]
