@@ -71,14 +71,12 @@ test('Laden und Darstellen', async ({ browser }) => {
     const model = await page.evaluate(() => {
       const s = window.pdfEditor.session;
       return [0, 1, 2].map((i) => ({
-        blocks: s
-          .model(i)
-          .blocks.map((b) => ({
-            text: b.text,
-            align: b.align,
-            editable: b.editable,
-            bbox: b.bbox.map((v) => Math.round(v * 100) / 100),
-          })),
+        blocks: s.model(i).blocks.map((b) => ({
+          text: b.text,
+          align: b.align,
+          editable: b.editable,
+          bbox: b.bbox.map((v) => Math.round(v * 100) / 100),
+        })),
         objects: s.model(i).objects.length,
       }));
     });
@@ -299,28 +297,52 @@ test('Zoom (Tastatur, Mausrad, Menü)', async ({ browser }) => {
     await step(() => page.keyboard.press('Control+Minus'));
     await step(() => page.keyboard.press('Control+0'));
     const box = await page.locator('#scroller').boundingBox();
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const mouse = [box.x + box.width / 2, box.y + box.height / 2];
+    await page.mouse.move(...mouse);
+    // PDF-Punkt unter dem Mauszeiger (Seite 1) vor und nach Strg+Mausrad
+    const underMouse = () => page.evaluate(([x, y]) => window.pdfEditor.pvs[0].clientToPdf(x, y), mouse);
+    const before = await underMouse();
     await step(async () => {
       await page.keyboard.down('Control');
       await page.mouse.wheel(0, -100);
       await page.keyboard.up('Control');
     });
+    const after = await underMouse();
     await step(async () => {
       await page.locator('#bZoom').click();
-      await page.locator('.menu .mi', { hasText: '200 %' }).click();
+      await page.getByRole('menuitem', { name: '200 %', exact: true }).click();
     });
     await step(async () => {
       await page.locator('#bZoom').click();
       await page.locator('.menu .mi', { hasText: 'Ganze Seite' }).click();
     });
-    return { states, canvases: await canvasHashes(page), shot: await screenshots(page, ['.page']) };
+    return {
+      states,
+      canvases: await canvasHashes(page),
+      shot: await screenshots(page, ['.page']),
+      wheelAnchor: { before, after },
+    };
   });
   noErrors(r);
   const labels = r.original.states.map((s) => s.zoomLabel);
   expect(labels[0]).toBe('125 %');
   expect(labels[1]).toBe('150 %');
   expect(labels[6]).toBe('200 %');
-  expect(r.neubau).toEqual(r.original);
+  // Absichtliche Abweichung: Strg+Mausrad zoomt im Neubau um die Mausposition (der Punkt unter
+  // dem Zeiger bleibt stehen), das Original behält den Seitenanfang. Dadurch kommen andere Seiten
+  // ins Bild und werden in anderer Größe gerendert – verglichen wird die Canvas-Größe daher nur
+  // für Seite 1, die in beiden Fällen sichtbar ist.
+  const { before, after } = r.neubau.wheelAnchor;
+  expect(Math.abs(after[0] - before[0]) * (96 / 72) * 1.5).toBeLessThan(2);
+  expect(Math.abs(after[1] - before[1]) * (96 / 72) * 1.5).toBeLessThan(2);
+  const comparable = ({ wheelAnchor, ...rest }) => ({
+    ...rest,
+    states: rest.states.map((s) => ({
+      ...s,
+      pageSizes: s.pageSizes.map((size, i) => (i === 0 ? size : size.slice(0, 2))),
+    })),
+  });
+  expect(comparable(r.neubau)).toEqual(comparable(r.original));
 });
 
 test('Speichern mit Strg+S (Download ohne Dateisystem-Zugriff)', async ({ browser }) => {

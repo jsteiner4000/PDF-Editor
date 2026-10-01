@@ -51,11 +51,13 @@ src/
     sfnt.js               TrueType/OpenType-Tabellen lesen/schreiben, Teilmengen zusammenführen
     cff.js                CFF-Schriften für die Anzeige als OpenType verpacken
     glyph-list.js         Adobe Glyph List und Standard-Codierungen
-  render/pdf-renderer.js  Darstellung mit pdf.js (Worker als Blob-URL)
+  render/pdf-renderer.js  Darstellung mit pdf.js (Worker als Blob-URL), ganze Seite oder Ausschnitt
+  render/detail-renderer.js  scharfer Detail-Canvas für den sichtbaren Ausschnitt bei hohem Zoom
   platform/desktop-bridge.js  Anbindung an die Desktop-App (im Browser wirkungslos)
   storage/idb.js          IndexedDB „pdf-editor“ (eigene Schriften, zuletzt geöffnet)
   ui/
-    page-view.js          Seitenansicht und Koordinatenumrechnung
+    page-view.js          Seitenansicht (Vorschau- und Detail-Canvas) und Koordinatenumrechnung
+    zoom-gestures.js      Strg+Mausrad, Touchpad-Pinch, Hand-Werkzeug (Leertaste/mittlere Maustaste)
     edit-mode.js          Modus „PDF bearbeiten“ (Auswahl, Ziehen, Griffe, Text, Bilder)
     text-editor.js        Inline-Texteditor
     snap-guides.js        Hilfslinien/Einrasten
@@ -109,6 +111,20 @@ Kommandozeilenargument, Text bearbeiten, Strg+S überschreibt die Datei, „Spei
 „Zuletzt geöffnet“, Rückfrage beim Schließen und die Isolation des Renderers. Ohne Anzeige
 (Linux ohne `DISPLAY`) wird der Test übersprungen; mit `xvfb-run -a npx playwright test` läuft er
 auch dort. Als root startet Chromium nur mit `--no-sandbox` (setzt der Test selbst).
+
+`tests/zoom.spec.js` prüft nur den Neubau: Schärfe bei 400–3200 % und devicePixelRatio 1/1,25/1,5,
+Zoom zur Mausposition und per Pinch, Hand-Werkzeug, Deckung von Auswahlrahmen und Darstellung bei
+3200 %, Speicherbegrenzung der Canvas, Bildlauf-Leistung sowie Verschieben und Speichern bei 3200 %.
+
+## Darstellung bei hohem Zoom
+
+Jede Seite hat einen **Vorschau-Canvas** (ganze Seite, höchstens 4 MP, per CSS gestreckt) und bei
+Bedarf einen **Detail-Canvas**, der nur den sichtbaren Ausschnitt plus Überstand in voller
+Bildschirmauflösung zeigt (pdf.js mit verschobenem Viewport, alle Detail-Canvas zusammen höchstens
+12 MP). Gerendert wird nach kurzer Ruhepause (Bildlauf/Zoom), veraltete Aufgaben werden
+abgebrochen. Statt Kacheln ein Ausschnitt je Seite, weil pdf.js bei jedem Aufruf die gesamte
+Operatorliste abarbeitet – Kacheln würden diesen Aufwand vervielfachen. Vorschauen nicht sichtbarer
+Seiten werden ab 16 MP (älteste zuerst) freigegeben.
 
 ## Desktop-App
 
