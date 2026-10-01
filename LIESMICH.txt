@@ -1,0 +1,128 @@
+PDF-Editor
+==========
+
+Ein PDF-Editor für den Browser: Texte und Bilder in PDF-Dateien bearbeiten,
+Seiten einfügen, löschen und ordnen. Läuft komplett offline – es werden keine
+Daten ins Internet übertragen.
+
+
+STARTEN
+-------
+„PDF-Editor.html“ doppelklicken. Die Datei öffnet sich in Google Chrome oder
+Microsoft Edge (empfohlen). Eine Installation ist nicht nötig.
+
+Tipp: Mit Rechtsklick > „Öffnen mit“ Chrome oder Edge wählen, falls ein anderer
+Browser startet.
+
+Programm-Symbol auf dem Desktop:
+„Desktop-Verknuepfung anlegen.cmd“ doppelklicken. Danach liegt auf dem Desktop
+das Symbol „PDF-Editor“. Es startet den Editor in einem eigenen Fenster wie ein
+normales Programm (mit Chrome oder Edge, ohne Adress- und Tab-Leiste).
+Den Ordner danach nicht mehr verschieben – sonst das Skript noch einmal starten.
+Falls Windows eine Warnung zeigt („Der Computer wurde durch Windows geschützt“):
+„Weitere Informationen“ > „Trotzdem ausführen“. Das Skript legt nur die
+Verknüpfung an.
+Das Symbol gibt es auch als Bild im Ordner „Symbol“ (PNG in mehreren Größen und
+als ICO-Datei), z. B. zum Anheften an die Taskleiste.
+
+
+PDF ÖFFNEN
+----------
+„Datei öffnen“ klicken oder die PDF-Datei einfach ins Fenster ziehen.
+Zuletzt geöffnete Dateien erscheinen auf der Startseite.
+
+
+TEXT BEARBEITEN
+---------------
+1. Links „PDF bearbeiten“ wählen.
+2. In einen Text klicken und schreiben – der Text erscheint in der Schrift,
+   die im PDF verwendet wird. Absätze brechen automatisch um.
+3. Links unter „Format“: Schrift, Größe, Farbe, Fett und Ausrichtung.
+   Markierter Text wird einzeln geändert, sonst der ganze Textblock.
+4. Mit Esc oder einem Klick daneben wird die Änderung übernommen.
+
+Neuer Text: „Text hinzufügen“ und auf die gewünschte Stelle klicken.
+Textblock verschieben: am Griff oben links (⠿) ziehen. Breite ändern: am Griff rechts.
+Mit den Pfeiltasten verschieben: im Text Esc drücken – der ganze Textblock ist
+dann ausgewählt. Pfeiltasten verschieben ihn (mit Umschalt in 10er-Schritten),
+Enter bearbeitet wieder den Text. Alternativ Alt+Klick auf den Text.
+
+
+BILDER UND GRAFIKEN
+-------------------
+- Anklicken zum Auswählen, ziehen zum Verschieben.
+- Pfeiltasten = verschieben (1 Punkt je Tastendruck, mit Umschalt 10 Punkte).
+- Hilfslinien: Beim Ziehen erscheinen pinke Linien, sobald das Element mittig auf
+  der Seite sitzt („Mitte“), am Seitenrand bzw. Satzspiegel anliegt oder bündig
+  mit anderen Texten und Bildern ist (Kanten oder Mitten). Dort rastet es ein.
+  Mit gedrückter Alt-Taste ziehen = frei, ohne Einrasten. Das gilt auch beim
+  Verschieben von Textblöcken am Griff ⠿ und beim Ändern der Größe.
+- Eckpunkte ziehen = Größe ändern (Umschalttaste = Seitenverhältnis frei).
+- Entf-Taste = löschen.
+- Zusammengehörige Teile (z. B. Kreisnummer mit Linie) werden als Gruppe
+  ausgewählt. Ein weiterer Klick in die ausgewählte Gruppe wählt nur das
+  Element unter dem Mauszeiger.
+- Verdeckte Elemente (z. B. etwas hinter einem Bild): Alt+Klick (oder Strg+Klick)
+  wählt das Element dahinter – jeder weitere Alt+Klick das nächste. Oder
+  Rechtsklick: Das Menü listet alle Elemente an dieser Stelle zum Auswählen auf.
+- Rechtsklick > „In den Vordergrund“ / „In den Hintergrund“ ändert, was oben
+  liegt (auch links unter „Auswahl“ mit den beiden Ebenen-Symbolen).
+- Links: Position/Größe in mm, drehen, „Ersetzen …“ (bei Bildern).
+- Mehrere Elemente: auf freier Fläche einen Rahmen aufziehen.
+- Neues Bild: „Bild hinzufügen“ (PNG, JPG) oder Bilddatei auf die Seite ziehen.
+
+
+SEITEN ORGANISIEREN
+-------------------
+Links „Seiten organisieren“:
+- Leere Seite oder Seiten aus einer anderen PDF einfügen (auch über das „+“
+  zwischen zwei Seiten).
+- Seiten löschen, drehen, duplizieren oder per Ziehen umsortieren.
+- Ausgewählte Seiten als eigene PDF-Datei speichern.
+
+Seitenzahlen (z. B. „3 / 7“) und Kopf-/Fußzeilen werden erkannt: Beim Einfügen,
+Löschen und Verschieben werden die Seitenzahlen automatisch angepasst, und neue
+leere Seiten erhalten auf Wunsch Kopf- und Fußzeile der Nachbarseite.
+
+
+SPEICHERN
+---------
+„Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
+(Strg+Umschalt+S) legt eine neue an. Jede Änderung lässt sich mit Strg+Z
+rückgängig machen und mit Strg+Y wiederholen.
+
+
+SCHRIFTEN
+---------
+PDF-Dateien enthalten meist nur die Zeichen, die im Dokument vorkommen. Tippt man
+ein neues Zeichen (z. B. „Ü“ oder „Q“), braucht der Editor die vollständige
+Schriftdatei:
+- Die Schriften Barlow, Barlow Semi Condensed und IBM Plex Mono (unsere
+  Anleitungen) sind bereits eingebaut.
+- Andere Schriften: rechts auf das Symbol „Aa“ (Schriften) klicken und die
+  passende Schriftdatei (.ttf/.otf) laden. Der Editor merkt sich die Schrift.
+- Fehlt eine Schrift, weist der Editor darauf hin; das Zeichen wird dann in
+  einer ähnlichen Standardschrift geschrieben.
+Im Ordner „Schriften“ liegen die mitgelieferten Schriften zusätzlich als Dateien
+(z. B. zum Installieren in Windows). Lizenz: SIL Open Font License (siehe dort).
+
+
+TASTENKÜRZEL
+------------
+Strg+O öffnen · Strg+S speichern · Strg+Z / Strg+Y rückgängig / wiederholen
+Strg + Mausrad oder Strg+Plus/Minus zoomen · Strg+0 Seitenbreite
+Entf löschen · Pfeiltasten verschieben (Umschalt = größere Schritte)
+Esc Bearbeitung beenden und Textblock auswählen · Enter Text wieder bearbeiten
+Alt+Klick Element dahinter auswählen
+
+
+GUT ZU WISSEN
+-------------
+- Kennwortgeschützte (verschlüsselte) PDFs können nicht bearbeitet werden.
+- Gedrehter Text (z. B. senkrechte Beschriftungen) kann gelöscht, aber nicht
+  bearbeitet werden.
+- Formularfelder, Kommentare und Links bleiben erhalten, werden aber nicht
+  bearbeitet.
+- Bei manchen Schriftarten (Type 1/CFF, z. B. aus LaTeX) zeigt das Bearbeitungs-
+  feld eine ähnliche Ersatzschrift an; gespeichert wird trotzdem in der
+  Originalschrift.
