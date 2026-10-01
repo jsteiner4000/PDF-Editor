@@ -335,7 +335,10 @@ test('Unterschrift aus PDF übernehmen, nach Neuladen in anderem Dokument einset
   const clearPx = await pixelAt(probe.clear);
   for (let k = 0; k < 3; k++) expect(Math.abs(clearPx[k] - background[k])).toBeLessThanOrEqual(3);
   const inkPx = await pixelAt(probe.ink);
-  await page.locator('.page').nth(1).screenshot({ path: testInfo.outputPath('seite2.png') });
+  await page
+    .locator('.page')
+    .nth(1)
+    .screenshot({ path: testInfo.outputPath('seite2.png') });
   expect(inkPx[0]).toBeLessThan(90);
   expect(inkPx[2]).toBeGreaterThan(inkPx[0]); // dunkelblau
   expect(errors).toEqual([]);
