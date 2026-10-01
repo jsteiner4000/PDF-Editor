@@ -9,7 +9,7 @@
 import { test, expect } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { PDFDocument, PDFName, PDFRawStream, PDFDict, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, PDFDict, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { launch, openPdf, idle, settled, savedBytes, BUILDS } from './helpers.js';
 
 /** Signaturähnlicher Pfad (SVG-Syntax, y nach unten) – Schleifen und ein Schwung. */
@@ -126,20 +126,18 @@ test('Unterschrift aus PDF übernehmen, nach Neuladen in anderem Dokument einset
   // nichts ausgewählt oder verschoben (Bearbeiten-Modus hat die Zeigerereignisse nicht gesehen)
   expect(await page.evaluate(() => window.pdfEditor.edit.sel)).toBeNull();
   expect(await page.evaluate(() => window.pdfEditor.session.hist.undo.length)).toBe(0);
-  // Vorschau: Unterschrift erkannt und auf die Tinte zugeschnitten. Die Formularlinie läuft über
-  // die ganze Rahmenbreite – bliebe sie stehen, wäre die Vorschau so breit wie der Rahmen.
-  const preview = await sheet.locator('.sig-preview canvas').evaluate((c) => [c.width, c.height]);
-  const renderedPx = ((290 - 95) / 72) * 600;
-  expect(preview[0]).toBeGreaterThan(renderedPx * 0.7);
-  expect(preview[0]).toBeLessThan(renderedPx * 0.92);
+  // Vorschau: ganzer Bereich, der Zuschnittrahmen liegt automatisch um die Tinte. Die
+  // Formularlinie läuft über die ganze Breite – bliebe sie stehen, wäre der Rahmen so breit wie
+  // der Bereich.
+  // Fokus liegt im Sheet (Namensfeld)
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('sigName');
+  const frameWidth = () => sheet.locator('.sig-crop').evaluate((el) => parseFloat(el.style.width) / 100);
+  expect(await frameWidth()).toBeGreaterThan(0.7);
+  expect(await frameWidth()).toBeLessThan(0.92);
   await sheet.locator('#sigLines').uncheck();
-  await expect
-    .poll(() => sheet.locator('.sig-preview canvas').evaluate((c) => c.width))
-    .toBeGreaterThan(renderedPx * 0.97);
+  await expect.poll(frameWidth).toBeGreaterThan(0.97);
   await sheet.locator('#sigLines').check();
-  await expect
-    .poll(() => sheet.locator('.sig-preview canvas').evaluate((c) => c.width))
-    .toBeLessThan(renderedPx * 0.92);
+  await expect.poll(frameWidth).toBeLessThan(0.92);
   await sheet.screenshot({ path: testInfo.outputPath('vorschau.png') });
   await sheet.getByRole('radio', { name: 'Dunkelblau' }).click();
   await sheet.locator('#sigName').fill('Max Mustermann');
@@ -159,6 +157,9 @@ test('Unterschrift aus PDF übernehmen, nach Neuladen in anderem Dokument einset
   expect(record.widthMm).toBeGreaterThan(50);
   expect(record.widthMm).toBeLessThan(66);
   expect(record.aspect).toBeCloseTo(record.width / record.height, 5);
+  // gespeichertes PNG höchstens 300 dpi bezogen auf 1,6 × 50 mm
+  expect(record.width).toBeLessThanOrEqual(945);
+  expect(record.width).toBeGreaterThan(900);
 
   // --- 2. Neu laden: Unterschrift ist noch da
   await page.reload();
@@ -222,6 +223,20 @@ test('Unterschrift aus PDF übernehmen, nach Neuladen in anderem Dokument einset
     ),
   ).toBe(1);
 
+  // Zweites Mal einsetzen (Taste U = Standard-Unterschrift) – wird nicht erneut eingebettet
+  await page.keyboard.press('Escape'); // Auswahl aufheben
+  await page.keyboard.press('u');
+  await expect(page.locator('.sig-hint')).toContainText('Max Mustermann');
+  const [ux, uy] = await clientOf(page, 1, 300, 600);
+  await page.mouse.move(ux, uy);
+  await page.mouse.click(ux, uy);
+  await settled(page);
+  expect(
+    await page.evaluate(
+      () => window.pdfEditor.session.model(1).objects.filter((o) => o.type === 'image').length,
+    ),
+  ).toBe(2);
+
   // --- 4. Speichern und mit pdf-lib prüfen
   const bytes = await savedBytes(page);
   const saved = await PDFDocument.load(bytes);
@@ -233,7 +248,7 @@ test('Unterschrift aus PDF übernehmen, nach Neuladen in anderem Dokument einset
     .filter(
       (obj) => obj instanceof PDFRawStream && obj.dict.get(PDFName.of('Subtype')) === PDFName.of('Image'),
     );
-  expect(images).toHaveLength(1);
+  expect(images).toHaveLength(1); // zweimal eingesetzt, einmal eingebettet
   const image = images[0];
   expect(image.dict.get(PDFName.of('Width')).asNumber()).toBe(record.width);
   expect(image.dict.get(PDFName.of('Height')).asNumber()).toBe(record.height);
@@ -438,6 +453,13 @@ test('Unterschrift zeichnen, sichern und einsetzen', async ({ browser }) => {
     [320, 90],
   ]);
   await sheet.getByRole('button', { name: 'Rückgängig' }).click(); // zweiten Strich entfernen
+  // Esc mit begonnener Zeichnung fragt nach; „Weiter zeichnen“ behält sie
+  await page.keyboard.press('Escape');
+  const confirm = page.locator('.dlg:not(.sig-sheet)');
+  await expect(confirm).toContainText('Zeichnung verwerfen?');
+  await confirm.getByRole('button', { name: 'Weiter zeichnen' }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(sheet).toBeVisible();
   await sheet.locator('#sigName').fill('Kürzel');
   await sheet.getByRole('radio', { name: 'Initialen' }).click();
   await sheet.getByRole('button', { name: 'Sichern' }).click();
@@ -450,9 +472,11 @@ test('Unterschrift zeichnen, sichern und einsetzen', async ({ browser }) => {
     source: 'drawn',
     isDefault: true,
   });
-  // nur der erste Strich: Breite ≈ 200 CSS-px × 4 + Rand
-  expect(stored.items[0].width).toBeGreaterThan(780);
-  expect(stored.items[0].width).toBeLessThan(900);
+  // Initialen: PNG auf 300 dpi × 1,6 × 20 mm = 378 px begrenzt; nur der erste Strich
+  // (≈ 200 × 90 CSS-px plus Rand) – das Seitenverhältnis zeigt, dass der zweite fehlt
+  expect(stored.items[0].width).toBe(378);
+  expect(stored.items[0].aspect).toBeGreaterThan(1.8);
+  expect(stored.items[0].aspect).toBeLessThan(2.4);
   // nach dem Sichern direkt im Platzier-Modus
   await expect(page.locator('.sig-hint')).toContainText('Kürzel');
   const [tx, ty] = await clientOf(page, 0, 200, 400);
@@ -467,6 +491,290 @@ test('Unterschrift zeichnen, sichern und einsetzen', async ({ browser }) => {
   await expect(page.locator('.sig-hint')).toContainText('Kürzel');
   await page.keyboard.press('Escape');
   await expect(page.locator('.sig-hint')).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+/** Dokument mit Seiten /Rotate 0, 90, 180, 270; auf 90/270 eine Unterschrift, die aufrecht angezeigt wird. */
+async function rotatedPdf() {
+  const doc = await PDFDocument.create();
+  for (const rot of [0, 90, 180, 270]) {
+    const page = doc.addPage([595.28, 841.89]);
+    page.setRotation(degrees(rot));
+    if (rot === 90 || rot === 270)
+      // in PDF-Koordinaten um `rot` gegen den Uhrzeigersinn gedreht → in der Anzeige aufrecht
+      page.drawSvgPath(SIGNATURE_SVG, {
+        x: 297.64,
+        y: 420.95,
+        scale: 1.2,
+        rotate: degrees(rot),
+        borderColor: rgb(0.1, 0.16, 0.5),
+        borderWidth: 1.6,
+      });
+  }
+  return Buffer.from(await doc.save());
+}
+
+/** Legt eine Unterschrift direkt in IndexedDB an (PNG im Browser erzeugt). */
+async function seedSignature(page, draw, { name = 'Test', width = 400, height = 100 } = {}) {
+  await page.evaluate(
+    async ({ draw, name, width, height }) => {
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = height;
+      new Function('ctx', draw)(c.getContext('2d'));
+      const png = await (await new Promise((r) => c.toBlob(r, 'image/png'))).arrayBuffer();
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.open('pdf-editor', 2);
+        req.onsuccess = () => {
+          const tx = req.result.transaction('signatures', 'readwrite');
+          // bisherige Standard-Markierungen entfernen – die Testunterschrift wird Standard
+          const cursor = tx.objectStore('signatures').openCursor();
+          cursor.onsuccess = () => {
+            const c = cursor.result;
+            if (!c || c.key === 'sig-test') return;
+            c.update({ ...c.value, isDefault: false });
+            c.continue();
+          };
+          tx.objectStore('signatures').put(
+            {
+              id: 'sig-test',
+              name,
+              kind: 'signature',
+              source: 'drawn',
+              created: Date.now(),
+              png,
+              width,
+              height,
+              aspect: width / height,
+              widthMm: 50,
+              heightMm: (50 * height) / width,
+              isDefault: true,
+            },
+            'sig-test',
+          );
+          tx.oncomplete = () => {
+            req.result.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      });
+    },
+    { draw, name, width, height },
+  );
+}
+
+/** Farbe der Seitendarstellung (Vorschau-Canvas) an einer Bildschirmposition. */
+function displayPixel(page, index, cx, cy) {
+  return page.evaluate(
+    ([index, cx, cy]) => {
+      const pv = window.pdfEditor.pvs[index];
+      const r = pv.el.getBoundingClientRect();
+      const x = Math.floor(((cx - r.left) / r.width) * pv.canvas.width);
+      const y = Math.floor(((cy - r.top) / r.height) * pv.canvas.height);
+      const d = pv.canvas.getContext('2d').getImageData(x, y, 1, 1).data;
+      return [d[0], d[1], d[2]];
+    },
+    [index, cx, cy],
+  );
+}
+
+test('Gedrehte Seiten: Erfassen liefert aufrechte Unterschrift, Einsetzen steht aufrecht (90°, 180°, 270°)', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  expect(await openPdf(page, await rotatedPdf(), 'gedreht.pdf')).toBe(true);
+  await enterEditMode(page);
+
+  // --- Erfassen auf /Rotate 90 und 270: gespeichertes Bild ist breit (aufrecht), nicht hochkant
+  for (const index of [1, 3]) {
+    await page.locator('#cAddSig').click();
+    await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+    const [ax, ay] = await clientOf(page, index, 297.64 - 110, 420.95 + 110);
+    const [bx, by] = await clientOf(page, index, 297.64 + 110, 420.95 - 110);
+    await page.mouse.move(ax, ay);
+    await page.mouse.down();
+    await page.mouse.move(bx, by, { steps: 6 });
+    await page.mouse.up();
+    const sheet = page.locator('.dlg.sig-sheet');
+    await expect(sheet).toBeVisible();
+    await sheet.locator('#sigName').fill('Seite ' + (index + 1));
+    await sheet.getByRole('button', { name: 'Sichern' }).click();
+    await expect(sheet).toBeHidden();
+  }
+  const stored = await readSignatures(page);
+  expect(stored.items).toHaveLength(2);
+  for (const record of stored.items) expect(record.aspect).toBeGreaterThan(2);
+
+  // --- Einsetzen: Testbild links rot, rechts blau, oben links grüne Marke
+  await seedSignature(
+    page,
+    `ctx.fillStyle = '#d00000'; ctx.fillRect(0, 0, 200, 100);
+     ctx.fillStyle = '#0000d0'; ctx.fillRect(200, 0, 200, 100);
+     ctx.fillStyle = '#00b000'; ctx.fillRect(0, 0, 80, 40);`,
+    { name: 'Orientierung' },
+  );
+  for (const index of [0, 1, 2, 3]) {
+    const [cx, cy] = await clientOf(page, index, 297.64, 300);
+    await page.keyboard.press('u');
+    await expect(page.locator('.sig-hint')).toContainText('Orientierung');
+    await page.mouse.move(cx, cy);
+    await expect(page.locator('.sig-ghost')).toBeVisible();
+    await page.mouse.click(cx, cy);
+    await settled(page);
+    await idle(page);
+    const box = await page.evaluate(
+      ([index]) => {
+        const app = window.pdfEditor;
+        const sel = app.edit.sel;
+        const pv = app.pvs[index];
+        const [x0, y0, x1, y1] = sel.objs[0].vis;
+        const pts = [
+          [x0, y0],
+          [x1, y1],
+        ].map(([x, y]) => pv.layerToClient(...pv.pdfToLayer(x, y)));
+        return {
+          left: Math.min(pts[0][0], pts[1][0]),
+          right: Math.max(pts[0][0], pts[1][0]),
+          top: Math.min(pts[0][1], pts[1][1]),
+          bottom: Math.max(pts[0][1], pts[1][1]),
+          page: sel.pv.index,
+        };
+      },
+      [index],
+    );
+    expect(box.page).toBe(index);
+    const w = box.right - box.left;
+    const h = box.bottom - box.top;
+    // in der Anzeige 50 mm breit und 4:1 – auf jeder Seitendrehung
+    expect(w / h).toBeCloseTo(4, 0);
+    const at = (fx, fy) => displayPixel(page, index, box.left + w * fx, box.top + h * fy);
+    const green = await at(0.08, 0.15);
+    const red = await at(0.35, 0.75);
+    const blue = await at(0.8, 0.5);
+    expect(green[1], `Seite ${index + 1}: grün oben links`).toBeGreaterThan(120);
+    expect(green[0]).toBeLessThan(80);
+    expect(red[0], `Seite ${index + 1}: rot links`).toBeGreaterThan(150);
+    expect(red[2]).toBeLessThan(80);
+    expect(blue[2], `Seite ${index + 1}: blau rechts`).toBeGreaterThan(150);
+    expect(blue[0]).toBeLessThan(80);
+    await page.keyboard.press('Escape');
+  }
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('Zuschnittrahmen schließt gedruckten Text neben der Unterschrift aus', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  expect(await openPdf(page, await contractPdf(), 'vertrag.pdf')).toBe(true);
+  await enterEditMode(page);
+  await page.locator('#cAddSig').click();
+  await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+  // Bereich inklusive der Beschriftung „Ort, Datum, Unterschrift“ (y ≈ 172)
+  const [ax, ay] = await clientOf(page, 0, 70, 262);
+  const [bx, by] = await clientOf(page, 0, 300, 166);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 6 });
+  await page.mouse.up();
+  const sheet = page.locator('.dlg.sig-sheet');
+  await expect(sheet).toBeVisible();
+  const frame = sheet.locator('.sig-crop');
+  const before = await frame.evaluate((el) => parseFloat(el.style.top) + parseFloat(el.style.height));
+  expect(before).toBeGreaterThan(90); // Rahmen reicht bis zur Beschriftung hinunter
+  // unteren Griff hochziehen (bis knapp unter die Formularlinie y = 200)
+  const stage = await sheet.locator('.sig-stage').boundingBox();
+  const handle = await sheet.locator('.sig-crop i[data-h="s"]').boundingBox();
+  const targetY = stage.y + stage.height * ((262 - 196) / (262 - 166));
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2, targetY, { steps: 5 });
+  await page.mouse.up();
+  await expect(sheet.getByRole('button', { name: 'Rahmen zurücksetzen' })).toBeVisible();
+  await sheet.locator('#sigName').fill('Ohne Text');
+  await sheet.getByRole('button', { name: 'Sichern' }).click();
+  await expect(sheet).toBeHidden();
+  const [record] = (await readSignatures(page)).items;
+  // nur die Unterschrift (y ≈ 198…246 → ca. 17 mm + Rand), nicht bis zur Beschriftung (≈ 30 mm)
+  expect(record.heightMm).toBeLessThan(22);
+  expect(record.heightMm).toBeGreaterThan(12);
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('Datenbank blockiert durch altes Fenster: Popover bleibt bedienbar, Hinweis, danach normal', async ({
+  browser,
+}, testInfo) => {
+  const context = await browser.newContext();
+  const blocker = await context.newPage();
+  const blank = testInfo.outputPath('alt.html');
+  writeFileSync(blank, '<!doctype html><title>alt</title>');
+  await blocker.goto(pathToFileURL(blank).href);
+  // wie PDF-Editor 1.0: Version 1 offen halten, ohne auf versionchange zu reagieren
+  await blocker.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const req = indexedDB.open('pdf-editor', 1);
+        req.onupgradeneeded = () => {
+          req.result.createObjectStore('fonts');
+          req.result.createObjectStore('recent');
+        };
+        req.onsuccess = () => {
+          window.__db = req.result;
+          resolve();
+        };
+      }),
+  );
+  const page = await context.newPage();
+  await page.goto(pathToFileURL(BUILDS.neubau).href);
+  await page.waitForFunction(() => window.pdfEditor);
+  expect(await openPdf(page, await targetPdf(), 'angebot.pdf')).toBe(true);
+  await enterEditMode(page);
+  await page.locator('#cAddSig').click();
+  const pop = page.locator('.sig-pop');
+  // Erfassen-Knöpfe sofort da, Liste mit verständlichem Hinweis
+  await expect(pop.getByRole('button', { name: 'Zeichnen …' })).toBeVisible();
+  await expect(pop.locator('.sig-empty.err')).toContainText('anderen Fenster', { timeout: 15_000 });
+  // altes Fenster schließt die Datenbank → erneut versuchen → leere Liste
+  await blocker.evaluate(() => window.__db.close());
+  await pop.getByRole('button', { name: 'Erneut versuchen' }).click();
+  await expect(pop.locator('.sig-empty')).toContainText('Noch keine Unterschrift');
+  await context.close();
+});
+
+test('Alle Werkzeuge und Startseite öffnen das Unterschrift-Popover', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  await page.locator('#hSig').click();
+  await expect(page.locator('.sig-pop')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.sig-pop')).toHaveCount(0);
+  expect(await openPdf(page, await targetPdf(), 'angebot.pdf')).toBe(true);
+  await page.locator('#lpBody .tool[data-tool="signature"]').click();
+  await expect(page.locator('.sig-pop')).toBeVisible();
+  expect(await page.evaluate(() => window.pdfEditor.tool)).toBe('edit');
+  // Klick auf „Unterschrift“ während des Erfassens beendet es
+  await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+  await expect(page.locator('.sig-hint')).toBeVisible();
+  await page.locator('#cAddSig').click();
+  await expect(page.locator('.sig-hint')).toHaveCount(0);
+  expect(await page.evaluate(() => document.getElementById('pages').classList.contains('sig-capture'))).toBe(
+    false,
+  );
+  // Die Hinweisleiste blockiert das Aufziehen nicht: Rahmen beginnt direkt auf ihrem Text
+  await page.locator('#cAddSig').click();
+  await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+  const hint = await page.locator('.sig-hint span').boundingBox();
+  const sx = hint.x + 10;
+  const sy = hint.y + hint.height / 2;
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(sx + 200, sy + 120, { steps: 5 });
+  await page.mouse.up();
+  await expect(page.locator('.dlg.sig-sheet')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.dlg.sig-sheet')).toHaveCount(0);
   expect(errors).toEqual([]);
   await context.close();
 });
