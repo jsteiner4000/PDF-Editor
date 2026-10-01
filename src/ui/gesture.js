@@ -8,7 +8,8 @@
  * gesetzt werden kann – etwa wenn vorher noch eine Textbearbeitung abgeschlossen wird.
  *
  * Das Ende ist idempotent und kommt genau einmal: `pointerup` → 'up'; `pointercancel`, Verlust
- * des Captures ohne Loslassen, Fensterwechsel oder `cancel()` (Esc) → 'cancel'. Ein
+ * des Captures ohne Loslassen, Fensterwechsel, eine weitere gedrückte Taste (z. B. mittlere
+ * Maustaste für das Hand-Werkzeug) oder `cancel()` (Esc) → 'cancel'. Ein
  * `pointermove` ohne gedrückte Taste gilt als verpasstes Loslassen ('up') – so kann nie ein Objekt
  * „an der Maus kleben“ bleiben. Alle Listener hängen an einem AbortController.
  */
@@ -33,6 +34,8 @@ export class Gesture {
       (e) => {
         if (e.pointerId !== this.id) return;
         if ((e.buttons & 1) === 0) return this.end('up', e);
+        // zusätzliche Taste (Maus meldet sie als pointermove, z. B. mittlere = Hand-Werkzeug)
+        if (e.buttons & ~1) return this.end('cancel', e);
         this.last = e;
         if (!this.moved && Math.hypot(e.clientX - this.x0, e.clientY - this.y0) >= 3) this.moved = true;
         if (this.handler && this.handler.move) this.handler.move(e);
@@ -62,6 +65,14 @@ export class Gesture {
       { signal: this.ac.signal },
     );
     window.addEventListener('blur', () => this.end('cancel'), { signal: this.ac.signal });
+    // ein weiterer Zeiger (z. B. zweiter Finger) bricht die Geste ab
+    window.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (e.pointerId !== this.id || e.button !== 0) this.end('cancel', e);
+      },
+      opts,
+    );
   }
   /** Bearbeiter setzen: `{ move(e), end(reason, e) }`; die letzte Zeigerposition wird nachgereicht. */
   attach(handler) {

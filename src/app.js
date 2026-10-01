@@ -989,7 +989,7 @@ export class App {
   selectionAnchor() {
     const edit = this.edit;
     if (!edit.active || !edit.hasSelection()) return null;
-    const pv = edit.sel.pv;
+    const pv = edit.selectionView();
     const box = edit.selBox();
     const pdf = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
     const scroller = $('#scroller');

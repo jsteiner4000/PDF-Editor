@@ -81,6 +81,8 @@ export class EditMode {
     this.pe = null;
     clearTimeout(this.nudgeT);
     this.nudge = null;
+    this.lastDown = null; // hält sonst die Seitenansicht des letzten Klicks fest
+    this.pendingReselect = null;
     this.sel = null;
     this.armed = null;
     this.active = false;
@@ -806,7 +808,15 @@ export class EditMode {
   hasSelection() {
     return !!(this.pe || (this.sel && (this.sel.objs.length || this.sel.blocks.length)));
   }
+  /** Seitenansicht der Auswahl (auch bei „Pfad bearbeiten“). */
+  selectionView() {
+    return this.sel ? this.sel.pv : this.pe ? this.pe.pv : null;
+  }
   selBox(sel = this.sel) {
+    if (!sel && this.pe) {
+      const obj = this.pe.obj;
+      return obj ? obj.vis.slice() : [0, 0, 0, 0];
+    }
     return unionBoxes([...sel.objs.map((obj) => obj.vis), ...sel.blocks.map((block) => block.bbox)]);
   }
   /** Welche Rahmengriffe passen? Bei schmalen Rahmen nie übereinanderliegende Griffe. */
