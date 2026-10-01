@@ -212,6 +212,7 @@ export class App {
     <div class="feat"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></div>
     <div class="feat"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></div>
     <div class="feat"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></div>
+    <div class="feat"><div class="ti c4">${icon('signature')}</div><b>Unterschrift</b><span>Einmal aus einem Dokument übernehmen und in jedes PDF einsetzen.</span></div>
   </div>
   <div class="recent hidden" id="recent"><h4>Zuletzt geöffnet</h4><div class="rl" id="recentList"></div></div>
 </div>`;
