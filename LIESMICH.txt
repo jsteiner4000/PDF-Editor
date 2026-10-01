@@ -72,6 +72,44 @@ BILDER UND GRAFIKEN
 - Neues Bild: „Bild hinzufügen“ (PNG, JPG) oder Bilddatei auf die Seite ziehen.
 
 
+UNTERSCHRIFT
+------------
+Die eigene Unterschrift einmal hinterlegen und danach in jedes Dokument setzen.
+Links „PDF bearbeiten“ > „Unterschrift“ (auch oben in der Werkzeugleiste).
+
+Unterschrift hinterlegen – drei Wege:
+- „Aus Dokument übernehmen“: Ein PDF öffnen, in dem Sie bereits unterschrieben
+  haben (z. B. ein eingescannter Vertrag), und mit der Maus einen Rahmen um die
+  Unterschrift ziehen. Der Editor liest den Bereich in hoher Auflösung (600 dpi,
+  unabhängig vom Zoom), entfernt den Papierhintergrund (weiß oder Scan-Grau) und
+  Formularlinien und schneidet auf die Unterschrift zu.
+- „Aus Bilddatei …“: Foto oder Scan der Unterschrift (PNG, JPG) wählen – am
+  besten auf weißem Papier, gleichmäßig beleuchtet.
+- „Zeichnen …“: Mit Maus, Stift oder Finger unterschreiben (beim Stift wird
+  der Andruck berücksichtigt). „Rückgängig“ entfernt den letzten Strich.
+In der Vorschau:
+- „Empfindlichkeit“: nach rechts = auch blasse Striche übernehmen, nach links =
+  mehr Hintergrund (Schatten, Flecken) entfernen.
+- „Farbe“: Original, Schwarz oder Dunkelblau.
+- „Formularlinien entfernen“: Linie, auf der unterschrieben wurde, weglassen.
+- „Art“: Unterschrift oder Initialen (Kürzel), dazu ein Name.
+„Sichern“ speichert die Unterschrift dauerhaft in diesem Browser auf diesem
+Rechner. Sie wird nirgendwohin übertragen.
+
+Unterschrift einsetzen:
+„Unterschrift“ klicken, die gewünschte Unterschrift wählen und auf die Stelle im
+Dokument klicken (die Vorschau folgt der Maus). Oder einfach die Taste U drücken:
+Das setzt die Standard-Unterschrift. Esc bricht ab.
+Die Unterschrift wird 50 mm breit eingesetzt (Initialen 20 mm) und ist danach
+ein normales Bild: verschieben, an den Ecken größer/kleiner ziehen, löschen,
+Strg+Z. Der Hintergrund bleibt auch in der gespeicherten PDF durchsichtig.
+
+Verwalten: „Unterschrift“ > „Unterschriften verwalten …“ – umbenennen, als
+Standard festlegen oder löschen.
+Hinweis: Gespeicherte Unterschriften gehören zum Browser (Chrome bzw. Edge), in
+dem der Editor geöffnet wird. Wer die Browserdaten löscht, löscht sie mit.
+
+
 SEITEN ORGANISIEREN
 -------------------
 Links „Seiten organisieren“:
@@ -114,6 +152,7 @@ Strg + Mausrad oder Strg+Plus/Minus zoomen · Strg+0 Seitenbreite
 Entf löschen · Pfeiltasten verschieben (Umschalt = größere Schritte)
 Esc Bearbeitung beenden und Textblock auswählen · Enter Text wieder bearbeiten
 Alt+Klick Element dahinter auswählen
+U Standard-Unterschrift einsetzen (im Modus „PDF bearbeiten“)
 
 
 GUT ZU WISSEN
