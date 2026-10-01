@@ -76,6 +76,7 @@ export class DetailRenderer {
     }
   }
   cancelRunning() {
+    if (this.running) this.running.cancelled = true;
     if (this.running && this.running.task) {
       try {
         this.running.task.cancel();

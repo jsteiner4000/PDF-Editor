@@ -125,7 +125,7 @@ export class PageView {
    * Kopie des angezeigten Seitenbilds im Ebenen-Rechteck (CSS-px, ungedrehte Seite) – Vorschau,
    * darüber der Detail-Canvas, soweit er den Bereich abdeckt. Höchstens `maxPx` Pixel.
    */
-  snapshot(left, top, width, height, maxPx = 4e6) {
+  snapshot(left, top, width, height, maxPx = PREVIEW_MAX_PX) {
     const dpr = window.devicePixelRatio || 1;
     const k = Math.min(dpr, Math.sqrt(maxPx / Math.max(1, width * height)));
     const out = document.createElement('canvas');

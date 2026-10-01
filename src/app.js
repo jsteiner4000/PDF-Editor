@@ -38,6 +38,9 @@ const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8, 16, 32];
  */
 const HIDDEN_PREVIEW_BUDGET_PX = 16e6;
 
+/** Anteil des Fensters, den die Auswahl nach „Auf Auswahl zoomen“ einnimmt (Rest = Rand). */
+const SELECTION_FILL = 0.7;
+
 /** Wartezeit (ms) vor dem Neurendern der Vorschau, solange gezoomt wird. */
 const ZOOM_RENDER_HOLD_MS = 140;
 
@@ -405,10 +408,10 @@ export class App {
   closeDoc() {
     this.lastPin = null;
     this.detail.reset();
+    PageView.forgetRemembered();
     this.edit.reset();
     this.org.reset();
     for (const pv of this.pvs) this.io.unobserve(pv.el);
-    PageView.forgetRemembered();
     this.pvs = [];
     this.pvByKey.clear();
     $('#pages').innerHTML = '';
@@ -692,10 +695,10 @@ export class App {
         this.pvByKey.delete(key);
       }
     this.pvs = views;
+    PageView.forgetRemembered(new Set(views));
     views.forEach((A, s) => {
       if (pagesEl.children[s] !== A.el) pagesEl.insertBefore(A.el, pagesEl.children[s] || null);
     });
-    PageView.forgetRemembered(new Set(views));
     this.layoutPages();
     $('#pgN').textContent = numPages;
     this.cur = Math.max(0, Math.min(this.cur, numPages - 1));
@@ -715,15 +718,21 @@ export class App {
    */
   previewFresh(pv) {
     const rendered = pv.rendered;
-    if (!rendered || rendered.sig !== pv.sig) return false;
-    if (rendered.key !== pv.previewSize().key) return false;
-    rendered.scale = pv.scale;
+    return !!rendered && rendered.sig === pv.sig && rendered.key === pv.previewSize().key;
+  }
+  /**
+   * Prüft die Vorschau; ist sie trotz anderem Zoom gültig (gleiche Pixelgröße), gilt sie als für
+   * den aktuellen Zoom gerendert.
+   */
+  adoptPreview(pv) {
+    if (!this.previewFresh(pv)) return false;
+    pv.rendered.scale = pv.scale;
     return true;
   }
   queueRender(pv) {
     if (this.session) {
       if (!(
-        this.previewFresh(pv) ||
+        this.adoptPreview(pv) ||
         (pv.rendered && pv.rendered.sig !== pv.sig && pv.restoreFrom(pv.sig, pv.scale))
       )) {
         this.renderQueue.add(pv);
@@ -744,7 +753,7 @@ export class App {
           queue.sort((s, o) => Math.abs(s.index - this.cur) - Math.abs(o.index - this.cur));
           const [next, ...rest] = queue;
           rest.forEach((s) => this.renderQueue.add(s));
-          if (!next || !next.visible || this.previewFresh(next)) continue;
+          if (!next || !next.visible || this.adoptPreview(next)) continue;
           const sig = next.sig;
           const scale = next.scale;
           const key = next.previewSize().key;
@@ -1034,8 +1043,8 @@ export class App {
     const h = Math.max(1e-3, rotated ? box[2] - box[0] : box[3] - box[1]);
     const scroller = $('#scroller');
     const zoom = Math.min(
-      (scroller.clientWidth * 0.7) / (w * CSS_PX_PER_PT),
-      (scroller.clientHeight * 0.7) / (h * CSS_PX_PER_PT),
+      (scroller.clientWidth * SELECTION_FILL) / (w * CSS_PX_PER_PT),
+      (scroller.clientHeight * SELECTION_FILL) / (h * CSS_PX_PER_PT),
     );
     const rect = scroller.getBoundingClientRect();
     anchor.clientX = rect.left + scroller.clientWidth / 2;
