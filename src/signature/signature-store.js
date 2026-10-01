@@ -18,7 +18,7 @@
  * Die Daten verlassen den Rechner nicht; es gibt keine Abhängigkeit von der Herkunft (file://,
  * Desktop-App): alles läuft über die gemeinsame Datenbank aus storage/idb.js.
  */
-import { idbDelete, idbGet, idbList, idbPut } from '../storage/idb.js';
+import { idbDelete, idbGet, idbGetAll, idbPut, idbUpdateAll } from '../storage/idb.js';
 
 const STORE = 'signatures';
 const listeners = new Set();
@@ -37,9 +37,12 @@ function newId() {
   return 'sig-' + Date.now().toString(36) + '-' + Math.floor(Math.random() * 1e9).toString(36);
 }
 
-/** Alle gespeicherten Unterschriften: Standard zuerst, dann Unterschriften vor Initialen, neueste zuerst. */
+/**
+ * Alle gespeicherten Unterschriften: Standard zuerst, dann Unterschriften vor Initialen, neueste
+ * zuerst. Wirft, wenn die Datenbank nicht verfügbar ist (z. B. `IdbBlockedError`).
+ */
 export async function listSignatures() {
-  const items = (await idbList(STORE)).map((item) => item.value).filter((v) => v && v.png);
+  const items = (await idbGetAll(STORE)).filter((v) => v && v.png);
   return items.sort(
     (a, b) =>
       (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0) ||
@@ -54,7 +57,7 @@ export function getSignature(id) {
 
 /** Standard-Unterschrift (oder die neueste, falls keine markiert ist). */
 export async function getDefaultSignature() {
-  const items = await listSignatures();
+  const items = await listSignatures().catch(() => []);
   return (
     items.find((s) => s.isDefault && s.kind !== 'initials') ||
     items.find((s) => s.isDefault) ||
@@ -77,7 +80,8 @@ export async function addSignature({
   widthMm,
   heightMm,
 }) {
-  const existing = await listSignatures();
+  const existing = await listSignatures().catch(() => null);
+  if (!existing) return null;
   const record = {
     id: newId(),
     name: (name || '').trim() || (kind === 'initials' ? 'Initialen' : 'Unterschrift'),
@@ -107,14 +111,14 @@ export async function renameSignature(id, name) {
 }
 
 export async function setDefaultSignature(id) {
-  for (const record of await listSignatures()) {
+  const ok = await idbUpdateAll(STORE, (record) => {
     const isDefault = record.id === id;
-    if (!!record.isDefault !== isDefault) {
-      record.isDefault = isDefault;
-      await idbPut(STORE, record.id, record);
-    }
-  }
+    if (!!record.isDefault === isDefault) return undefined;
+    record.isDefault = isDefault;
+    return record;
+  });
   emit();
+  return ok;
 }
 
 export async function deleteSignature(id) {
@@ -122,7 +126,7 @@ export async function deleteSignature(id) {
   await idbDelete(STORE, id);
   // War es die Standard-Unterschrift, wird die nächste zum Standard.
   if (record && record.isDefault) {
-    const rest = await listSignatures();
+    const rest = await listSignatures().catch(() => []);
     if (rest.length) {
       rest[0].isDefault = true;
       await idbPut(STORE, rest[0].id, rest[0]);
