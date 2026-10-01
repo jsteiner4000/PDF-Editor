@@ -4,6 +4,11 @@
 import { AnnotationMode, PDFWorker, getDocument } from 'pdfjs-dist';
 import PDFJS_WORKER_SOURCE from 'virtual:pdfjs-worker';
 
+/**
+ * Ein gemeinsamer pdf.js-Worker für alle Dokumente; sein Quelltext ist im Build eingebettet
+ * (virtuelles Modul „virtual:pdfjs-worker“) und wird als Blob-URL gestartet – so funktioniert die
+ * Datei auch über file:// ohne Netzwerk.
+ */
 let sharedWorker = null;
 
 function getPdfWorker() {
@@ -13,6 +18,11 @@ function getPdfWorker() {
   return sharedWorker;
 }
 
+/**
+ * Darstellung mit pdf.js: `load()` lädt die aktuellen PDF-Bytes (veraltete Ladevorgänge werden
+ * über `gen` verworfen), `render()` zeichnet eine Seite mit zoom × devicePixelRatio, höchstens
+ * 16 Mio. Pixel (`maxPx`).
+ */
 export class PdfRenderer {
   constructor() {
     this.doc = null;

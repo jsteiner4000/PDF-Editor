@@ -24,6 +24,13 @@ const parseCssColor = (css) => {
 
 const roundTo = (value, factor = 1000) => Math.round(value * factor) / factor;
 
+/**
+ * Inline-Editor für einen Textblock (oder neuen Text): baut aus den Glyphen ein
+ * contentEditable-Element mit Absätzen/Spans in der Originalschrift (`buildFromBlock`), richtet die
+ * Grundlinien an der PDF-Darstellung aus (`calibrate`) und wandelt den Inhalt beim Übernehmen
+ * wieder in positionierte Textsegmente um (`collect`). Rahmen mit Verschiebegriff (⠿) und
+ * Breitengriff, siehe `wire()`/`dragWidth()`.
+ */
 export class TextEditor {
   constructor(app, pv, block, opts = {}) {
     this.app = app;

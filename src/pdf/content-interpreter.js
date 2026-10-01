@@ -52,6 +52,17 @@ function resolveColorSpace(ctx, resources, name) {
   return name;
 }
 
+/**
+ * Interpretiert einen Content-Stream und liefert
+ *   - `glyphs`: je Zeichen Position (x, y, ex, ey), Textmatrix, Schrift, Größe, Farbe, Unicode
+ *     und Herkunft (Operator-Index `op`, Teil `part`, Zeichenindex `ci`)
+ *   - `objects`: Grafikobjekte – je Malbefehl ein Pfad (`type: 'path'`, `start`/`end` =
+ *     Operator-Indizes vom ersten Pfadoperator bis zum Malbefehl; Linien, Rechtecke und `re` sind
+ *     also zunächst einzelne Objekte), Bilder (`image`, auch Inline-Bilder), Formulare (`form`)
+ *     und Verläufe (`shading`); mit `bbox` (inkl. halber Linienbreite), `vis` (beschnitten),
+ *     `clip`, `fill`/`stroke`, `color`, `ctm`, `depth`
+ *   - `fonts`, `qctm`: Schriftobjekte und die CTM bei jedem `q`.
+ */
 export function interpretContent(ctx, ops, resources, fontCache) {
   const glyphs = [];
   const objects = [];

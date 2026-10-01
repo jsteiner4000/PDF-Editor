@@ -2,6 +2,15 @@
  * Seitenansicht: Canvas + Ebene, Koordinatenumrechnung Client <-> Ebene <-> PDF.
  */
 
+/**
+ * Darstellung einer Seite: `el` (div.page) mit Canvas (pdf.js) und Ebene `layer` für Overlays.
+ *
+ * Koordinatensysteme:
+ *   - PDF: Punkte (pt), Ursprung unten links (Crop-Box `info.x/y/w/h`)
+ *   - Ebene (layer): CSS-Pixel der ungedrehten Seite, Ursprung oben links; `scale` = zoom × 96/72
+ *   - Client: Bildschirmkoordinaten; bei gedrehten Seiten (rot = 90/180/270) ist die Ebene per
+ *     CSS-Transformation gedreht – `clientToLayer()`/`layerToClient()` rechnen das um.
+ */
 export class PageView {
   constructor(key) {
     this.key = key;

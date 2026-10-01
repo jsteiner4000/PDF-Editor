@@ -16,8 +16,14 @@ import { EditMode } from './ui/edit-mode.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
 
+/**
+ * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
+ */
 const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
 
+/**
+ * CSS-Pixel je PDF-Punkt bei 100 % Zoom.
+ */
 const CSS_PX_PER_PT = 96 / 72;
 
 const objectIds = new WeakMap();
@@ -31,6 +37,11 @@ const objectId = (obj) =>
       ? String(obj)
       : (objectIds.has(obj) || objectIds.set(obj, ++objectIdSeq), objectIds.get(obj));
 
+/**
+ * Hauptanwendung: baut die Oberfläche, verwaltet Dokument (`session`), Seitenansichten (`pvs`),
+ * Darstellung (`renderer`), Zoom und die Modi `edit` (EditMode), `org` (OrganizeMode) und
+ * `fontsPanel`. Erreichbar als `window.pdfEditor` (auch von den Tests genutzt).
+ */
 export class App {
   constructor(root) {
     this.root = root;
@@ -598,6 +609,10 @@ export class App {
         : 'Wiederholen (Strg+Y)';
     $('#dirtyDot').classList.toggle('hidden', !session || !session.dirty);
   }
+  /**
+   * Speichert das Dokument intern (ohne Aufräumen), lädt es in pdf.js neu und baut die
+   * Seitenansichten nach – nach jeder Änderung.
+   */
   async sync() {
     if (this._syncP) {
       this._syncAgain = true;
@@ -786,6 +801,11 @@ export class App {
         el.dataset.sig = '';
       });
   }
+  /**
+   * Setzt den Zoom (0,1–5) oder passt an Seitenbreite (`fit = 'width'`, höchstens 125 %) bzw.
+   * ganze Seite an. Die Seitengröße ist info.w × zoom × 96/72 CSS-Pixel; die Canvas-Auflösung
+   * zusätzlich × devicePixelRatio (höchstens 16 Mio. Pixel, siehe PdfRenderer.render).
+   */
   setZoom(zoom, fit, force) {
     if (!this.session) return;
     const scroller = $('#scroller');

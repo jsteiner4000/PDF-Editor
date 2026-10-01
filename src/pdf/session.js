@@ -22,6 +22,10 @@ import { interpretContent } from './content-interpreter.js';
 import { buildTextBlocks, buildTextLines } from './text-layout.js';
 import { FontManager } from '../fonts/font-manager.js';
 
+/**
+ * Korrigiert Streams, deren /Length um 1–2 Byte zu groß angegeben ist (pdf-lib kürzt den
+ * Inhalt sonst): sucht die Rohdaten in der Originaldatei und übernimmt die vollständige Länge.
+ */
 function repairStreamLengths(doc, fileBytes) {
   const context = doc.context;
   const indexOf = (needle, from) => {
@@ -55,6 +59,12 @@ function repairStreamLengths(doc, fileBytes) {
   }
 }
 
+/**
+ * Gruppiert auswählbare Grafikobjekte (Union-Find) zu Clustern: Objekte, deren sichtbare
+ * Rechtecke (`vis`) sich mit 1 pt Toleranz berühren, gehören zusammen. Ausgenommen sind Bilder und
+ * der Fall, dass ein Objekt ein mindestens 6-mal kleineres vollständig umschließt (Rahmen um
+ * Inhalt). Ergebnis: `obj.cluster = { members, bbox }` – ein Klick wählt die ganze Gruppe.
+ */
 function clusterObjects(objects) {
   const count = objects.length;
   const parent = objects.map((o, l) => l);
@@ -116,6 +126,10 @@ function clusterObjects(objects) {
   }
 }
 
+/**
+ * Wandelt einen Textblock in Zeilen mit Segmenten gleicher Schrift/Größe/Farbe um (das Format,
+ * das `commitEdit()` schreibt); `dx`/`dy` verschieben den Text dabei.
+ */
 export function blockToEditLines(block, dx = 0, dy = 0) {
   return block.lines.map((line) => {
     const segs = [];
@@ -153,7 +167,27 @@ export function blockToEditLines(block, dx = 0, dy = 0) {
   });
 }
 
+/**
+ * Ein geöffnetes Dokument (pdf-lib) mit Seitenmodellen und Änderungsverlauf.
+ *
+ * Seitenmodell `model(index)` (zwischengespeichert, bis sich der Content-Stream ändert):
+ *   { page, key, src, ops, glyphs, lines, blocks, objects, fonts, qctm }
+ *   - `ops`: geparster Content-Stream (ContentOp[]), Änderungen werden als neuer Stream geschrieben
+ *   - `blocks`: Textblöcke (siehe text-layout.js)
+ *   - `objects`: Grafikobjekte aus interpretContent() mit zusätzlich `id`, `area`, `background`,
+ *     `selectable` und `cluster` (siehe clusterObjects)
+ *
+ * Rückgängig/Wiederholen: `hist.undo`/`hist.redo` (max. 200 Einträge). Einträge:
+ *   - `{ kind: 'content', label, before: [snap], after: [snap], page }` – Seiteninhalt
+ *   - `{ kind: 'pages', label, before, after, beforeSnaps, afterSnaps }` – Seitenreihenfolge
+ *   - `{ kind: 'multi', label, entries }` – aus `batch()` zusammengefasst
+ *   Ein Snapshot (`snap()`) merkt sich Contents, Resources und Rotate einer Seite.
+ * `version`/`savedVersion` ergeben `dirty`.
+ */
 export class PdfSession {
+  /**
+   * Lädt ein PDF (ohne Metadaten zu ändern), registriert fontkit und repariert Stream-Längen.
+   */
   static async open(bytes, opts = {}) {
     const doc = await PDFDocument.load(bytes, {
       updateMetadata: false,
@@ -225,6 +259,10 @@ export class PdfSession {
     page.node.set(pdfName('Contents'), ref);
     this.models.delete(page.ref.toString());
   }
+  /**
+   * Seitenmodell: Content-Stream parsen und interpretieren, Text in Zeilen/Blöcke gliedern,
+   * Grafikobjekte bewerten (Hintergrund > 80 % der Seite, Clip-Pfade nicht auswählbar) und gruppieren.
+   */
   model(index) {
     const page = this.page(index);
     const key = page.ref.toString();
@@ -340,6 +378,9 @@ export class PdfSession {
     for (let k = count - 1; k >= 0; k--) this.removePage(k);
     pages.forEach((i, n) => this.doc.insertPage(n, i));
   }
+  /**
+   * Fasst alle während `fn` erzeugten Verlaufseinträge zu einem Eintrag zusammen.
+   */
   async batch(label, fn) {
     if (this._batch) return fn();
     const batch = (this._batch = { entries: [] });
@@ -377,6 +418,9 @@ export class PdfSession {
       page: batch.entries[0].page,
     });
   }
+  /**
+   * Neuer Verlaufseintrag; leert „Wiederholen“, begrenzt auf 200 Einträge.
+   */
   push(entry) {
     if (this._batch) {
       this._batch.entries.push(entry);
@@ -651,6 +695,11 @@ export class PdfSession {
     this.setContentSrc(page, this.finalSrc(ops, model.src, null));
     this.push({ kind: 'content', label, before: [before], after: [this.snap(page)], page: index });
   }
+  /**
+   * Verschiebt/skaliert/dreht Grafikobjekte um `matrix` (PDF-Koordinaten): umschließt die
+   * betroffenen Operatoren mit `q <cm> … Q`; liegt das Objekt in einer q/Q-Gruppe nur mit eigenen
+   * Inhalten, wird die ganze Gruppe transformiert, bei Beschneidungspfaden ggf. herausgelöst (liftOps).
+   */
   transformObjects(index, objects, matrix, label = 'Objekt verschoben') {
     const page = this.page(index);
     const model = this.model(index);
@@ -985,6 +1034,9 @@ export class PdfSession {
   async embedImage(bytes, mime) {
     return /png/.test(mime) ? this.doc.embedPng(bytes) : this.doc.embedJpg(bytes);
   }
+  /**
+   * Bettet PNG/JPG ein und hängt `q <cm> /Name Do Q` an den Content-Stream an; `rect` = [x, y, b, h] in pt.
+   */
   async insertImage(index, bytes, mime, rect, label = 'Bild eingefügt', matrix = null) {
     const page = this.page(index);
     const before = this.snap(page);
@@ -1148,6 +1200,11 @@ Q`,
     }
     return seen;
   }
+  /**
+   * Speichert seriell (Sperre gegen parallele Aufrufe). `clean: true` entfernt vorher
+   * unerreichbare Objekte und nutzt Objekt-Streams (für die Datei), `clean: false` dient der
+   * internen Neudarstellung.
+   */
   save(opts) {
     const run = () => this._save(opts);
     const result = (this._saveLock || Promise.resolve()).then(run, run);

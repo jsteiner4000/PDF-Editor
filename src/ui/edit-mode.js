@@ -11,6 +11,22 @@ import { SnapGuides } from './snap-guides.js';
 import { TextEditor } from './text-editor.js';
 import { boxContains, boxInside, hexToRgb, mmToPt, ptToMm, rgbToHex, unionBoxes } from './geometry.js';
 
+/**
+ * Modus „PDF bearbeiten“: Auswahl, Verschieben, Größe ändern, Drehen, Ebenen, Text und Bilder.
+ *
+ * Zeigerereignisse (registriert in `wire()` auf #pages):
+ *   pointerdown → `onDown()`, pointermove → `onHover()`, contextmenu → `onContext()`,
+ *   dblclick → Text bearbeiten. Ziehen läuft in `startDrag()`/`startMarquee()` über
+ *   window-Listener für pointermove/pointerup (ohne Pointer-Capture); ein Zug unter 3 px gilt als
+ *   Klick (dann `drillDown()`). Der Rahmen des Inline-Editors (Verschiebegriff, Breite) hat eigene
+ *   Listener in TextEditor.wire()/dragWidth() mit setPointerCapture.
+ *
+ * Auswahl: `this.sel = { pv, objs, blocks, el }`; `drawSelection()` zeichnet den Rahmen `.sel`
+ * mit acht Griffen `.h` (data-h = nw|n|ne|e|se|s|sw|w) – nur wenn ausschließlich Grafik gewählt ist.
+ * Treffer: `hit()` (kleinster Textblock, sonst kleinstes Objekt, Toleranz 3 px; Rückgabe mit
+ * Gruppe aus dem Cluster), `stackAt()` (alle Elemente unter dem Zeiger, für Alt+Klick/Kontextmenü).
+ * Pfeiltasten sammeln Verschiebungen in `this.nudge` und übernehmen sie nach 400 ms (`flushNudge`).
+ */
 export class EditMode {
   constructor(app) {
     this.app = app;
@@ -169,6 +185,10 @@ export class EditMode {
     const pageEl = ev.target.closest && ev.target.closest('.page');
     return pageEl ? this.app.pvByKey.get(pageEl.dataset.key) : null;
   }
+  /**
+   * Element unter dem Zeiger: zuerst der kleinste Textblock, sonst das kleinste auswählbare
+   * Objekt (Toleranz 3 Bildschirmpixel) samt seiner Gruppe.
+   */
   hit(pv, clientX, clientY) {
     const model = this.session.model(pv.index);
     const [x, y] = pv.clientToPdf(clientX, clientY);
@@ -292,6 +312,12 @@ export class EditMode {
     pv.hov.className = 'bx ' + (hit.block ? 'hov' : 'hovo');
     pv.layer.style.cursor = hit.block ? (hit.block.editable ? 'text' : 'not-allowed') : 'move';
   }
+  /**
+   * Linke Maustaste auf einer Seite: Alt/Strg+Klick wählt das Element dahinter; Klick in die
+   * Auswahl oder auf einen Griff startet Ziehen/Skalieren; „Text/Bild hinzufügen“ platziert;
+   * Klick in Text öffnet den Editor; Klick auf Grafik wählt deren Gruppe und startet das Ziehen;
+   * sonst Auswahlrahmen.
+   */
   async onDown(ev) {
     if (ev.button !== 0) return;
     const pv = this.pvAt(ev);
@@ -373,20 +399,18 @@ export class EditMode {
       stack.length > 1
         ? [
             '-',
-            ...stack
-              .slice(0, 8)
-              .map((o) => ({
-                label: 'Auswählen: ' + this.itemLabel(o),
-                icon:
-                  this.isSelected(o) && this.sel.objs.length + this.sel.blocks.length === 1
-                    ? 'check'
-                    : o.block
-                      ? 'text'
-                      : o.obj.type === 'image'
-                        ? 'image'
-                        : 'layers',
-                run: () => this.select(pv, o.obj ? [o.obj] : [], o.block ? [o.block] : []),
-              })),
+            ...stack.slice(0, 8).map((o) => ({
+              label: 'Auswählen: ' + this.itemLabel(o),
+              icon:
+                this.isSelected(o) && this.sel.objs.length + this.sel.blocks.length === 1
+                  ? 'check'
+                  : o.block
+                    ? 'text'
+                    : o.obj.type === 'image'
+                      ? 'image'
+                      : 'layers',
+              run: () => this.select(pv, o.obj ? [o.obj] : [], o.block ? [o.block] : []),
+            })),
           ]
         : [];
     if (
@@ -647,6 +671,12 @@ export class EditMode {
       blocks: sel.blocks.map((block) => ({ text: block.text, bbox: transformBox(block.bbox) })),
     };
   }
+  /**
+   * Verschieben (handle = null) oder Skalieren über einen Griff. Während des Ziehens wird nur
+   * der Auswahlrahmen (und eine Bildkopie „ghost“) bewegt; beim Loslassen wird die Matrix in
+   * PDF-Koordinaten berechnet und über `applyTransform()` angewendet. Umschalt = Achse sperren bzw.
+   * Seitenverhältnis frei, Alt = ohne Einrasten (SnapGuides).
+   */
   startDrag(ev, pv, handle, clickPoint = null) {
     const sel = this.sel;
     if (!sel || !sel.el) return;
@@ -1311,6 +1341,9 @@ export class EditMode {
     const bitmap = await createImageBitmap(new Blob([bytes], { type }));
     return { bytes, mime: type, w: bitmap.width, h: bitmap.height, name: file.name };
   }
+  /**
+   * Fügt das vorgemerkte Bild mittig am Punkt ein (96 dpi, höchstens halbe Seitenbreite/-höhe).
+   */
   async placeImage(pv, point) {
     const pendingImage = this.pendingImage;
     if (!pendingImage) return;

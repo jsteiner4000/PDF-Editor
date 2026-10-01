@@ -2,6 +2,12 @@
  * IndexedDB-Speicher "pdf-editor" (Stores: fonts, recent).
  */
 
+/**
+ * Datenbank „pdf-editor“ (Version 1). Stores:
+ *   - `fonts`:  Schlüssel = PostScript-Name, Wert = ArrayBuffer der Schriftdatei
+ *   - `recent`: Schlüssel = Dateiname, Wert = { name, handle (FileSystemFileHandle), time }
+ * localStorage wird nicht verwendet.
+ */
 let dbPromise = null;
 
 function openDb() {

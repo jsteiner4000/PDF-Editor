@@ -2,6 +2,11 @@
  * Hilfslinien und Einrasten beim Verschieben/Skalieren.
  */
 
+/**
+ * Hilfslinien beim Ziehen: Seitenmitte, Seitenränder, häufige linke/rechte Kanten (Satzspiegel)
+ * und Kanten/Mitten der übrigen Elemente. `snap()` rastet innerhalb von 6 Bildschirmpixeln ein
+ * und liefert die anzuzeigenden Linien; `show()`/`clear()` zeichnen sie als `.guide` in die Ebene.
+ */
 export class SnapGuides {
   constructor(pv, model, isMoving) {
     this.pv = pv;
