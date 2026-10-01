@@ -304,12 +304,14 @@ test.describe('Ziehen: kein Mitnehmen des nächsten Objekts', () => {
       await page.mouse.down();
       await page.mouse.move(x + 20, y + 30, { steps: 4 });
       // beim zweiten Drücken festhalten, ob die erste Änderung noch läuft (Speichern + Neuladen);
-      // das Neuladen wird zusätzlich verzögert, damit das Zeitfenster sicher getroffen wird
+      // das Neuladen wartet zusätzlich, bis das zweite Objekt losgelassen ist – so wird das
+      // Zeitfenster unabhängig von der Rechnerlast sicher getroffen
       await page.evaluate(() => {
         const r = window.pdfEditor.renderer;
         const load = r.load.bind(r);
+        window.__gate = new Promise((res) => (window.__openGate = res));
         r.load = async (bytes) => {
-          await new Promise((res) => setTimeout(res, 400));
+          await window.__gate;
           return load(bytes);
         };
         window.__downWhileBusy = [];
@@ -326,6 +328,7 @@ test.describe('Ziehen: kein Mitnehmen des nächsten Objekts', () => {
       await page.mouse.move(x2 + 40, y2 - 60, { steps: 6 });
       await page.waitForTimeout(150);
       await page.mouse.up();
+      await page.evaluate(() => window.__openGate());
       await idle(page);
       await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
       // Voraussetzung der Ursache 1b: Das zweite Objekt wurde gegriffen, während die erste Änderung lief
@@ -876,4 +879,191 @@ test.describe('Linien-Griffe und Skalieren', () => {
       await context.close();
     }
   });
+});
+
+/**
+ * Feine Grafik für hohen Zoom: sehr kurze Linie S (1,5 pt), Linie B, deren Anfang 1,5 pt neben dem
+ * Ende von S liegt, und ein kleines re-Rechteck R (4 × 3 pt); alle mit 0,25 pt Strichstärke.
+ */
+async function finePdf() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const page = doc.addPage([595, 842]);
+  const ops = `q 0.25 w 0 0 0 RG
+100 100 m 101.5 100 l S
+Q
+q 0.25 w 0 0 1 RG
+103 100.5 m 110 104 l S
+Q
+q 0.25 w 1 0 0 RG
+112 96 4 3 re S
+Q
+`;
+  page.node.addContentStream(doc.context.register(doc.context.stream(ops)));
+  return Buffer.from(await doc.save({ useObjectStreams: false }));
+}
+
+/** Zoom mit dem PDF-Punkt (x, y) von Seite 1 in der Fenstermitte; wartet auf Vorschau und Detail. */
+async function zoomTo(page, zoom, x, y) {
+  await page.evaluate(
+    ({ zoom, x, y }) => {
+      const app = window.pdfEditor;
+      const s = document.getElementById('scroller');
+      const r = s.getBoundingClientRect();
+      app.setZoom(zoom, null, true, {
+        pv: app.pvs[0],
+        pdf: [x, y],
+        clientX: r.left + s.clientWidth / 2,
+        clientY: r.top + s.clientHeight / 2,
+      });
+    },
+    { zoom, x, y },
+  );
+  for (let i = 0; i < 2; i++) {
+    await idle(page);
+    await page.waitForFunction(() => !window.pdfEditor.detail || !window.pdfEditor.detail.pending, null, {
+      polling: 30,
+    });
+  }
+}
+
+/** Mittelpunkt eines Griffs (Client-Koordinaten). */
+const handleCenter = (page, sel) =>
+  page.evaluate((sel) => {
+    const r = document.querySelector(sel).getBoundingClientRect();
+    return [r.x + r.width / 2, r.y + r.height / 2];
+  }, sel);
+
+for (const zoom of [16, 32])
+  test(`Hoher Zoom ${zoom * 100} %: Treffer, kurze Linie am Endpunkt ziehen und fangen, Pfad bearbeiten, Speichern`, async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser, await finePdf());
+    try {
+      await zoomTo(page, zoom, 107, 100);
+      const k = await scale(page);
+      expect(k).toBeCloseTo(zoom * (96 / 72), 6);
+      const s0 = await state(page);
+      const [S, B, R] = uidsByIndex(s0);
+      // Treffer: halbe Linienbreite + 3 px über der Linie ja, + 9 px nein
+      expect((await clickAt(page, 100.75, 100 + 0.125 + 3 / k)).sel).toEqual([S]);
+      await escape(page);
+      await page.waitForTimeout(600);
+      expect((await clickAt(page, 100.75, 100 + 0.125 + 9 / k)).sel).toEqual([]);
+      // kurze Linie wählen: zwei Endpunkt-Griffe in Bildschirmgröße, nicht übereinander
+      await page.waitForTimeout(600);
+      let s = await clickAt(page, 100.75, 100);
+      expect(s.sel).toEqual([S]);
+      expect(s.handles).toEqual(['p0', 'p1']);
+      const [h0, h1] = [
+        await handleCenter(page, '.sel .h[data-h=p0]'),
+        await handleCenter(page, '.sel .h[data-h=p1]'),
+      ];
+      expect(h1[0] - h0[0]).toBeCloseTo(1.5 * k, 0);
+      expect(h1[0] - h0[0]).toBeGreaterThanOrEqual(28);
+      // Endpunkt frei (Alt) um 12 px nach rechts
+      await page.mouse.move(...h1);
+      await page.mouse.down();
+      await page.keyboard.down('Alt');
+      for (let i = 1; i <= 6; i++) await page.mouse.move(h1[0] + 2 * i, h1[1]);
+      await page.mouse.up();
+      await page.keyboard.up('Alt');
+      await settled(page);
+      s = await state(page);
+      expect(byUid(s, S).nodes[0][1][0]).toBeCloseTo(101.5 + 12 / k, 2);
+      expect(byUid(s, S).nodes[0][1][1]).toBe(100);
+      expect(byUid(s, S).lw).toBe(0.25);
+      // Endpunkt bis 3 px neben den Anfang von B ziehen: rastet exakt ein
+      const p1 = await handleCenter(page, '.sel .h[data-h=p1]');
+      const [bx, by] = await pt(page, 103, 100.5);
+      await page.mouse.move(...p1);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++)
+        await page.mouse.move(p1[0] + ((bx + 3 - p1[0]) * i) / 8, p1[1] + ((by - 2 - p1[1]) * i) / 8);
+      await page.mouse.up();
+      await settled(page);
+      s = await state(page);
+      expect(byUid(s, S).nodes[0]).toEqual([
+        [100, 100],
+        [103, 100.5],
+      ]);
+      expect(byUid(s, B).nodes).toEqual(byUid(s0, B).nodes);
+      // Pfad bearbeiten: Doppelklick auf die Oberkante von R, Ecke oben rechts 10 px nach rechts
+      await escape(page);
+      await page.mouse.dblclick(...(await pt(page, 114, 99)));
+      await settled(page);
+      s = await state(page);
+      expect(s.pe).toEqual({ uid: R, nodes: ['0:2', '0:3'], seg: { sp: 0, k: 2 } });
+      expect((await clickAt(page, 116, 99)).pe.nodes).toEqual(['0:2']);
+      s = await drag(page, 116, 99, 10, 0, { modifiers: ['Shift'] });
+      expect(byUid(s, R).nodes[0][2][0]).toBeCloseTo(116 + 10 / k, 2);
+      expect(byUid(s, R).nodes[0][2][1]).toBe(99);
+      expect(byUid(s, R).nodes[0][1]).toEqual([116, 96]);
+      expect(byUid(s, R).lw).toBe(0.25);
+      expect(s.undo).toEqual(['Linie geändert', 'Linie geändert', 'Punkt verschoben']);
+      // speichern und das Ergebnis im gespeicherten PDF prüfen
+      const bytes = await savedBytes(page);
+      const doc = await PDFDocument.load(bytes);
+      const contents = doc.context.lookup(doc.getPage(0).node.get(PDFName.of('Contents')));
+      const { inflateSync } = await import('node:zlib');
+      const raw = Buffer.from(inflateSync(contents.contents)).toString('latin1');
+      expect(raw).toMatch(/100 100 m\s+103 100\.5 l/);
+      const corner = raw.match(/112 96 m\s+116 96 l\s+([\d.]+) 99 l\s+112 99 l\s+h/);
+      expect(corner).not.toBeNull();
+      expect(+corner[1]).toBeCloseTo(116 + 10 / k, 2);
+      expect(raw).toMatch(/0\.25 w/);
+      expect(raw).not.toMatch(/ cm\b/);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+test('Hand-Werkzeug (Leertaste, mittlere Maustaste) wählt und zieht nichts', async ({ browser }) => {
+  const { page, context, errors } = await setup(browser);
+  try {
+    const s0 = await state(page);
+    const red = uidsByIndex(s0)[5];
+    const [x, y] = await pt(page, 160, 430);
+    await page.mouse.move(x, y);
+    // Leertaste + Ziehen über einem Objekt: Ansicht verschieben, keine Auswahl
+    const top0 = await page.evaluate(() => document.getElementById('scroller').scrollTop);
+    await page.keyboard.down(' ');
+    await page.mouse.down();
+    await page.mouse.move(x, y - 80, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up(' ');
+    await settled(page);
+    let s = await state(page);
+    expect(await page.evaluate(() => document.getElementById('scroller').scrollTop)).toBeGreaterThan(
+      top0 + 40,
+    );
+    expect(s.sel).toEqual([]);
+    expect(s.gesture).toBe(false);
+    // mittlere Maustaste
+    const [x2, y2] = await pt(page, 160, 430);
+    await page.mouse.move(x2, y2);
+    await page.mouse.down({ button: 'middle' });
+    await page.mouse.move(x2, y2 + 60, { steps: 5 });
+    await page.mouse.up({ button: 'middle' });
+    await settled(page);
+    s = await state(page);
+    expect(s.sel).toEqual([]);
+    // linkes Ziehen und dazu die mittlere Taste: Ziehen wird abgebrochen
+    const [x3, y3] = await pt(page, 160, 430);
+    await page.mouse.move(x3, y3);
+    await page.mouse.down();
+    await page.mouse.move(x3 + 30, y3 + 30, { steps: 4 });
+    await page.mouse.down({ button: 'middle' });
+    await page.mouse.move(x3 + 60, y3 + 60, { steps: 4 });
+    await page.mouse.up({ button: 'middle' });
+    await page.mouse.up();
+    await idle(page);
+    s = await state(page);
+    expect(s.drag).toBe(false);
+    expect(s.undo).toEqual([]);
+    expect(byUid(s, red).vis).toEqual(byUid(s0, red).vis);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
