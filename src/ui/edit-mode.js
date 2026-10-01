@@ -1338,6 +1338,7 @@ export class EditMode {
     const infoRaw = pv.infoRaw;
     let width = pendingImage.w * 0.75;
     let height = pendingImage.h * 0.75;
+    if (infoRaw.rotate % 180) [width, height] = [height, width]; // gedrehte Seite: Maße im PDF vertauscht
     const maxWidth = infoRaw.w * 0.5;
     const maxHeight = infoRaw.h * 0.5;
     const fit = Math.min(1, maxWidth / width, maxHeight / height);
