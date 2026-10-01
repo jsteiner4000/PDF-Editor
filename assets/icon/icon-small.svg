@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 1024 1024">
+  <!-- PDF-Editor – Kleinformat fuer 16-48 px: randloser Squircle, ohne Schatten/Griffe; Raster 64 Einheiten = 1 px bei 16 px -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FA4A40"/>
+      <stop offset="1" stop-color="#D3152C"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#bg)" d="M362.19 32L661.81 32C756.89 32 804.42 32 847.29 46.15L855.6 48.18C911.47 68.52 955.48 112.53 975.82 168.4L977.85 176.71C992 219.58 992 267.11 992 362.19L992 661.81C992 756.89 992 804.42 977.85 847.29L975.82 855.6C955.48 911.47 911.47 955.48 855.6 975.82L847.29 977.85C804.42 992 756.89 992 661.81 992L362.19 992C267.11 992 219.58 992 176.71 977.85L168.4 975.82C112.53 955.48 68.52 911.47 48.18 855.6L46.15 847.29C32 804.42 32 756.89 32 661.81L32 362.19C32 267.11 32 219.58 46.15 176.71L48.18 168.4C68.52 112.53 112.53 68.52 168.4 48.18L176.71 46.15C219.58 32 267.11 32 362.19 32Z"/>
+  <path fill="#FFFFFF" d="M296 128H576L768 320V856A40 40 0 0 1 728 896H296A40 40 0 0 1 256 856V168A40 40 0 0 1 296 128Z"/>
+  <path fill="#F2C4C8" d="M576 128V320H768Z"/>
+  <path d="M384 768C576 768 448 448 640 448" fill="none" stroke="#D3152C" stroke-width="64"/>
+  <rect x="320" y="704" width="128" height="128" fill="#D3152C"/>
+  <rect x="576" y="384" width="128" height="128" fill="#D3152C"/>
+</svg>

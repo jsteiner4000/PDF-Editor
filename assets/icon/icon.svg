@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    PDF-Editor – App-Symbol (Master, ab 64 px)
+    Raster nach macOS-App-Icon-Vorlage: 1024er Leinwand, 824er Koerper (100 px Rand fuer Schatten),
+    Kontur als "continuous corner" (Radius 185,4), kein einfaches rx-Rechteck.
+    Motiv: Dokumentblatt mit Eselsohr und Bezier-Kurve mit Ankerpunkten und Griffen.
+    Fuer 16-48 px gilt icon-small.svg. Exporte erzeugt build-icons.mjs.
+  -->
+  <defs>
+    <path id="body" d="M383.41 100L640.59 100C722.19 100 763 100 799.79 112.14L806.92 113.89C854.88 131.34 892.66 169.12 910.11 217.08L911.86 224.21C924 261 924 301.81 924 383.41L924 640.59C924 722.19 924 763 911.86 799.79L910.11 806.92C892.66 854.88 854.88 892.66 806.92 910.11L799.79 911.86C763 924 722.19 924 640.59 924L383.41 924C301.81 924 261 924 224.21 911.86L217.08 910.11C169.12 892.66 131.34 854.88 113.89 806.92L112.14 799.79C100 763 100 722.19 100 640.59L100 383.41C100 301.81 100 261 112.14 224.21L113.89 217.08C131.34 169.12 169.12 131.34 217.08 113.89L224.21 112.14C261 100 301.81 100 383.41 100Z"/>
+    <clipPath id="bodyClip"><use href="#body"/></clipPath>
+    <linearGradient id="bg" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF5A4C"/>
+      <stop offset="0.55" stop-color="#EE2A36"/>
+      <stop offset="1" stop-color="#CC1129"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="512" cy="96" r="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="rim" x1="0" y1="100" x2="0" y2="924" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>
+      <stop offset="0.3" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="0.7" stop-color="#5A0010" stop-opacity="0"/>
+      <stop offset="1" stop-color="#5A0010" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="212" x2="0" y2="812" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F6EEEE"/>
+    </linearGradient>
+    <linearGradient id="flap" x1="724" y1="212" x2="600" y2="336" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EBD6D7"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="300" x2="0" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F23A40"/>
+      <stop offset="1" stop-color="#C80F27"/>
+    </linearGradient>
+    <filter id="iconShadow" x="-10%" y="-10%" width="120%" height="125%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.16"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#000" flood-opacity="0.26"/>
+    </filter>
+    <filter id="liftShadow" x="-20%" y="-20%" width="140%" height="145%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#6E0012" flood-opacity="0.22"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#6E0012" flood-opacity="0.30"/>
+    </filter>
+    <filter id="flapShadow" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="-5" dy="7" stdDeviation="7" flood-color="#6E0012" flood-opacity="0.20"/>
+    </filter>
+  </defs>
+
+  <!-- Koerper: Squircle 824 auf 1024-Raster mit macOS-Schlagschatten -->
+  <use href="#body" fill="url(#bg)" filter="url(#iconShadow)"/>
+  <use href="#body" fill="url(#sheen)"/>
+  <!-- Lichtkante: Kontur doppelt so breit wie sichtbar, innen geclippt -->
+  <use href="#body" fill="none" stroke="url(#rim)" stroke-width="5" clip-path="url(#bodyClip)"/>
+
+  <!-- Dokumentblatt mit Eselsohr -->
+  <g filter="url(#liftShadow)">
+    <path fill="url(#paper)" d="M336 212H591Q596 212 599.5 215.5L720.5 336.5Q724 340 724 345V776A36 36 0 0 1 688 812H336A36 36 0 0 1 300 776V248A36 36 0 0 1 336 212Z"/>
+  </g>
+  <path fill="url(#flap)" filter="url(#flapShadow)" d="M596 214V304A36 36 0 0 0 632 340H722Z"/>
+
+  <!-- Bezier-Kurve mit Ankerpunkten und Griffen -->
+  <g stroke-linecap="round">
+    <path d="M380 692H520M644 440H504" stroke="#E8A9AE" stroke-width="8"/>
+    <path d="M380 692C520 692 504 440 644 440" fill="none" stroke="url(#ink)" stroke-width="30"/>
+  </g>
+  <circle cx="520" cy="692" r="16" fill="#D9303B"/>
+  <circle cx="504" cy="440" r="16" fill="#D9303B"/>
+  <rect x="352" y="664" width="56" height="56" rx="7" fill="#D41A2E"/>
+  <rect x="619" y="415" width="50" height="50" rx="5" fill="#FFFFFF" stroke="#D41A2E" stroke-width="9"/>
+</svg>
