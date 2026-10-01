@@ -25,6 +25,38 @@ const parseCssColor = (css) => {
 const roundTo = (value, factor = 1000) => Math.round(value * factor) / factor;
 
 /**
+ * Verfolgt einen Zug mit Pointer-Capture auf `el`, bis losgelassen wird – auch bei
+ * pointercancel, Verlust des Captures oder einem verpassten pointerup (Bewegung ohne gedrückte
+ * Taste). `onEnd` wird genau einmal aufgerufen.
+ */
+function trackPointer(el, downEv, onMove, onEnd) {
+  const ac = new AbortController();
+  const id = downEv.pointerId;
+  let done = false;
+  const end = () => {
+    if (done) return;
+    done = true;
+    ac.abort();
+    try {
+      if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+    } catch {}
+    onEnd();
+  };
+  const opts = { signal: ac.signal };
+  el.addEventListener(
+    'pointermove',
+    (e) => {
+      if (e.pointerId !== id) return;
+      if ((e.buttons & 1) === 0) return end();
+      onMove(e);
+    },
+    opts,
+  );
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+    el.addEventListener(type, (e) => e.pointerId === id && end(), opts);
+}
+
+/**
  * Inline-Editor für einen Textblock (oder neuen Text): baut aus den Glyphen ein
  * contentEditable-Element mit Absätzen/Spans in der Originalschrift (`buildFromBlock`), richtet die
  * Grundlinien an der PDF-Darstellung aus (`calibrate`) und wandelt den Inhalt beim Übernehmen
@@ -340,7 +372,7 @@ export class TextEditor {
           anchorByGlyph.set(bestGlyph, anchorId);
           this.anchors.set(anchorId, { x: bestGlyph.x, y: bestGlyph.y, objs: [] });
         }
-        this.anchors.get(anchorId).objs.push({ type: obj.type, vis: obj.vis.slice() });
+        this.anchors.get(anchorId).objs.push({ uid: obj.uid, type: obj.type, vis: obj.vis.slice() });
       }
     } catch (err) {
       console.warn(err);
@@ -796,13 +828,10 @@ export class TextEditor {
         this.dirty = true;
       };
       const onUp = () => {
-        frame.removeEventListener('pointermove', onMove);
-        frame.removeEventListener('pointerup', onUp);
         if (guides) guides.clear();
         te.focus();
       };
-      frame.addEventListener('pointermove', onMove);
-      frame.addEventListener('pointerup', onUp);
+      trackPointer(frame, ev, onMove, onUp);
     });
   }
   dragWidth(ev) {
@@ -827,13 +856,7 @@ export class TextEditor {
       te.style.width = Math.max(12, (te.offsetWidth, startWidth + dx)) + 'px';
       this.dirty = true;
     };
-    const onUp = () => {
-      target.removeEventListener('pointermove', onMove);
-      target.removeEventListener('pointerup', onUp);
-      te.focus();
-    };
-    target.addEventListener('pointermove', onMove);
-    target.addEventListener('pointerup', onUp);
+    trackPointer(target, ev, onMove, () => te.focus());
   }
   cleanup() {
     for (const el of [...this.te.querySelectorAll('font,b,strong,i,em,u')]) {
