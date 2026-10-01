@@ -101,7 +101,10 @@ nachgezeichnet.
   zoomen“ wählen.
 - Leertaste gedrückt halten und mit der Maus ziehen (oder mit gedrückter
   mittlerer Maustaste ziehen): Ausschnitt verschieben, ohne etwas auszuwählen.
-  Beim Schreiben in einem Textfeld bleibt die Leertaste ein Leerzeichen.
+  Im Dokument blättert die Leertaste deshalb nicht mehr seitenweise weiter
+  (dafür Bild ab/Bild auf). Beim Schreiben in einem Text oder Eingabefeld
+  bleibt sie ein Leerzeichen; auf einer ausgewählten Schaltfläche oder einem
+  Menüeintrag löst sie diesen wie gewohnt aus.
 
 
 SPEICHERN

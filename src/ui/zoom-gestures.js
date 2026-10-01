@@ -6,7 +6,18 @@
 /** Mausrad-Ausschlag (CSS-px), der einer Zoomstufe entspricht. */
 const WHEEL_STEP = 50;
 
-const isField = (el) => !!el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+/**
+ * Umrechnung zeilenweiser Mausrad-Ausschläge (deltaMode 1, z. B. Firefox oder Windows-Einstellung
+ * „Zeilen“) in CSS-px: Chrome rechnet intern mit rund 33 px je Zeile (100 px je Raste ≙ 3 Zeilen).
+ */
+const WHEEL_LINE_PX = 100 / 3;
+
+/**
+ * Elemente, auf denen die Leertaste ihre eigene Bedeutung behält (Schaltflächen, Links,
+ * Menüeinträge, Felder, alles Fokussierbare, Menüs und Dialoge).
+ */
+const KEEPS_SPACE =
+  'button, a[href], input, textarea, select, [contenteditable], [role=menuitem], [role=button], [tabindex], .menu, .backdrop, dialog';
 
 /**
  * Gesten für `app` (App) im Scrollbereich `scroller`.
@@ -27,9 +38,6 @@ export class ZoomGestures {
     this.pan = null;
     scroller.addEventListener('wheel', (ev) => this.onWheel(ev), { passive: false });
     scroller.addEventListener('pointerdown', (ev) => this.onPointerDown(ev), { capture: true });
-    scroller.addEventListener('mousedown', (ev) => {
-      if (ev.button === 1) ev.preventDefault(); // kein Auto-Scrollen mit der mittleren Taste
-    });
     window.addEventListener('keydown', (ev) => this.onKeyDown(ev));
     window.addEventListener('keyup', (ev) => this.onKeyUp(ev));
     window.addEventListener('blur', () => {
@@ -42,7 +50,8 @@ export class ZoomGestures {
     ev.preventDefault();
     if (!this.app.session) return;
     const anchor = { clientX: ev.clientX, clientY: ev.clientY };
-    const dy = ev.deltaY * (ev.deltaMode === 1 ? 33 : ev.deltaMode === 2 ? 800 : 1);
+    const unit = ev.deltaMode === 1 ? WHEEL_LINE_PX : ev.deltaMode === 2 ? this.scroller.clientHeight : 1;
+    const dy = ev.deltaY * unit;
     if (!dy) return;
     const notched =
       this.ctrlDown || ev.deltaMode !== 0 || (Math.abs(dy) >= WHEEL_STEP && Number.isInteger(dy));
@@ -60,14 +69,21 @@ export class ZoomGestures {
     this.wheelAcc = 0;
     this.app.zoomStep(dir, anchor);
   }
+  /** Liegt der Fokus im Dokumentbereich (oder nirgends), ohne eigene Bedeutung der Leertaste? */
+  focusInDocument(el) {
+    if (!el || el === document.body || el === document.documentElement || el === this.scroller) return true;
+    if (!this.scroller.contains(el)) return false;
+    const owner = el.closest(KEEPS_SPACE); // der Scrollbereich selbst hat tabindex
+    return !owner || owner === this.scroller;
+  }
   /** Darf die Leertaste gerade das Hand-Werkzeug auslösen? */
   canPan(ev) {
     const app = this.app;
     return (
       app.session &&
-      !isField(ev.target) &&
-      !isField(document.activeElement) &&
-      !document.querySelector('.backdrop') &&
+      this.focusInDocument(document.activeElement) &&
+      this.focusInDocument(ev.target) &&
+      !document.querySelector('.backdrop, .menu') &&
       !this.scroller.classList.contains('hidden') &&
       !(app.edit && (app.edit.editor || (app.edit.curReq && !app.edit.curReq.done)))
     );
@@ -91,6 +107,16 @@ export class ZoomGestures {
     this.scroller.classList.toggle('pan-ready', on);
   }
   onPointerDown(ev) {
+    // Klick in den Dokumentbereich holt den Fokus von Schaltflächen/Kacheln zurück, damit die
+    // Leertaste danach wieder das Hand-Werkzeug ist (Felder und Texteditor bleiben unberührt).
+    const active = document.activeElement;
+    if (
+      active &&
+      active !== this.scroller &&
+      !this.scroller.contains(active) &&
+      active.matches('button, a[href], [role=menuitem], [role=button]')
+    )
+      this.scroller.focus({ preventScroll: true });
     const middle = ev.button === 1 && ev.pointerType === 'mouse';
     if (!((this.spaceDown && ev.button === 0) || middle) || !this.app.session) return;
     ev.preventDefault();
