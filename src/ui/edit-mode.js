@@ -695,26 +695,9 @@ export class EditMode {
     };
     let ghost = null;
     if (pv.rot === 0 && pv.canvas.width) {
-      const pxPerLayer = pv.canvas.width / pv.dw;
-      ghost = document.createElement('canvas');
+      // Bildkopie aus Vorschau und (bei hohem Zoom) scharfem Detail-Canvas
+      ghost = pv.snapshot(start.left, start.top, start.width, start.height);
       ghost.className = 'ghost';
-      ghost.width = Math.max(1, Math.round(start.width * pxPerLayer));
-      ghost.height = Math.max(1, Math.round(start.height * pxPerLayer));
-      try {
-        ghost
-          .getContext('2d')
-          .drawImage(
-            pv.canvas,
-            start.left * pxPerLayer,
-            start.top * pxPerLayer,
-            start.width * pxPerLayer,
-            start.height * pxPerLayer,
-            0,
-            0,
-            ghost.width,
-            ghost.height,
-          );
-      } catch {}
       Object.assign(ghost.style, {
         left: start.left + 'px',
         top: start.top + 'px',
