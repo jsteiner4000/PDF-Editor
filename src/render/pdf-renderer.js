@@ -19,9 +19,16 @@ function getPdfWorker() {
 }
 
 /**
+ * Höchstzahl der Pixel eines Vorschau-Canvas (ganze Seite). Darüber wird die Seite verkleinert
+ * gerendert und vom Browser hochskaliert; die Schärfe im sichtbaren Ausschnitt liefert dann der
+ * Detail-Canvas (siehe DetailRenderer).
+ */
+export const PREVIEW_MAX_PX = 4e6;
+
+/**
  * Darstellung mit pdf.js: `load()` lädt die aktuellen PDF-Bytes (veraltete Ladevorgänge werden
- * über `gen` verworfen), `render()` zeichnet eine Seite mit zoom × devicePixelRatio, höchstens
- * 16 Mio. Pixel (`maxPx`).
+ * über `gen` verworfen), `render()` zeichnet eine ganze Seite mit zoom × devicePixelRatio,
+ * höchstens `maxPx` Pixel, `renderRegion()` nur einen Ausschnitt in voller Auflösung.
  */
 export class PdfRenderer {
   constructor() {
@@ -48,6 +55,10 @@ export class PdfRenderer {
     if (previous) setTimeout(() => previous.destroy(), 1500);
     return true;
   }
+  /**
+   * Rendert die ganze Seite `index` in `target` (Canvas wird erst nach Abschluss ersetzt, damit
+   * während des Renderns das alte Bild stehen bleibt). Liefert false bei Abbruch.
+   */
   async render(index, target, scale, opts = {}) {
     const doc = this.doc;
     if (!doc) return false;
@@ -59,9 +70,33 @@ export class PdfRenderer {
       viewport = page.getViewport({
         scale: scale * dpr * Math.sqrt(maxPx / (viewport.width * viewport.height)),
       });
+    const canvas = await this._paint(page, viewport, viewport.width, viewport.height, opts);
+    if (!canvas) return false;
+    target.width = canvas.width;
+    target.height = canvas.height;
+    target.getContext('2d').drawImage(canvas, 0, 0);
+    canvas.width = canvas.height = 0;
+    return true;
+  }
+  /**
+   * Rendert nur den Ausschnitt `region` ({x, y, width, height} in Geräte-Pixeln der ganzen Seite
+   * bei `deviceScale` = Geräte-Pixel je PDF-Punkt) in einen neuen Canvas und gibt ihn zurück
+   * (null bei Abbruch oder fehlendem Dokument). pdf.js verschiebt dazu den Viewport; gezeichnet
+   * wird nur, was im Canvas liegt – Speicher und Rasterung hängen von der Ausschnittgröße ab,
+   * nicht vom Zoom.
+   */
+  async renderRegion(index, deviceScale, region, opts = {}) {
+    const doc = this.doc;
+    if (!doc) return null;
+    const page = await doc.getPage(index + 1);
+    if (opts.isStale && opts.isStale()) return null;
+    const viewport = page.getViewport({ scale: deviceScale, offsetX: -region.x, offsetY: -region.y });
+    return this._paint(page, viewport, region.width, region.height, opts);
+  }
+  async _paint(page, viewport, width, height, opts) {
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.floor(viewport.width));
-    canvas.height = Math.max(1, Math.floor(viewport.height));
+    canvas.width = Math.max(1, Math.floor(width));
+    canvas.height = Math.max(1, Math.floor(height));
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -70,12 +105,10 @@ export class PdfRenderer {
     try {
       await task.promise;
     } catch (err) {
-      if (err && err.name === 'RenderingCancelledException') return false;
+      canvas.width = canvas.height = 0;
+      if (err && err.name === 'RenderingCancelledException') return null;
       throw err;
     }
-    target.width = canvas.width;
-    target.height = canvas.height;
-    target.getContext('2d').drawImage(canvas, 0, 0);
-    return true;
+    return canvas;
   }
 }
