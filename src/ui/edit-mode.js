@@ -10,21 +10,41 @@ import { idbPut } from '../storage/idb.js';
 import { SnapGuides } from './snap-guides.js';
 import { TextEditor } from './text-editor.js';
 import { boxContains, boxInside, hexToRgb, mmToPt, ptToMm, rgbToHex, unionBoxes } from './geometry.js';
+import { Gesture } from './gesture.js';
+import { blockAt, objectHit, objectHits, pagePaths, pickObject, pxPerPt } from './hit-test.js';
+import { PathEditor, constrainAngle, toUser } from './path-edit.js';
+import { cloneSubpaths, isLineLike, moveNodes, svgPath } from '../pdf/path-geometry.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Griffe ab dieser Rahmengröße (Bildschirmpixel) anzeigen, damit sie nie übereinanderliegen. */
+const HANDLE_MIN_SIDE = 24;
+const HANDLE_MID_SIDE = 56;
+
+const isTranslationMatrix = (m) => m[0] === 1 && m[3] === 1 && m[1] === 0 && m[2] === 0;
 
 /**
  * Modus „PDF bearbeiten“: Auswahl, Verschieben, Größe ändern, Drehen, Ebenen, Text und Bilder.
  *
  * Zeigerereignisse (registriert in `wire()` auf #pages):
  *   pointerdown → `onDown()`, pointermove → `onHover()`, contextmenu → `onContext()`,
- *   dblclick → Text bearbeiten. Ziehen läuft in `startDrag()`/`startMarquee()` über
- *   window-Listener für pointermove/pointerup (ohne Pointer-Capture); ein Zug unter 3 px gilt als
- *   Klick (dann `drillDown()`). Der Rahmen des Inline-Editors (Verschiebegriff, Breite) hat eigene
- *   Listener in TextEditor.wire()/dragWidth() mit setPointerCapture.
+ *   dblclick → Text bzw. Pfad bearbeiten.
+ *
+ * Gesten: `onDown()` legt synchron eine `Gesture` an (Pointer-Capture, pointerup/-cancel,
+ * lostpointercapture, Esc). Ist noch eine Textbearbeitung oder eine Änderung in Arbeit, wird der
+ * Klick erst danach ausgewertet (`resolveDown()`); wurde die Taste bis dahin schon losgelassen,
+ * wird nur ausgewählt, nie gezogen. Ein Zug unter 3 px gilt als Klick.
+ *
+ * Änderungen laufen nacheinander über `enqueue()` (exklusiv zur Speicherung, siehe
+ * PdfSession.exclusive) und beziehen sich auf feste Ziele: die `uid` der Objekte zum Zeitpunkt des
+ * Ziehbeginns. Danach wird die Auswahl über die uid aktualisiert; ein Generationszähler
+ * (`selGen`) verhindert, dass eine spät fertige Änderung eine neuere Auswahl überschreibt.
  *
  * Auswahl: `this.sel = { pv, objs, blocks, el }`; `drawSelection()` zeichnet den Rahmen `.sel`
- * mit acht Griffen `.h` (data-h = nw|n|ne|e|se|s|sw|w) – nur wenn ausschließlich Grafik gewählt ist.
- * Treffer: `hit()` (kleinster Textblock, sonst kleinstes Objekt, Toleranz 3 px; Rückgabe mit
- * Gruppe aus dem Cluster), `stackAt()` (alle Elemente unter dem Zeiger, für Alt+Klick/Kontextmenü).
+ * mit Griffen `.h` (data-h = nw|n|ne|e|se|s|sw|w, bei Linien p0|p1 für die Endpunkte).
+ * Treffer: `hit()` über die Geometrie (hit-test.js): Strichabstand statt Rechteck, leeres Inneres
+ * ungefüllter Pfade ist nicht treffbar, Toleranzen in Bildschirmpixeln.
+ * Doppelklick oder Klick auf ein ausgewähltes Pfadobjekt öffnet „Pfad bearbeiten“ (`this.pe`).
  * Pfeiltasten sammeln Verschiebungen in `this.nudge` und übernehmen sie nach 400 ms (`flushNudge`).
  */
 export class EditMode {
@@ -32,19 +52,35 @@ export class EditMode {
     this.app = app;
     this.editor = null;
     this.sel = null;
+    this.selGen = 0;
+    this.pe = null;
+    this.gesture = null;
+    this.downSeq = 0;
     this.armed = null;
     this.lastStyle = null;
     this._finishing = null;
+    this._committing = null;
+    this._queue = Promise.resolve();
+    this.pendingOps = 0;
   }
   get session() {
     return this.app.session;
   }
+  /** Läuft noch etwas (Änderung, gesammelte Pfeiltasten, Textübernahme)? */
+  get busy() {
+    return !!(this.pendingOps || this.nudge || (this.pe && this.pe.nudgeDelta) || this._finishing);
+  }
   reset() {
     document.body.classList.remove('editing');
+    if (this.gesture) this.gesture.cancel();
     if (this.editor) {
       this.editor.destroy();
       this.editor = null;
     }
+    if (this.pe) this.pe.destroy();
+    this.pe = null;
+    clearTimeout(this.nudgeT);
+    this.nudge = null;
     this.sel = null;
     this.armed = null;
     this.active = false;
@@ -68,6 +104,9 @@ export class EditMode {
     for (const pv of this.app.pvs) if (pv.visible) this.drawBoxes(pv);
   }
   leave() {
+    if (this.gesture) this.gesture.cancel();
+    this.flushNudge();
+    this.exitPathEdit();
     this.active = false;
     this.arm(null);
     this.clearSelection();
@@ -81,6 +120,7 @@ export class EditMode {
         if (pv.visible) this.drawBoxes(pv);
       }
       this.drawSelection();
+      if (this.pe) this.pe.draw();
     }
   }
   afterSync() {
@@ -90,7 +130,9 @@ export class EditMode {
         const pendingReselect = this.pendingReselect;
         this.pendingReselect = null;
         this.reselect(pendingReselect);
-      }
+      } else this.refreshSelection();
+      if (this.pe && !this.pe.validate()) this.exitPathEdit();
+      else if (this.pe) this.pe.draw();
       this.updatePanel();
     }
   }
@@ -137,12 +179,22 @@ export class EditMode {
     pv.hov = document.createElement('div');
     pv.hov.className = 'bx hidden';
     pv.ov.appendChild(pv.hov);
+    pv.hl = document.createElementNS(SVG_NS, 'svg');
+    pv.hl.setAttribute('class', 'hl');
+    pv.ov.appendChild(pv.hl);
   }
   wire() {
     this.wired = true;
     window.addEventListener(
       'keydown',
       (ev) => {
+        if (ev.key === 'Escape' && this.gesture) {
+          // laufendes Ziehen abbrechen: alles bleibt, wie es war
+          ev.preventDefault();
+          ev.stopPropagation();
+          this.gesture.cancel();
+          return;
+        }
         if (ev.key === 'Escape') this.escGen = (this.escGen || 0) + 1;
         const curReq = this.curReq;
         if (!(!curReq || curReq.done || ev.ctrlKey || ev.metaKey || ev.altKey)) {
@@ -165,59 +217,65 @@ export class EditMode {
       if (this.active) this.onDown(ev);
     });
     pages.addEventListener('pointermove', (ev) => {
-      if (this.active && !this.drag) this.onHover(ev);
+      if (this.active && !this.drag && !this.gesture) this.onHover(ev);
     });
     pages.addEventListener('pointerleave', () => {
-      for (const pv of this.app.pvs) if (pv.hov) pv.hov.classList.add('hidden');
+      for (const pv of this.app.pvs) this.hideHover(pv);
+      if (this.pe) this.pe.setHover(null);
     });
     pages.addEventListener('contextmenu', (ev) => {
       if (this.active) this.onContext(ev);
     });
     pages.addEventListener('dblclick', (ev) => {
-      if (!this.active) return;
+      if (!this.active || this.armed) return;
       const pv = this.pvAt(ev);
       if (!pv) return;
+      // Pfade: Doppelklick wird in resolveDown() erkannt (das native dblclick fehlt, wenn
+      // der erste Klick die Auswahl und damit das Element unter dem Zeiger ersetzt)
       const hit = this.hit(pv, ev.clientX, ev.clientY);
       if (hit && hit.block && hit.block.editable) this.startEdit(pv, hit.block, [ev.clientX, ev.clientY]);
     });
   }
+  /** Seitenansicht unter dem Zeiger (auch wenn das Ereignis wegen Pointer-Capture auf #pages zielt). */
   pvAt(ev) {
-    const pageEl = ev.target.closest && ev.target.closest('.page');
-    return pageEl ? this.app.pvByKey.get(pageEl.dataset.key) : null;
+    const pageEl = ev.target && ev.target.closest && ev.target.closest('.page');
+    if (pageEl) return this.app.pvByKey.get(pageEl.dataset.key) || null;
+    return this.pvAtPoint(ev.clientX, ev.clientY);
+  }
+  pvAtPoint(clientX, clientY) {
+    for (const pv of this.app.pvs) {
+      if (!pv.visible) continue;
+      const r = pv.el.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return pv;
+    }
+    return null;
   }
   /**
-   * Element unter dem Zeiger: zuerst der kleinste Textblock, sonst das kleinste auswählbare
-   * Objekt (Toleranz 3 Bildschirmpixel) samt seiner Gruppe.
+   * Element unter dem Zeiger: Objekte über ihre Geometrie (siehe hit-test.js); ein Textblock hat
+   * Vorrang, außer der Zeiger liegt direkt auf einem Strich. Rückgabe `{ block }` oder
+   * `{ obj, group, info }` (Gruppe = Cluster des Objekts).
    */
   hit(pv, clientX, clientY) {
     const model = this.session.model(pv.index);
     const [x, y] = pv.clientToPdf(clientX, clientY);
-    const tolerance = 3 / pv.scale;
-    const block = model.blocks
-      .filter((block2) => boxContains(block2.bbox, x, y, 1))
-      .sort(
-        (h, u) =>
-          (h.bbox[2] - h.bbox[0]) * (h.bbox[3] - h.bbox[1]) -
-          (u.bbox[2] - u.bbox[0]) * (u.bbox[3] - u.bbox[1]),
-      )[0];
-    if (block) return { block };
-    const objects = model.objects.filter((obj2) => obj2.selectable && boxContains(obj2.vis, x, y, tolerance));
-    if (!objects.length) return null;
-    objects.sort((h, u) => h.area - u.area);
-    const obj = objects[0];
-    return { obj, group: obj.cluster ? obj.cluster.members : [obj] };
+    const ppt = pxPerPt(pv);
+    const best = pickObject(objectHits(model, x, y, ppt));
+    const block = blockAt(model, x, y, ppt);
+    if (block && !(best && best.ink && best.stroke)) return { block };
+    if (!best) return null;
+    const obj = best.obj;
+    return { obj, group: obj.cluster ? obj.cluster.members : [obj], info: best };
   }
+  /** Alle Elemente unter dem Zeiger (für Alt+Klick und Kontextmenü), oberstes Objekt zuerst. */
   stackAt(pv, clientX, clientY) {
     const model = this.session.model(pv.index);
     const [x, y] = pv.clientToPdf(clientX, clientY);
-    const tolerance = 3 / pv.scale;
+    const ppt = pxPerPt(pv);
     const area = (box) => (box[2] - box[0]) * (box[3] - box[1]);
     const blocks = model.blocks
-      .filter((block) => boxContains(block.bbox, x, y, 1))
+      .filter((block) => boxContains(block.bbox, x, y, 2 / ppt))
       .sort((h, u) => area(h.bbox) - area(u.bbox));
-    const objects = model.objects
-      .filter((obj) => obj.selectable && boxContains(obj.vis, x, y, tolerance))
-      .reverse();
+    const objects = objectHits(model, x, y, ppt).map((h) => h.obj);
     return [...blocks.map((h) => ({ block: h })), ...objects.map((h) => ({ obj: h }))];
   }
   itemLabel(item) {
@@ -245,7 +303,9 @@ export class EditMode {
   }
   isSelected(item) {
     const sel = this.sel;
-    return !!sel && (item.obj ? sel.objs.includes(item.obj) : sel.blocks.includes(item.block));
+    if (!sel) return false;
+    if (item.obj) return sel.objs.some((o) => o === item.obj || o.uid === item.obj.uid);
+    return sel.blocks.some((b) => b === item.block || (b.id === item.block.id && b.text === item.block.text));
   }
   selectBehind(pv, clientX, clientY) {
     const stack = this.stackAt(pv, clientX, clientY);
@@ -264,21 +324,32 @@ export class EditMode {
     );
     return true;
   }
-  drillDown(pv, clientX, clientY) {
+  /**
+   * Klick auf etwas bereits Ausgewähltes (ohne Ziehen): in einer Gruppe nur dieses Element
+   * wählen; ein einzelner Textblock wird bearbeitet; ein einzelnes Pfadobjekt öffnet „Pfad
+   * bearbeiten“ mit dem angeklickten Segment.
+   */
+  clickSelected(pv, down, hit) {
     const sel = this.sel;
-    if (!(!sel || sel.pv !== pv))
-      if (sel.objs.length + sel.blocks.length > 1) {
-        const hits = this.stackAt(pv, clientX, clientY).filter((o) => this.isSelected(o));
-        if (!hits.length) return;
-        const objHits = hits.filter((o) => o.obj).sort((o, l) => o.obj.area - l.obj.area);
-        const target = hits.find((o) => o.block) || objHits[0];
-        this.select(pv, target.obj ? [target.obj] : [], target.block ? [target.block] : []);
-        this.hintOnce(
-          'drill',
-          'Nur dieses Element ausgewählt. Alt+Klick wählt das Element dahinter, Rechtsklick zeigt alle Elemente an dieser Stelle.',
-        );
-      } else if (sel.blocks.length === 1 && sel.blocks[0].editable)
-        this.startEdit(pv, sel.blocks[0], [clientX, clientY]);
+    if (!sel || sel.pv !== pv) return;
+    if (sel.objs.length + sel.blocks.length > 1) {
+      if (!hit) return;
+      this.select(pv, hit.obj ? [hit.obj] : [], hit.block ? [hit.block] : []);
+      this.hintOnce(
+        'drill',
+        'Nur dieses Element ausgewählt. Alt+Klick wählt das Element dahinter, Rechtsklick zeigt alle Elemente an dieser Stelle.',
+      );
+    } else if (sel.blocks.length === 1 && sel.blocks[0].editable)
+      this.startEdit(pv, sel.blocks[0], [down.x, down.y]);
+    else if (
+      sel.objs.length === 1 &&
+      hit &&
+      hit.obj &&
+      hit.obj.uid === sel.objs[0].uid &&
+      hit.obj.type === 'path' &&
+      hit.obj.geom
+    )
+      this.enterPathEdit(pv, hit.obj, down.pt);
   }
   hintOnce(id, message) {
     this._hints = this._hints || new Set();
@@ -287,105 +358,235 @@ export class EditMode {
       toast(message, '', 4200);
     }
   }
+  hideHover(pv) {
+    if (pv.hov) pv.hov.classList.add('hidden');
+    if (pv.hl) pv.hl.replaceChildren();
+  }
+  /** Hervorhebung: Umriss der Objekte, die ein Klick an dieser Stelle auswählen würde. */
+  showObjectHover(pv, objs) {
+    if (!pv.hl) return;
+    const map = (p) => pv.pdfToLayer(p[0], p[1]);
+    const frag = document.createDocumentFragment();
+    for (const obj of objs.slice(0, 200)) {
+      const path = document.createElementNS(SVG_NS, 'path');
+      if (obj.type === 'path' && obj.geom && obj.geom.subpaths.length) {
+        path.setAttribute('d', svgPath(pagePaths(obj), map));
+        if (obj.fill && !obj.stroke) path.setAttribute('class', 'area');
+      } else {
+        const b = pv.boxOf(obj.vis);
+        path.setAttribute('d', `M${b.left} ${b.top}h${b.width}v${b.height}h${-b.width}Z`);
+      }
+      frag.appendChild(path);
+    }
+    pv.hl.replaceChildren(frag);
+  }
+  /** Liegt der Punkt (Client) in der aktuellen Auswahl? Linien: nur auf dem Strich. */
+  inSelection(pv, clientX, clientY) {
+    const sel = this.sel;
+    if (!sel || sel.pv !== pv) return false;
+    const [x, y] = pv.clientToPdf(clientX, clientY);
+    const ppt = pxPerPt(pv);
+    if (sel.objs.length === 1 && !sel.blocks.length && isLineLike(sel.objs[0]))
+      return !!objectHit(sel.objs[0], x, y, ppt);
+    return boxContains(this.selBox(), x, y, 4 / ppt);
+  }
   onHover(ev) {
     const pv = this.pvAt(ev);
-    for (const other of this.app.pvs) if (other !== pv && other.hov) other.hov.classList.add('hidden');
+    for (const other of this.app.pvs) if (other !== pv) this.hideHover(other);
     if (!pv || !pv.hov || this.armed) return;
-    if (ev.target.closest('.sel,.te-frame,.te-warn')) {
-      pv.hov.classList.add('hidden');
-      return;
-    }
-    const hit = this.hit(pv, ev.clientX, ev.clientY);
-    const bbox = hit ? (hit.block ? hit.block.bbox : unionBoxes(hit.group.map((A) => A.vis))) : null;
-    if (!bbox || (this.editor && hit.block && this.editor.block && hit.block.id === this.editor.block.id)) {
-      pv.hov.classList.add('hidden');
+    const target = ev.target;
+    if (target.closest('.te-frame,.te-warn') || target.closest('.sel .h')) {
+      this.hideHover(pv);
       pv.layer.style.cursor = '';
       return;
     }
-    const box = pv.boxOf(bbox);
-    Object.assign(pv.hov.style, {
-      left: box.left + 'px',
-      top: box.top + 'px',
-      width: box.width + 'px',
-      height: box.height + 'px',
-    });
-    pv.hov.className = 'bx ' + (hit.block ? 'hov' : 'hovo');
-    pv.layer.style.cursor = hit.block ? (hit.block.editable ? 'text' : 'not-allowed') : 'move';
-  }
-  /**
-   * Linke Maustaste auf einer Seite: Alt/Strg+Klick wählt das Element dahinter; Klick in die
-   * Auswahl oder auf einen Griff startet Ziehen/Skalieren; „Text/Bild hinzufügen“ platziert;
-   * Klick in Text öffnet den Editor; Klick auf Grafik wählt deren Gruppe und startet das Ziehen;
-   * sonst Auswahlrahmen.
-   */
-  async onDown(ev) {
-    if (ev.button !== 0) return;
-    const pv = this.pvAt(ev);
-    if (
-      !pv ||
-      (this.nudge &&
-        (this._nudging
-          ? ((this.nudge = null), clearTimeout(this.nudgeT))
-          : (clearTimeout(this.nudgeT), this.flushNudge())),
-      ev.target.closest('.te-frame') || ev.target.closest('.te-warn'))
-    )
-      return;
-    const clientX = ev.clientX;
-    const clientY = ev.clientY;
-    const pickBehind =
-      (ev.altKey || ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !this.armed && !ev.target.dataset.h;
-    if (pickBehind && !this.editor) {
-      ev.preventDefault();
-      if (this.selectBehind(pv, clientX, clientY)) return this.startDrag(ev, pv, null);
-      this.clearSelection();
+    if (this.pe && this.pe.pv === pv) {
+      const [x, y] = pv.clientToPdf(ev.clientX, ev.clientY);
+      const pick = this.pe.pick(x, y, target.closest('.pa'));
+      this.pe.setHover(pick && pick.seg ? pick.seg : null);
+      if (pick) {
+        this.hideHover(pv);
+        pv.layer.style.cursor = pick.node ? 'crosshair' : 'move';
+        return;
+      }
+    }
+    const hit = this.hit(pv, ev.clientX, ev.clientY);
+    if (!hit || (this.editor && hit.block && this.editor.block && hit.block.id === this.editor.block.id)) {
+      this.hideHover(pv);
+      pv.layer.style.cursor = !hit && this.inSelection(pv, ev.clientX, ev.clientY) ? 'move' : '';
       return;
     }
-    if (ev.target.closest('.sel'))
-      return this.startDrag(
-        ev,
-        pv,
-        ev.target.dataset.h || null,
-        ev.target.dataset.h ? null : { x: clientX, y: clientY },
-      );
+    if (hit.block) {
+      if (pv.hl) pv.hl.replaceChildren();
+      const box = pv.boxOf(hit.block.bbox);
+      Object.assign(pv.hov.style, {
+        left: box.left + 'px',
+        top: box.top + 'px',
+        width: box.width + 'px',
+        height: box.height + 'px',
+      });
+      pv.hov.className = 'bx hov';
+      pv.layer.style.cursor = hit.block.editable ? 'text' : 'not-allowed';
+      return;
+    }
+    pv.hov.classList.add('hidden');
+    const selected = this.isSelected({ obj: hit.obj });
+    const multi = this.sel && this.sel.objs.length + this.sel.blocks.length > 1;
+    this.showObjectHover(pv, selected ? (multi ? [hit.obj] : []) : hit.group);
+    pv.layer.style.cursor = 'move';
+  }
+  /** Ist alles abgeschlossen, was das Modell ändert (Textübernahme, Änderungswarteschlange)? */
+  isReady() {
+    return !this.editor && !this._committing && this.pendingOps === 0;
+  }
+  /** Wartet, bis `isReady()` gilt. */
+  async whenReady() {
+    for (let round = 0; round < 100 && !this.isReady(); round++) {
+      try {
+        await Promise.all([this._committing, this.pendingOps ? this._queue : null]);
+      } catch {}
+      if (!this.isReady()) await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+  /** Wartet auf alle ausstehenden Änderungen (für Rückgängig, Speichern). */
+  async idle() {
+    this.flushNudge();
+    if (this.pe) this.pe.flushNudge();
+    for (let round = 0; round < 100 && (this.pendingOps || this._committing); round++) {
+      try {
+        await Promise.all([this._committing, this._queue]);
+      } catch {}
+    }
+  }
+  /**
+   * Linke Maustaste auf einer Seite – synchron: Geste sofort registrieren (kein `await` davor),
+   * dann auswerten (`resolveDown`), sobald Textbearbeitung und laufende Änderungen fertig sind.
+   */
+  onDown(ev) {
+    if (ev.button !== 0) return;
+    const pv = this.pvAt(ev);
+    if (!pv || ev.target.closest('.te-frame') || ev.target.closest('.te-warn')) return;
+    if (this.nudge) this.flushNudge();
+    if (this.pe && this.pe.nudgeDelta) this.pe.flushNudge();
+    const handleEl = ev.target.closest('.sel .h');
+    const down = {
+      seq: ++this.downSeq,
+      pv,
+      time: ev.timeStamp,
+      x: ev.clientX,
+      y: ev.clientY,
+      shift: ev.shiftKey,
+      alt: ev.altKey,
+      handle: handleEl ? handleEl.dataset.h : null,
+      anchorEl: ev.target.closest('.pa'),
+    };
+    down.pickBehind = (ev.altKey || ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !this.armed && !down.handle;
     if (this.armed === 'text') {
       ev.preventDefault();
-      const pdfPoint = pv.clientToPdf(clientX, clientY);
+      const pdfPoint = pv.clientToPdf(down.x, down.y);
       this.arm(null);
       return this.startEdit(pv, null, null, { point: pdfPoint, ...this.defaultStyle() });
     }
     if (this.armed === 'image') {
       ev.preventDefault();
-      const pdfPoint = pv.clientToPdf(clientX, clientY);
-      return this.placeImage(pv, pdfPoint);
+      return this.placeImage(pv, pv.clientToPdf(down.x, down.y));
     }
-    if (
-      this.editor &&
-      (ev.preventDefault(),
-      (this.curReq = { keys: [], done: false, gen: this.escGen || 0 }),
-      await this.finishEdit(),
-      pickBehind && this.selectBehind(pv, clientX, clientY))
-    )
+    // wie bisher: Klick auf freie Fläche ohne preventDefault (Eingabefelder verlieren den Fokus)
+    const blank =
+      this.isReady() &&
+      !this.pe &&
+      !down.handle &&
+      !down.pickBehind &&
+      !this.hit(pv, down.x, down.y) &&
+      !this.inSelection(pv, down.x, down.y);
+    if (!blank) ev.preventDefault();
+    if (this.gesture) this.gesture.cancel();
+    const gesture = new Gesture(ev, $('#pages'));
+    this.gesture = gesture;
+    gesture.onDone = () => {
+      if (this.gesture === gesture) this.gesture = null;
+    };
+    if (this.editor) {
+      this.curReq = { keys: [], done: false, gen: this.escGen || 0 };
+      this.finishEdit();
+    }
+    if (this.isReady()) return this.resolveDown(down, gesture);
+    this.whenReady().then(() => {
+      if (gesture.ended && gesture.reason === 'cancel') return;
+      this.resolveDown(down, gesture.ended ? null : gesture);
+    });
+  }
+  /**
+   * Klick auswerten. `gesture` = null: Die Taste ist schon losgelassen – dann nur auswählen
+   * (bzw. Text bearbeiten), niemals ziehen.
+   */
+  resolveDown(down, gesture) {
+    const pv = down.pv;
+    if (down.seq !== this.downSeq || !this.active || !this.session || !pv.el.isConnected) {
+      if (gesture) gesture.cancel();
       return;
-    const hit = this.hit(pv, clientX, clientY);
+    }
+    down.pt = pv.clientToPdf(down.x, down.y);
+    const last = this.lastDown;
+    if (!down.repeat) this.lastDown = down;
+    const isDouble =
+      !down.repeat &&
+      !!last &&
+      last.pv === pv &&
+      down.time - last.time < 500 &&
+      Math.hypot(down.x - last.x, down.y - last.y) <= 6 &&
+      !down.shift &&
+      !down.pickBehind;
+    if (isDouble && !this.pe) {
+      // Doppelklick auf einen Pfad: direkt „Pfad bearbeiten“ (und gleich ziehen können)
+      this.lastDown = null;
+      const hit = this.hit(pv, down.x, down.y);
+      if (hit && hit.obj && hit.obj.type === 'path' && hit.obj.geom && hit.obj.geom.subpaths.length) {
+        this.enterPathEdit(pv, hit.obj, down.pt);
+        if (this.pe && this.pe.onDown(down, gesture)) return;
+      }
+    }
+    if (this.pe) {
+      if (this.pe.pv === pv && this.pe.onDown(down, gesture)) return;
+      this.exitPathEdit();
+    }
+    if (down.pickBehind) {
+      if (this.selectBehind(pv, down.x, down.y)) return this.dragSelection(down, gesture, null, null);
+      this.clearSelection();
+      if (gesture) gesture.cancel();
+      return;
+    }
+    if (down.handle && this.sel && this.sel.el && this.sel.pv === pv) {
+      // Griffe haben Vorrang – ein Klick ohne Ziehen wirkt aber wie ein Klick an dieser Stelle
+      const clickThrough = () => this.resolveDown({ ...down, handle: null, repeat: true }, null);
+      if (!gesture) return clickThrough();
+      if (down.handle === 'p0' || down.handle === 'p1') return this.endpointDrag(down, gesture, clickThrough);
+      return this.dragSelection(down, gesture, down.handle, clickThrough);
+    }
+    const hit = this.hit(pv, down.x, down.y);
     if (hit && hit.block) {
-      ev.preventDefault();
-      if (ev.shiftKey || !hit.block.editable) {
-        this.select(pv, [], [hit.block], ev.shiftKey);
-        if (!hit.block.editable && !ev.shiftKey)
+      if (this.isSelected({ block: hit.block }))
+        return this.dragSelection(down, gesture, null, () => this.clickSelected(pv, down, hit));
+      if (gesture) gesture.cancel();
+      if (down.shift || !hit.block.editable) {
+        this.select(pv, [], [hit.block], down.shift);
+        if (!hit.block.editable && !down.shift)
           toast('Gedrehter Text kann nicht bearbeitet, aber gelöscht werden.', 'warn');
         return;
       }
       this.clearSelection();
-      return this.startEdit(pv, hit.block, [clientX, clientY]);
+      return this.startEdit(pv, hit.block, [down.x, down.y]);
     }
     if (hit && hit.obj) {
-      ev.preventDefault();
-      const extend = ev.shiftKey && this.sel && this.sel.pv === pv;
+      if (this.isSelected({ obj: hit.obj }))
+        return this.dragSelection(down, gesture, null, () => this.clickSelected(pv, down, hit));
+      const extend = down.shift && this.sel && this.sel.pv === pv;
       this.select(pv, hit.group, [], extend);
-      return this.startDrag(ev, pv, null);
+      return this.dragSelection(down, gesture, null, null);
     }
+    if (this.inSelection(pv, down.x, down.y)) return this.dragSelection(down, gesture, null, null);
     this.clearSelection();
-    this.startMarquee(ev, pv);
+    if (gesture) this.startMarquee(down, gesture);
   }
   onContext(ev) {
     const pv = this.pvAt(ev);
@@ -524,42 +725,117 @@ export class EditMode {
       at,
     );
   }
+  /**
+   * Änderung in die Warteschlange stellen: läuft nach allen vorherigen und exklusiv zur
+   * Speicherung. `fn` ändert nur das Modell; die Darstellung folgt über `afterChange()`.
+   */
+  enqueue(fn) {
+    const session = this.session;
+    if (!session) return Promise.resolve();
+    this.pendingOps++;
+    const run = () => session.exclusive(fn);
+    const p = this._queue
+      .then(run)
+      .catch((err) => {
+        console.error(err);
+        toast('Die Änderung konnte nicht übernommen werden.', 'err');
+      })
+      .finally(() => {
+        this.pendingOps--;
+      });
+    this._queue = p;
+    return p;
+  }
+  /**
+   * Nach einer Änderung: Auswahl über die uid aktualisieren (oder `after` wählen, wenn sich die
+   * Auswahl seitdem nicht geändert hat), dann neu darstellen.
+   */
+  afterChange(after = null, ghost = null) {
+    if (after && after.gen === this.selGen) this.reselect(after, true);
+    else this.refreshSelection();
+    if (this.pe) {
+      if (!this.pe.validate()) this.exitPathEdit();
+      else this.pe.draw();
+    }
+    const synced = this.app.sync();
+    if (ghost) Promise.resolve(synced).finally(() => ghost.remove());
+  }
+  /** Aktuelle Modellobjekte zu uids (fehlende werden übersprungen). */
+  resolveUids(index, uids) {
+    const byUid = new Map(this.session.model(index).objects.map((o) => [o.uid, o]));
+    return uids.map((uid) => byUid.get(uid)).filter(Boolean);
+  }
   async restack(direction) {
     const sel = this.sel;
     if (!sel || !sel.objs.length || sel.blocks.length) return;
-    const reselect = this.targetsAfter([1, 0, 0, 1, 0, 0]);
+    const targets = this.captureTargets();
     let ok = false;
-    await withBusy(async () => {
-      ok = this.session.restackObjects(sel.pv.index, sel.objs, direction);
-      if (ok) {
-        this.pendingReselect = reselect;
-        await this.app.sync();
-      }
+    await this.enqueue(async () => {
+      const index = this.app.pvByKey.get(targets.key).index;
+      ok = this.session.restackObjects(index, this.resolveUids(index, targets.uids), direction);
+      if (ok) this.afterChange(this.targetsAfter([1, 0, 0, 1, 0, 0], targets));
     });
     if (ok) toast(direction === 'back' ? 'In den Hintergrund gelegt' : 'In den Vordergrund geholt');
     else toast('Die Reihenfolge lässt sich auf dieser Seite nicht ändern.', 'warn');
   }
-  select(pv, objs, blocks, extend = false) {
-    if (this.editor) this.finishEdit();
-    if (extend && this.sel && this.sel.pv === pv) {
-      objs = [...new Set([...this.sel.objs, ...objs])];
-      blocks = [...new Set([...this.sel.blocks, ...blocks])];
-    }
+  /** Auswahl setzen; `keepGen` = dieselbe Auswahl in neuem Modell (Zähler bleibt). */
+  setSel(pv, objs, blocks, keepGen = false) {
     if (this.sel && this.sel.el) this.sel.el.remove();
     this.sel = { pv, objs, blocks };
+    if (!keepGen) this.selGen++;
     this.drawSelection();
     this.updatePanel();
   }
+  select(pv, objs, blocks, extend = false) {
+    if (this.editor) this.finishEdit();
+    this.exitPathEdit();
+    if (extend && this.sel && this.sel.pv === pv) {
+      const uids = new Set(this.sel.objs.map((o) => o.uid));
+      objs = [...this.sel.objs, ...objs.filter((o) => !uids.has(o.uid))];
+      blocks = [...new Set([...this.sel.blocks, ...blocks])];
+    }
+    this.setSel(pv, objs, blocks);
+  }
   clearSelection() {
+    this.exitPathEdit();
     if (this.sel && this.sel.el) this.sel.el.remove();
+    if (this.sel) this.selGen++;
     this.sel = null;
     this.updatePanel();
   }
   hasSelection() {
-    return !!(this.sel && (this.sel.objs.length || this.sel.blocks.length));
+    return !!(this.pe || (this.sel && (this.sel.objs.length || this.sel.blocks.length)));
   }
   selBox(sel = this.sel) {
     return unionBoxes([...sel.objs.map((obj) => obj.vis), ...sel.blocks.map((block) => block.bbox)]);
+  }
+  /** Welche Rahmengriffe passen? Bei schmalen Rahmen nie übereinanderliegende Griffe. */
+  boxHandles(width, height) {
+    const all = [
+      ['nw', 0, 0],
+      ['n', 50, 0],
+      ['ne', 100, 0],
+      ['e', 100, 50],
+      ['se', 100, 100],
+      ['s', 50, 100],
+      ['sw', 0, 100],
+      ['w', 0, 50],
+    ];
+    const thinW = width < HANDLE_MIN_SIDE;
+    const thinH = height < HANDLE_MIN_SIDE;
+    let keep;
+    if (thinW && thinH) keep = ['se'];
+    else if (thinH) keep = ['w', 'e'];
+    else if (thinW) keep = ['n', 's'];
+    else
+      keep = all
+        .map((h) => h[0])
+        .filter(
+          (d) =>
+            !((d === 'n' || d === 's') && width < HANDLE_MID_SIDE) &&
+            !((d === 'e' || d === 'w') && height < HANDLE_MID_SIDE),
+        );
+    return all.filter((h) => keep.includes(h[0]));
   }
   drawSelection() {
     const sel = this.sel;
@@ -569,30 +845,46 @@ export class EditMode {
       this.sel = null;
       return;
     }
-    const box = sel.pv.boxOf(this.selBox());
-    if (this.nudge) {
-      box.left += this.nudge[0] * sel.pv.scale;
-      box.top -= this.nudge[1] * sel.pv.scale;
-    }
+    const pv = sel.pv;
+    const box = pv.boxOf(this.selBox());
+    const offset = this.nudge ? [this.nudge[0] * pv.scale, -this.nudge[1] * pv.scale] : [0, 0];
+    box.left += offset[0];
+    box.top += offset[1];
+    const line = sel.objs.length === 1 && !sel.blocks.length && isLineLike(sel.objs[0]) ? sel.objs[0] : null;
     const el = (sel.el = document.createElement('div'));
-    el.className = 'sel';
+    el.className = 'sel' + (line ? ' line' : '');
     Object.assign(el.style, {
       left: box.left + 'px',
       top: box.top + 'px',
       width: Math.max(2, box.width) + 'px',
       height: Math.max(2, box.height) + 'px',
     });
-    if (sel.objs.length && !sel.blocks.length)
-      for (const [dir, x, y] of [
-        ['nw', 0, 0],
-        ['n', 50, 0],
-        ['ne', 100, 0],
-        ['e', 100, 50],
-        ['se', 100, 100],
-        ['s', 50, 100],
-        ['sw', 0, 100],
-        ['w', 0, 50],
-      ]) {
+    const local = (p) => {
+      const q = pv.pdfToLayer(p[0], p[1]);
+      return [q[0] - box.left + offset[0], q[1] - box.top + offset[1]];
+    };
+    const paths = sel.objs.filter((o) => o.type === 'path' && o.geom && o.geom.subpaths.length);
+    if (paths.length && paths.length <= 60) {
+      const svg = document.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('class', 'sel-geom');
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', paths.map((o) => svgPath(pagePaths(o), local)).join(''));
+      svg.appendChild(path);
+      el.appendChild(svg);
+      sel.geomPath = path;
+    }
+    if (line) {
+      pagePaths(line)[0].nodes.forEach((n, k) => {
+        const [x, y] = local(n);
+        const handle = document.createElement('div');
+        handle.className = 'h ep';
+        handle.dataset.h = 'p' + k;
+        handle.style.left = x + 'px';
+        handle.style.top = y + 'px';
+        el.appendChild(handle);
+      });
+    } else if (sel.objs.length && !sel.blocks.length)
+      for (const [dir, x, y] of this.boxHandles(box.width, box.height)) {
         const handle = document.createElement('div');
         handle.className = 'h';
         handle.dataset.h = dir;
@@ -604,7 +896,7 @@ export class EditMode {
     tag.className = 'tag';
     tag.textContent = this.selLabel();
     el.appendChild(tag);
-    sel.pv.layer.appendChild(el);
+    pv.layer.appendChild(el);
   }
   selLabel() {
     const sel = this.sel;
@@ -612,18 +904,38 @@ export class EditMode {
     const images = sel.objs.filter((obj) => obj.type === 'image').length;
     const others = sel.objs.length - images;
     if (images) parts.push(images === 1 ? 'Bild' : images + ' Bilder');
-    if (others) parts.push(others === 1 ? 'Grafikelement' : 'Grafik (' + others + ' Teile)');
+    if (others)
+      parts.push(
+        others === 1
+          ? isLineLike(sel.objs.find((o) => o.type !== 'image'))
+            ? 'Linie'
+            : 'Grafikelement'
+          : 'Grafik (' + others + ' Teile)',
+      );
     if (sel.blocks.length)
       parts.push(sel.blocks.length === 1 ? 'Textblock' : sel.blocks.length + ' Textblöcke');
     return parts.join(' · ');
   }
-  reselect(target) {
+  findBlock(model, block, tolerance = 1) {
+    return (
+      model.blocks.find(
+        (block2) =>
+          block2.text === block.text &&
+          Math.abs(block2.bbox[0] - block.bbox[0]) < tolerance &&
+          Math.abs(block2.bbox[3] - block.bbox[3]) < tolerance,
+      ) || null
+    );
+  }
+  /**
+   * Auswahl nach einer Änderung wiederherstellen: Objekte über ihre uid (`uids`), ältere Ziele
+   * ohne uid über Typ und Rechteck, Textblöcke über Text und Lage.
+   */
+  reselect(target, keepGen = false) {
     const pv = this.app.pvByKey.get(target.key);
     if (!pv) return;
     const model = this.session.model(pv.index);
-    const objs = [];
-    const blocks = [];
-    for (const obj of target.objs) {
+    const objs = target.uids ? this.resolveUids(pv.index, target.uids) : [];
+    for (const obj of target.objs || []) {
       const match = model.objects.find(
         (obj2) =>
           obj2.selectable &&
@@ -633,20 +945,42 @@ export class EditMode {
       );
       if (match) objs.push(match);
     }
-    for (const block of target.blocks) {
-      const match = model.blocks.find(
-        (block2) =>
-          block2.text === block.text &&
-          Math.abs(block2.bbox[0] - block.bbox[0]) < 1 &&
-          Math.abs(block2.bbox[3] - block.bbox[3]) < 1,
-      );
-      if (match) blocks.push(match);
-    }
-    if (objs.length || blocks.length) this.select(pv, objs, blocks);
-    else this.clearSelection();
+    const blocks = (target.blocks || []).map((block) => this.findBlock(model, block)).filter(Boolean);
+    if (objs.length || blocks.length) this.setSel(pv, objs, blocks, keepGen);
+    else if (keepGen) {
+      if (this.sel && this.sel.el) this.sel.el.remove();
+      this.sel = null;
+      this.updatePanel();
+    } else this.clearSelection();
   }
-  targetsAfter(matrix) {
+  /** Auswahl auf das aktuelle Modell umstellen (gleiche uids, gleiche Textblöcke). */
+  refreshSelection() {
     const sel = this.sel;
+    if (!sel) return;
+    if (!this.app.pvByKey.has(sel.pv.key)) {
+      if (sel.el) sel.el.remove();
+      this.sel = null;
+      return;
+    }
+    const model = this.session.model(sel.pv.index);
+    const fresh = (block) => (model.blocks.includes(block) ? block : this.findBlock(model, block));
+    this.reselect(
+      { key: sel.pv.key, uids: sel.objs.map((o) => o.uid), blocks: sel.blocks.map(fresh).filter(Boolean) },
+      true,
+    );
+  }
+  /** Feste Ziele einer Änderung: uids und Textblöcke der Auswahl zum jetzigen Zeitpunkt. */
+  captureTargets(sel = this.sel) {
+    if (!sel) return null;
+    return {
+      key: sel.pv.key,
+      uids: sel.objs.map((o) => o.uid),
+      blocks: sel.blocks.slice(),
+      selBox: this.selBox(sel),
+      gen: this.selGen,
+    };
+  }
+  targetsAfter(matrix, targets) {
     const apply = (x, y) => [
       matrix[0] * x + matrix[2] * y + matrix[4],
       matrix[1] * x + matrix[3] * y + matrix[5],
@@ -666,24 +1000,38 @@ export class EditMode {
       ];
     };
     return {
-      key: sel.pv.key,
-      objs: sel.objs.map((obj) => ({ type: obj.type, vis: transformBox(obj.vis) })),
-      blocks: sel.blocks.map((block) => ({ text: block.text, bbox: transformBox(block.bbox) })),
+      key: targets.key,
+      uids: targets.uids.slice(),
+      blocks: targets.blocks.map((block) => ({ text: block.text, bbox: transformBox(block.bbox) })),
+      gen: targets.gen,
     };
   }
+  /** Ziehen der Auswahl; ohne Geste (Taste schon losgelassen) nur die Klick-Aktion. */
+  dragSelection(down, gesture, handle, onClick) {
+    if (!gesture) {
+      if (onClick) onClick();
+      return;
+    }
+    if (!this.sel || !this.sel.el) {
+      gesture.cancel();
+      return;
+    }
+    this.moveDrag(down, gesture, handle, onClick);
+  }
   /**
-   * Verschieben (handle = null) oder Skalieren über einen Griff. Während des Ziehens wird nur
-   * der Auswahlrahmen (und eine Bildkopie „ghost“) bewegt; beim Loslassen wird die Matrix in
-   * PDF-Koordinaten berechnet und über `applyTransform()` angewendet. Umschalt = Achse sperren bzw.
-   * Seitenverhältnis frei, Alt = ohne Einrasten (SnapGuides).
+   * Verschieben (handle = null) oder Skalieren über einen Rahmengriff. Während des Ziehens wird
+   * nur der Auswahlrahmen (und eine Bildkopie „ghost“) bewegt; beim Loslassen wird die Matrix in
+   * PDF-Koordinaten berechnet und für die beim Ziehbeginn festgehaltenen Ziele übernommen.
+   * Umschalt = Achse sperren bzw. Seitenverhältnis frei, Alt = ohne Einrasten (SnapGuides),
+   * Esc = abbrechen.
    */
-  startDrag(ev, pv, handle, clickPoint = null) {
+  moveDrag(down, gesture, handle, onClick) {
     const sel = this.sel;
-    if (!sel || !sel.el) return;
-    ev.preventDefault();
+    const pv = sel.pv;
     const selEl = sel.el;
-    const clientX = ev.clientX;
-    const clientY = ev.clientY;
+    const clientX = gesture.x0;
+    const clientY = gesture.y0;
+    const targets = this.captureTargets();
     const start = {
       left: parseFloat(selEl.style.left),
       top: parseFloat(selEl.style.top),
@@ -725,10 +1073,13 @@ export class EditMode {
     let current = { ...start };
     let moved = false;
     this.drag = true;
-    const moving = new Set([...sel.objs, ...sel.blocks]);
+    const movingUids = new Set(sel.objs.map((o) => o.uid));
+    const movingBlocks = new Set(sel.blocks);
     let guides = null;
     try {
-      guides = new SnapGuides(pv, this.session.model(pv.index), (B) => moving.has(B));
+      guides = new SnapGuides(pv, this.session.model(pv.index), (B) =>
+        B.uid != null ? movingUids.has(B.uid) : movingBlocks.has(B),
+      );
     } catch {
       guides = null;
     }
@@ -811,14 +1162,17 @@ export class EditMode {
         }
       }
     };
-    const onUp = async () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+    const onEnd = (reason) => {
       this.drag = false;
       if (guides) guides.clear();
+      if (reason !== 'up') {
+        if (ghost) ghost.remove();
+        if (this.sel === sel) this.drawSelection();
+        return;
+      }
       if (!moved) {
         if (ghost) ghost.remove();
-        if (clickPoint) this.drillDown(pv, clickPoint.x, clickPoint.y);
+        if (onClick) onClick();
         return;
       }
       const scale = pv.scale;
@@ -828,39 +1182,166 @@ export class EditMode {
       else {
         const scaleX = current.width / start.width;
         const scaleY = current.height / start.height;
-        const selBox = this.selBox();
-        const [x0, y0, x1, y1] = [
-          pv.layerToPdf(current.left, current.top + current.height),
-          pv.layerToPdf(current.left + current.width, current.top),
-        ].flat();
+        const selBox = targets.selBox;
+        const [x0, y0] = pv.layerToPdf(current.left, current.top + current.height);
         matrix = [scaleX, 0, 0, scaleY, x0 - scaleX * selBox[0], y0 - scaleY * selBox[1]];
       }
-      await this.applyTransform(matrix, handle ? 'Größe geändert' : 'Verschoben');
-      if (ghost) ghost.remove();
+      this.applyTransform(matrix, handle ? 'Größe geändert' : 'Verschoben', targets, ghost);
     };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    gesture.attach({ move: onMove, end: onEnd });
   }
-  async applyTransform(matrix, label) {
+  /**
+   * Endpunkt einer Linie ziehen: Umschalt = 0°/45°/90° zum anderen Endpunkt, sonst Einrasten an
+   * Punkten und Segmenten anderer Objekte (Alt = frei). Die Linie wird über ihre Geometrie
+   * geändert – Strichstärke und Farbe bleiben.
+   */
+  endpointDrag(down, gesture, onClick = null) {
     const sel = this.sel;
-    if (!sel) return;
-    const index = sel.pv.index;
-    const reselect = this.targetsAfter(matrix);
-    const isTranslation = matrix[0] === 1 && matrix[3] === 1 && matrix[1] === 0 && matrix[2] === 0;
-    if (sel.blocks.length && !isTranslation) return;
-    if (sel.blocks.filter((block) => !block.editable).length && isTranslation) {
+    const pv = sel.pv;
+    const obj = sel.objs[0];
+    const k = down.handle === 'p0' ? 0 : 1;
+    const base = cloneSubpaths(pagePaths(obj));
+    const startPt = base[0].nodes[k];
+    const other = base[0].nodes[1 - k];
+    const [sx, sy] = pv.clientToPdf(gesture.x0, gesture.y0);
+    const handleEl = sel.el.querySelector(`.h[data-h="${down.handle}"]`);
+    const box = { left: parseFloat(sel.el.style.left), top: parseFloat(sel.el.style.top) };
+    const local = (p) => {
+      const q = pv.pdfToLayer(p[0], p[1]);
+      return [q[0] - box.left, q[1] - box.top];
+    };
+    let guides = null;
+    try {
+      guides = new SnapGuides(pv, this.session.model(pv.index), (o) => o.uid === obj.uid);
+    } catch {
+      guides = null;
+    }
+    let target = startPt.slice();
+    let moved = false;
+    this.drag = true;
+    if (handleEl) handleEl.classList.add('active');
+    gesture.attach({
+      move: (e) => {
+        if (!gesture.moved) return;
+        moved = true;
+        const [px, py] = pv.clientToPdf(e.clientX, e.clientY);
+        target = [startPt[0] + px - sx, startPt[1] + py - sy];
+        let snap = null;
+        if (e.shiftKey) {
+          const [vx, vy] = constrainAngle(target[0] - other[0], target[1] - other[1]);
+          target = [other[0] + vx, other[1] + vy];
+        } else if (guides && !e.altKey) {
+          const [lx, ly] = pv.pdfToLayer(target[0], target[1]);
+          snap = guides.snapPoint(lx, ly);
+          if (snap) target = pv.layerToPdf(snap.x, snap.y);
+        }
+        if (guides) guides.showPoint(snap);
+        const [hx, hy] = local(target);
+        if (handleEl) {
+          handleEl.style.left = hx + 'px';
+          handleEl.style.top = hy + 'px';
+        }
+        if (sel.geomPath) {
+          const [ox, oy] = local(other);
+          sel.geomPath.setAttribute('d', `M${ox} ${oy}L${hx} ${hy}`);
+        }
+      },
+      end: (reason) => {
+        this.drag = false;
+        if (guides) guides.clear();
+        const dx = target[0] - startPt[0];
+        const dy = target[1] - startPt[1];
+        if (reason === 'up' && !moved && onClick) {
+          if (this.sel === sel) this.drawSelection();
+          onClick();
+          return;
+        }
+        if (reason !== 'up' || !moved || (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9)) {
+          if (this.sel === sel) this.drawSelection();
+          return;
+        }
+        const paths = moveNodes(base, new Set(['0:' + k]), dx, dy);
+        this.commitPaths(pv, [{ uid: obj.uid, paths }], 'Linie geändert');
+      },
+    });
+  }
+  /** Pfadgeometrie übernehmen: `edits` = [{ uid, paths }] mit Teilpfaden in Seitenkoordinaten. */
+  commitPaths(pv, edits, label) {
+    const key = pv.key;
+    return this.enqueue(async () => {
+      const p = this.app.pvByKey.get(key);
+      if (!p) return;
+      const byUid = new Map(this.session.model(p.index).objects.map((o) => [o.uid, o]));
+      const items = edits
+        .map((e) => {
+          const obj = byUid.get(e.uid);
+          return obj && { obj, subpaths: toUser(e.paths, obj.ctm) };
+        })
+        .filter(Boolean);
+      if (items.length) this.session.editPaths(p.index, items, label);
+      this.afterChange();
+    });
+  }
+  /**
+   * Matrix (PDF-Koordinaten) auf feste Ziele anwenden (Standard: aktuelle Auswahl). Verschieben
+   * und Bilder über `cm`; Skalieren/Drehen von Pfaden über ihre Geometrie, damit die
+   * Strichstärke erhalten bleibt (außer der Pfad würde aus seinem Beschneidungspfad wandern).
+   */
+  applyTransform(matrix, label, targets = this.captureTargets(), ghost = null) {
+    if (!targets) {
+      if (ghost) ghost.remove();
+      return Promise.resolve();
+    }
+    const isTranslation = isTranslationMatrix(matrix);
+    if (targets.blocks.length && !isTranslation) {
+      if (ghost) ghost.remove();
+      return Promise.resolve();
+    }
+    if (targets.blocks.filter((block) => !block.editable).length && isTranslation) {
+      if (ghost) ghost.remove();
       toast('Gedrehter Text kann nicht verschoben werden.', 'warn');
       this.drawSelection();
+      return Promise.resolve();
+    }
+    const after = this.targetsAfter(matrix, targets);
+    return this.enqueue(async () => {
+      const pv = this.app.pvByKey.get(targets.key);
+      if (!pv) return;
+      const index = pv.index;
+      await this.session.batch(label, async () => {
+        if (targets.uids.length) this.transformByUid(index, targets.uids, matrix, label, isTranslation);
+        if (targets.blocks.length) await this.session.moveBlocks(index, targets.blocks, matrix[4], matrix[5]);
+      });
+      this.afterChange(after, ghost);
+    });
+  }
+  transformByUid(index, uids, matrix, label, isTranslation) {
+    const objs = this.resolveUids(index, uids);
+    if (!objs.length) return;
+    if (isTranslation) {
+      this.session.transformObjects(index, objs, matrix, label);
       return;
     }
-    await withBusy(async () => {
-      await this.session.batch(label, async () => {
-        if (sel.objs.length) this.session.transformObjects(index, sel.objs, matrix, label);
-        if (sel.blocks.length) await this.session.moveBlocks(index, sel.blocks, matrix[4], matrix[5]);
-      });
-      this.pendingReselect = reselect;
-      await this.app.sync();
-    });
+    const byGeometry = objs.filter(
+      (o) =>
+        o.type === 'path' &&
+        o.geom &&
+        o.geom.subpaths.length &&
+        !o.clip &&
+        (!o.clipRect || this.session.insideAfter(o, matrix)),
+    );
+    const rest = objs.filter((o) => !byGeometry.includes(o));
+    if (rest.length) this.session.transformObjects(index, rest, matrix, label);
+    if (byGeometry.length)
+      this.session.transformPaths(
+        index,
+        this.resolveUids(
+          index,
+          byGeometry.map((o) => o.uid),
+        ),
+        matrix,
+        label,
+      );
   }
   rotateSelection(degrees) {
     const sel = this.sel;
@@ -871,90 +1352,138 @@ export class EditMode {
     const matrix = degrees > 0 ? [0, -1, 1, 0, cx - cy, cx + cy] : [0, 1, -1, 0, cx + cy, cy - cx];
     return this.applyTransform(matrix, 'Gedreht');
   }
-  async deleteSelection() {
-    const sel = this.sel;
-    if (!sel) return;
-    const index = sel.pv.index;
+  deleteSelection() {
+    if (this.pe) {
+      const obj = this.pe.obj;
+      const pv = this.pe.pv;
+      this.exitPathEdit();
+      if (obj) this.select(pv, [obj], []);
+    }
+    const targets = this.captureTargets();
+    if (!targets) return Promise.resolve();
     this.clearSelection();
-    await this.session.batch(
-      sel.objs.length && sel.blocks.length
-        ? 'Auswahl gelöscht'
-        : sel.blocks.length
-          ? 'Text gelöscht'
-          : 'Objekt gelöscht',
-      async () => {
-        if (sel.objs.length) this.session.deleteObjects(index, sel.objs);
-        if (sel.blocks.length) {
-          const model = this.session.model(index);
-          const blocks = sel.blocks
-            .map((block) =>
-              model.blocks.find(
-                (block2) =>
-                  block2.text === block.text &&
-                  Math.abs(block2.bbox[0] - block.bbox[0]) < 0.5 &&
-                  Math.abs(block2.bbox[1] - block.bbox[1]) < 0.5,
-              ),
-            )
-            .filter(Boolean);
-          if (blocks.length) this.session.deleteBlocks(index, blocks);
-        }
-      },
-    );
-    await this.app.sync();
+    return this.enqueue(async () => {
+      const pv = this.app.pvByKey.get(targets.key);
+      if (!pv) return;
+      const index = pv.index;
+      await this.session.batch(
+        targets.uids.length && targets.blocks.length
+          ? 'Auswahl gelöscht'
+          : targets.blocks.length
+            ? 'Text gelöscht'
+            : 'Objekt gelöscht',
+        async () => {
+          if (targets.uids.length) this.session.deleteObjects(index, this.resolveUids(index, targets.uids));
+          if (targets.blocks.length) {
+            const model = this.session.model(index);
+            const blocks = targets.blocks
+              .map((block) =>
+                model.blocks.find(
+                  (block2) =>
+                    block2.text === block.text &&
+                    Math.abs(block2.bbox[0] - block.bbox[0]) < 0.5 &&
+                    Math.abs(block2.bbox[1] - block.bbox[1]) < 0.5,
+                ),
+              )
+              .filter(Boolean);
+            if (blocks.length) this.session.deleteBlocks(index, blocks);
+          }
+        },
+      );
+      this.afterChange();
+    });
   }
-  startMarquee(ev, pv) {
-    const [startX, startY] = pv.clientToLayer(ev.clientX, ev.clientY);
+  startMarquee(down, gesture) {
+    const pv = down.pv;
+    const [startX, startY] = pv.clientToLayer(gesture.x0, gesture.y0);
     const marquee = document.createElement('div');
     marquee.className = 'marq';
     pv.layer.appendChild(marquee);
     let rect = null;
-    const onMove = (moveEv) => {
-      const [x, y] = pv.clientToLayer(moveEv.clientX, moveEv.clientY);
-      rect = {
-        left: Math.min(startX, x),
-        top: Math.min(startY, y),
-        width: Math.abs(x - startX),
-        height: Math.abs(y - startY),
-      };
-      Object.assign(marquee.style, {
-        left: rect.left + 'px',
-        top: rect.top + 'px',
-        width: rect.width + 'px',
-        height: rect.height + 'px',
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      marquee.remove();
-      if (!rect || rect.width < 4 || rect.height < 4) return;
-      const p1 = pv.layerToPdf(rect.left, rect.top + rect.height);
-      const p2 = pv.layerToPdf(rect.left + rect.width, rect.top);
-      const area = [
-        Math.min(p1[0], p2[0]),
-        Math.min(p1[1], p2[1]),
-        Math.max(p1[0], p2[0]),
-        Math.max(p1[1], p2[1]),
-      ];
-      const model = this.session.model(pv.index);
-      const objs = model.objects.filter((obj) => obj.selectable && boxInside(obj.vis, area));
-      const blocks = model.blocks.filter((block) => boxInside(block.bbox, area));
-      if (objs.length || blocks.length) this.select(pv, objs, blocks);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    gesture.attach({
+      move: (moveEv) => {
+        const [x, y] = pv.clientToLayer(moveEv.clientX, moveEv.clientY);
+        rect = {
+          left: Math.min(startX, x),
+          top: Math.min(startY, y),
+          width: Math.abs(x - startX),
+          height: Math.abs(y - startY),
+        };
+        Object.assign(marquee.style, {
+          left: rect.left + 'px',
+          top: rect.top + 'px',
+          width: rect.width + 'px',
+          height: rect.height + 'px',
+        });
+      },
+      end: (reason) => {
+        marquee.remove();
+        if (reason !== 'up' || !rect || rect.width < 4 || rect.height < 4) return;
+        const p1 = pv.layerToPdf(rect.left, rect.top + rect.height);
+        const p2 = pv.layerToPdf(rect.left + rect.width, rect.top);
+        const area = [
+          Math.min(p1[0], p2[0]),
+          Math.min(p1[1], p2[1]),
+          Math.max(p1[0], p2[0]),
+          Math.max(p1[1], p2[1]),
+        ];
+        const model = this.session.model(pv.index);
+        const objs = model.objects.filter((obj) => obj.selectable && boxInside(obj.vis, area));
+        const blocks = model.blocks.filter((block) => boxInside(block.bbox, area));
+        if (objs.length || blocks.length) this.select(pv, objs, blocks);
+      },
+    });
+  }
+  /** „Pfad bearbeiten“ für ein Pfadobjekt öffnen; `pt` (PDF) wählt das Segment darunter. */
+  enterPathEdit(pv, obj, pt = null) {
+    if (!obj || obj.type !== 'path' || !obj.geom || !obj.geom.subpaths.length) return;
+    if (this.pe && this.pe.uid === obj.uid && this.pe.pv === pv) return;
+    this.flushNudge();
+    this.clearSelection();
+    const pe = new PathEditor(this, pv, obj.uid);
+    const h = pt && objectHit(obj, pt[0], pt[1], pxPerPt(pv));
+    if (h && h.sp != null) pe.selectSegment(h.sp, h.seg);
+    this.pe = pe;
+    pe.draw();
+    this.hideHover(pv);
+    this.updatePanel();
+    this.hintOnce(
+      'pathedit',
+      'Pfad bearbeiten: Ankerpunkte oder Kanten anklicken und ziehen (Umschalt = 45°-Schritte, Alt = Verbindung lösen). Esc beendet.',
+    );
+  }
+  exitPathEdit() {
+    const pe = this.pe;
+    if (!pe) return;
+    pe.flushNudge();
+    pe.destroy();
+    this.pe = null;
+    this.updatePanel();
   }
   onKey(ev) {
     const key = ev.key;
-    if (key === 'Escape')
-      return this.armed ? (this.arm(null), true) : this.sel ? (this.clearSelection(), true) : false;
-    if (!this.sel) return false;
+    if (key === 'Escape') {
+      if (this.armed) {
+        this.arm(null);
+        return true;
+      }
+      if (this.pe) {
+        const obj = this.pe.obj;
+        const pv = this.pe.pv;
+        this.exitPathEdit();
+        if (obj) this.select(pv, [obj], []);
+        return true;
+      }
+      return this.sel ? (this.clearSelection(), true) : false;
+    }
+    if (!this.sel && !this.pe) return false;
     if (key === 'Delete' || key === 'Backspace') {
       ev.preventDefault();
       this.deleteSelection();
       return true;
     }
     if (
+      this.sel &&
       key === 'Enter' &&
       this.sel.blocks.length === 1 &&
       !this.sel.objs.length &&
@@ -970,15 +1499,20 @@ export class EditMode {
       );
       return true;
     }
-    const step = ev.shiftKey ? 10 : 1;
+    const step = ev.altKey ? 0.1 : ev.shiftKey ? 10 : 1;
     const delta = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[
       key
     ];
     if (delta) {
       ev.preventDefault();
+      if (this.pe) {
+        this.pe.nudge(delta[0], delta[1]);
+        return true;
+      }
+      const round = (v) => Math.round(v * 1e6) / 1e6;
       this.nudge = this.nudge || [0, 0];
-      this.nudge[0] += delta[0];
-      this.nudge[1] += delta[1];
+      this.nudge[0] = round(this.nudge[0] + delta[0]);
+      this.nudge[1] = round(this.nudge[1] + delta[1]);
       if (this.sel.el && this.sel.el.isConnected) {
         const box = this.sel.pv.boxOf(this.selBox());
         const [dx, dy] = [this.nudge[0] * this.sel.pv.scale, -this.nudge[1] * this.sel.pv.scale];
@@ -990,20 +1524,16 @@ export class EditMode {
     }
     return false;
   }
+  /** Gesammelte Pfeiltasten-Verschiebung als eine Änderung übernehmen. */
   flushNudge() {
-    if (this._nudging) {
-      clearTimeout(this.nudgeT);
-      this.nudgeT = setTimeout(() => this.flushNudge(), 120);
-      return this._nudging;
-    }
+    clearTimeout(this.nudgeT);
     const nudge = this.nudge;
     this.nudge = null;
-    return !nudge || !this.sel || (!nudge[0] && !nudge[1])
-      ? (this.sel && this.drawSelection(), Promise.resolve())
-      : ((this._nudging = this.applyTransform([1, 0, 0, 1, nudge[0], nudge[1]], 'Verschoben').finally(() => {
-          this._nudging = null;
-        })),
-        this._nudging);
+    if (!nudge || !this.sel || (!nudge[0] && !nudge[1])) {
+      if (this.sel) this.drawSelection();
+      return Promise.resolve();
+    }
+    return this.applyTransform([1, 0, 0, 1, nudge[0], nudge[1]], 'Verschoben');
   }
   defaultStyle() {
     return this.lastStyle
@@ -1100,71 +1630,87 @@ export class EditMode {
       );
     }
   }
+  /**
+   * Textbearbeitung abschließen. `_committing` ist erfüllt, sobald das Modell den neuen Text
+   * enthält (vor der Neudarstellung) – darauf warten Klicks, die währenddessen beginnen.
+   */
   finishEdit() {
     if (this._finishing) return this._finishing;
     const editor = this.editor;
-    return editor
-      ? ((this._finishing = (async () => {
-          try {
-            this.editor = null;
-            document.body.classList.remove('editing');
-            if (editor.te) {
-              editor.te.contentEditable = 'false';
-              editor.te.blur();
+    if (!editor) return Promise.resolve();
+    let markCommitted;
+    const committing = new Promise((resolve) => {
+      markCommitted = () => {
+        if (this._committing === committing) this._committing = null;
+        resolve();
+      };
+    });
+    this._committing = committing;
+    return (this._finishing = (async () => {
+      try {
+        this.editor = null;
+        document.body.classList.remove('editing');
+        if (editor.te) {
+          editor.te.contentEditable = 'false';
+          editor.te.blur();
+        }
+        this.hideMissing();
+        if (!editor.dirty && editor.block) {
+          await this.session.exclusive(() => this.session.cancelEdit());
+          markCommitted();
+          await this.app.sync();
+          editor.destroy();
+          return;
+        }
+        if (editor.isEmpty() && !editor.block) {
+          await this.session.exclusive(() => this.session.cancelEdit());
+          markCommitted();
+          editor.destroy();
+          await this.app.sync();
+          return;
+        }
+        const lines = editor.collect();
+        const style = editor.currentStyle && editor.currentStyle();
+        if (style && style.fam) this.lastStyle = { fam: style.fam, size: style.size, color: style.color };
+        const anchorMoves = editor.anchorMoves ? editor.anchorMoves() : { moves: [], removes: [] };
+        const label = editor.block ? 'Text bearbeitet' : 'Text hinzugefügt';
+        const index = editor.pv.index;
+        let result;
+        await this.session.exclusive(() =>
+          this.session.batch(label, async () => {
+            result = await this.session.commitEdit(lines, label);
+            for (const move of anchorMoves.moves) {
+              const objs = this.findObjs(index, move.objs);
+              if (objs.length)
+                this.session.transformObjects(index, objs, [1, 0, 0, 1, move.dx, move.dy], label);
             }
-            this.hideMissing();
-            if (!editor.dirty && editor.block) {
-              this.session.cancelEdit();
-              await this.app.sync();
-              editor.destroy();
-              return;
+            if (anchorMoves.removes.length) {
+              const objs = this.findObjs(index, anchorMoves.removes);
+              if (objs.length) this.session.deleteObjects(index, objs, label);
             }
-            if (editor.isEmpty() && !editor.block) {
-              this.session.cancelEdit();
-              editor.destroy();
-              await this.app.sync();
-              return;
-            }
-            const lines = editor.collect();
-            const style = editor.currentStyle && editor.currentStyle();
-            if (style && style.fam) this.lastStyle = { fam: style.fam, size: style.size, color: style.color };
-            const anchorMoves = editor.anchorMoves ? editor.anchorMoves() : { moves: [], removes: [] };
-            const label = editor.block ? 'Text bearbeitet' : 'Text hinzugefügt';
-            const index = editor.pv.index;
-            let result;
-            await this.session.batch(label, async () => {
-              result = await this.session.commitEdit(lines, label);
-              for (const move of anchorMoves.moves) {
-                const objs = this.findObjs(index, move.objs);
-                if (objs.length)
-                  this.session.transformObjects(index, objs, [1, 0, 0, 1, move.dx, move.dy], label);
-              }
-              if (anchorMoves.removes.length) {
-                const objs = this.findObjs(index, anchorMoves.removes);
-                if (objs.length) this.session.deleteObjects(index, objs, label);
-              }
-            });
-            await this.app.sync();
-            editor.destroy();
-            if (result && result.warn && result.warn.length)
-              toast(
-                'Einige Zeichen fehlen in der Originalschrift – dafür wurde ' +
-                  result.warn.join(', ') +
-                  ' verwendet.',
-                'warn',
-                5000,
-              );
-          } catch (err) {
-            console.error(err);
-            editor.destroy();
-            toast('Die Änderung konnte nicht übernommen werden.', 'err');
-          } finally {
-            this._finishing = null;
-            this.updatePanel();
-          }
-        })()),
-        this._finishing)
-      : Promise.resolve();
+          }),
+        );
+        markCommitted();
+        await this.app.sync();
+        editor.destroy();
+        if (result && result.warn && result.warn.length)
+          toast(
+            'Einige Zeichen fehlen in der Originalschrift – dafür wurde ' +
+              result.warn.join(', ') +
+              ' verwendet.',
+            'warn',
+            5000,
+          );
+      } catch (err) {
+        console.error(err);
+        editor.destroy();
+        toast('Die Änderung konnte nicht übernommen werden.', 'err');
+      } finally {
+        markCommitted();
+        this._finishing = null;
+        this.updatePanel();
+      }
+    })());
   }
   findObjs(index, targets) {
     const model = this.session.model(index);
@@ -1173,8 +1719,9 @@ export class EditMode {
       const match = model.objects.find(
         (obj) =>
           !found.includes(obj) &&
-          obj.type === target.type &&
-          target.vis.every((o, l) => Math.abs(o - obj.vis[l]) < 0.8),
+          (target.uid != null
+            ? obj.uid === target.uid
+            : obj.type === target.type && target.vis.every((o, l) => Math.abs(o - obj.vis[l]) < 0.8)),
       );
       if (match) found.push(match);
     }
@@ -1359,15 +1906,18 @@ export class EditMode {
     height *= fit;
     const x = Math.max(infoRaw.x, Math.min(infoRaw.x + infoRaw.w - width, point[0] - width / 2));
     const y = Math.max(infoRaw.y, Math.min(infoRaw.y + infoRaw.h - height, point[1] - height / 2));
-    await withBusy(async () => {
-      await this.session.insertImage(pv.index, pendingImage.bytes, pendingImage.mime, [x, y, width, height]);
-      this.pendingReselect = {
-        key: pv.key,
-        objs: [{ type: 'image', vis: [x, y, x + width, y + height] }],
-        blocks: [],
-      };
-      await this.app.sync();
-    });
+    await withBusy(() =>
+      this.enqueue(async () => {
+        const index = this.app.pvByKey.has(pv.key) ? this.app.pvByKey.get(pv.key).index : pv.index;
+        await this.session.insertImage(index, pendingImage.bytes, pendingImage.mime, [x, y, width, height]);
+        this.reselect({
+          key: pv.key,
+          objs: [{ type: 'image', vis: [x, y, x + width, y + height] }],
+          blocks: [],
+        });
+        this.app.sync();
+      }),
+    );
   }
   async dropImage(file, ev) {
     if (this.app.tool !== 'edit') await this.app.setTool('edit');
@@ -1383,17 +1933,22 @@ export class EditMode {
   async replaceImage() {
     const sel = this.sel;
     if (!sel || sel.objs.length !== 1) return;
-    const obj = sel.objs[0];
+    const uid = sel.objs[0].uid;
+    const key = sel.pv.key;
     const file = await pickFiles('image/png,image/jpeg,image/webp,image/gif');
     if (!file) return;
     const image = await this.readImage(file);
     if (image) {
-      await withBusy(async () => {
-        await this.session.replaceImage(sel.pv.index, obj, image.bytes, image.mime);
-        this.pendingReselect = { key: sel.pv.key, objs: [], blocks: [] };
-        this.clearSelection();
-        await this.app.sync();
-      });
+      this.clearSelection();
+      await withBusy(() =>
+        this.enqueue(async () => {
+          const pv = this.app.pvByKey.get(key);
+          const obj = pv && this.resolveUids(pv.index, [uid])[0];
+          if (!obj) return;
+          await this.session.replaceImage(pv.index, obj, image.bytes, image.mime);
+          this.app.sync();
+        }),
+      );
       toast('Bild ersetzt');
     }
   }
@@ -1601,9 +2156,22 @@ export class EditMode {
       selSection.appendChild(actions);
       selSection.appendChild(
         htmlToElement(
-          '<p class="hint" style="margin-top:10px">Ziehen oder <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> verschiebt (mit <kbd>Umschalt</kbd> in 10er-Schritten). Beim Ziehen rastet es an Hilfslinien ein (Seitenmitte, Ränder, bündig mit anderen Elementen) – mit <kbd>Alt</kbd> frei. Eckpunkte ändern die Größe. Ein Klick in eine ausgewählte Gruppe wählt nur das Element darunter; <kbd>Alt</kbd>+Klick wählt das Element dahinter.</p>',
+          '<p class="hint" style="margin-top:10px">Ziehen oder <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> verschiebt (1 pt, mit <kbd>Umschalt</kbd> 10 pt, mit <kbd>Alt</kbd> 0,1 pt). Beim Ziehen rastet es an Hilfslinien ein (Seitenmitte, Ränder, bündig mit anderen Elementen) – mit <kbd>Alt</kbd> frei. Die Griffe ändern die Größe, bei Linien die runden Endpunkte (<kbd>Umschalt</kbd> = 0°/45°/90°). Ein Klick in eine ausgewählte Gruppe wählt nur das Element darunter; ein weiterer Klick oder ein Doppelklick auf eine Grafik öffnet „Pfad bearbeiten“. <kbd>Alt</kbd>+Klick wählt das Element dahinter.</p>',
         ),
       );
+    } else if (this.pe) {
+      const peSection = htmlToElement(
+        `<div class="sec"><h4>Pfad bearbeiten</h4><p class="hint">Ankerpunkt oder Kante anklicken und ziehen; <kbd>Umschalt</kbd>+Klick wählt mehrere. Verbundene Punkte (Ecken, anliegende Linien der Gruppe) wandern mit – mit <kbd>Alt</kbd> wird die Verbindung gelöst. <kbd>Umschalt</kbd> beim Ziehen: 0°/45°/90°. Pfeiltasten verschieben die gewählten Punkte (<kbd>Umschalt</kbd> 10 pt, <kbd>Alt</kbd> 0,1 pt). <kbd>Esc</kbd> oder ein Klick daneben beendet.</p></div>`,
+      );
+      const doneBtn = htmlToElement(`<button class="btn outline">${icon('check', 's')}Fertig</button>`);
+      doneBtn.addEventListener('click', () => {
+        const pe = this.pe;
+        const obj = pe && pe.obj;
+        this.exitPathEdit();
+        if (obj) this.select(pe.pv, [obj], []);
+      });
+      peSection.appendChild(doneBtn);
+      body.appendChild(peSection);
     } else if (!editor)
       body.appendChild(
         htmlToElement(

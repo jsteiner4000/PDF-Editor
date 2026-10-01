@@ -83,7 +83,9 @@ export async function settled(page) {
     () => {
       const app = window.pdfEditor;
       return (
-        app && !app._syncP && !(app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge))
+        app &&
+        !app._syncP &&
+        !(app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge || app.edit.busy))
       );
     },
     null,
@@ -108,7 +110,8 @@ export async function idle(page) {
       () => {
         const app = window.pdfEditor;
         if (!app || app._syncP || app.rendering || app.renderQueue.size) return false;
-        if (app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge)) return false;
+        if (app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge || app.edit.busy))
+          return false;
         const scroller = document.getElementById('scroller');
         const pagesShown = app.session && scroller && !scroller.classList.contains('hidden');
         if (pagesShown && app.pvs.length && !app.pvs.some((pv) => pv.visible)) return false;

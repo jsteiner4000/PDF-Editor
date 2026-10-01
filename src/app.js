@@ -477,7 +477,10 @@ export class App {
   }
   async bytesForSave() {
     return this.session
-      ? (await this.edit.finishEdit(), this._syncP && (await this._syncP), this.session.save({ clean: true }))
+      ? (await this.edit.finishEdit(),
+        await this.edit.idle(),
+        this._syncP && (await this._syncP),
+        this.session.save({ clean: true }))
       : null;
   }
   async save() {
@@ -576,6 +579,7 @@ export class App {
       document.execCommand('undo');
       return;
     }
+    await this.edit.idle();
     const entry = this.session && this.session.undo();
     if (entry) {
       this.edit.clearSelection();
@@ -588,6 +592,7 @@ export class App {
       document.execCommand('redo');
       return;
     }
+    await this.edit.idle();
     const entry = this.session && this.session.redo();
     if (entry) {
       this.edit.clearSelection();
