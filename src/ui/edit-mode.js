@@ -593,17 +593,17 @@ export class EditMode {
         ['sw', 0, 100],
         ['w', 0, 50],
       ]) {
-        const tag = document.createElement('div');
-        tag.className = 'h';
-        tag.dataset.h = dir;
-        tag.style.left = x + '%';
-        tag.style.top = y + '%';
-        el.appendChild(tag);
+        const handle = document.createElement('div');
+        handle.className = 'h';
+        handle.dataset.h = dir;
+        handle.style.left = x + '%';
+        handle.style.top = y + '%';
+        el.appendChild(handle);
       }
-    const handle = document.createElement('div');
-    handle.className = 'tag';
-    handle.textContent = this.selLabel();
-    el.appendChild(handle);
+    const tag = document.createElement('div');
+    tag.className = 'tag';
+    tag.textContent = this.selLabel();
+    el.appendChild(tag);
     sel.pv.layer.appendChild(el);
   }
   selLabel() {
