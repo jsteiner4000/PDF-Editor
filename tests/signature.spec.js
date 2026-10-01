@@ -433,6 +433,7 @@ test('Unterschrift zeichnen, sichern und einsetzen', async ({ browser }) => {
   const sheet = page.locator('.dlg.sig-sheet');
   await expect(sheet).toBeVisible();
   await expect(sheet.getByRole('button', { name: 'Sichern' })).toBeDisabled();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   const box = await sheet.locator('.sig-pad canvas').boundingBox();
   const stroke = async (points) => {
     await page.mouse.move(box.x + points[0][0], box.y + points[0][1]);
@@ -681,6 +682,8 @@ test('Zuschnittrahmen schließt gedruckten Text neben der Unterschrift aus', asy
   await page.mouse.up();
   const sheet = page.locator('.dlg.sig-sheet');
   await expect(sheet).toBeVisible();
+  // Einblend-Animation des Sheets abwarten, bevor Positionen gemessen werden
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   const frame = sheet.locator('.sig-crop');
   const before = await frame.evaluate((el) => parseFloat(el.style.top) + parseFloat(el.style.height));
   expect(before).toBeGreaterThan(90); // Rahmen reicht bis zur Beschriftung hinunter
