@@ -1,0 +1,87 @@
+# PDF-Editor
+
+PDF-Editor für den Browser: Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen,
+löschen und ordnen. Das Ergebnis des Builds ist **eine einzige HTML-Datei**
+(`dist/PDF-Editor.html`), die offline in Chrome oder Edge läuft – Skript, Stile, Schriften und
+der pdf.js-Worker sind eingebettet. Die Bedienung beschreibt `LIESMICH.txt`.
+
+## Schnellstart
+
+```sh
+npm ci            # Abhängigkeiten exakt nach package-lock.json installieren
+npm run build     # erzeugt dist/PDF-Editor.html
+npm test          # baut neu und führt die Regressionstests aus
+```
+
+Voraussetzung: Node.js 22 (oder neuer). Für die Tests wird Chromium von Playwright benötigt;
+ist er nicht vorhanden: `npx playwright install chromium`.
+
+Weitere Befehle:
+
+| Befehl             | Zweck                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| `npm run dev`      | baut bei jeder Änderung in `src/` oder `assets/` automatisch neu |
+| `npm run fixtures` | erzeugt die Test-PDFs in `tests/fixtures/` neu                   |
+| `npm run format`   | formatiert Quelltexte mit Prettier                               |
+
+## Projektstruktur
+
+```
+src/
+  index.html              HTML-Gerüst (Platzhalter für Favicon, CSS und Skript)
+  styles.css              Stile der Oberfläche
+  main.js                 Einstiegspunkt (erzeugt window.pdfEditor)
+  app.js                  App: Oberfläche, Öffnen/Speichern, Zoom, Seitenansichten, Tastenkürzel
+  pdf/
+    content-stream.js     Parser/Serialisierer für Content-Streams (ContentOp, NameToken, …)
+    content-interpreter.js  Interpretation: Glyphen und Grafikobjekte (Pfade, Bilder, Formulare)
+    text-layout.js        Glyphen → Zeilen → Textblöcke (Absätze, Ausrichtung)
+    pdf-font.js           Analyse von PDF-Schriften (Codierung, Breiten, ToUnicode)
+    pdf-objects.js        Hilfen für pdf-lib-Objekte
+    matrix.js             2D-Matrizen
+    session.js            PdfSession: Seitenmodelle, Änderungen, Rückgängig/Wiederholen, Speichern
+    page-numbers.js       Seitenzahlen und Kopf-/Fußzeilen erkennen und anpassen
+  fonts/
+    font-manager.js       Schriftfamilien, Schriftbibliothek, Schriftwahl beim Schreiben
+    sfnt.js               TrueType/OpenType-Tabellen lesen/schreiben, Teilmengen zusammenführen
+    cff.js                CFF-Schriften für die Anzeige als OpenType verpacken
+    glyph-list.js         Adobe Glyph List und Standard-Codierungen
+  render/pdf-renderer.js  Darstellung mit pdf.js (Worker als Blob-URL)
+  storage/idb.js          IndexedDB „pdf-editor“ (eigene Schriften, zuletzt geöffnet)
+  ui/
+    page-view.js          Seitenansicht und Koordinatenumrechnung
+    edit-mode.js          Modus „PDF bearbeiten“ (Auswahl, Ziehen, Griffe, Text, Bilder)
+    text-editor.js        Inline-Texteditor
+    snap-guides.js        Hilfslinien/Einrasten
+    organize-mode.js      Modus „Seiten organisieren“
+    fonts-panel.js        Seitenleiste „Schriften“
+    dialogs.js, menu.js, dom.js, icons.js, geometry.js   Oberflächen-Bausteine
+scripts/build.mjs         Build (esbuild) → dist/PDF-Editor.html
+tests/                    Playwright-Regressionstests, Test-PDFs und deren Generator
+assets/
+  fonts/embedded/         eingebettete Schriften (verkleinerte Fassungen)
+  fonts/full/             vollständige Schriftdateien mit Lizenzen (SIL OFL)
+  icon/                   Programmsymbole und Favicon
+legacy/                   Version 1.0 als Referenz für die Regressionstests
+```
+
+## Build
+
+`scripts/build.mjs` bündelt `src/main.js` mit esbuild als IIFE und setzt es zusammen mit
+`src/styles.css` in `src/index.html` ein. Zwei virtuelle Module werden dabei erzeugt:
+
+- `virtual:pdfjs-worker` – der separat gebündelte pdf.js-Worker als Quelltext-String
+- `virtual:bundled-fonts` – die Schriften aus `assets/fonts/embedded/` (gzip, base64)
+
+Das Favicon stammt aus `assets/icon/favicon-1.0.svg` (Konstante `FAVICON` im Build-Skript).
+
+## Tests
+
+Die Tests in `tests/regression.spec.js` führen jede Szene gegen `legacy/PDF-Editor-1.0.html`
+**und** gegen `dist/PDF-Editor.html` aus und vergleichen die Ergebnisse: Darstellung
+(Canvas-Pixel, Bildschirmfotos einzelner Bereiche), Textblöcke, gespeicherte PDFs (byte-genau
+und per Textextraktion), Verschieben und Einrasten, Seiten einfügen/löschen mit Seitenzahlen,
+Rückgängig/Wiederholen, Zoom und Speichern. Zeit und Zufallszahlen sind in den Tests fixiert.
+
+Sobald das Verhalten absichtlich vom Original abweicht, muss der betroffene Vergleich durch
+eine fachliche Prüfung ersetzt werden.
