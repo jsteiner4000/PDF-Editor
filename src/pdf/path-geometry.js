@@ -257,7 +257,8 @@ function stillRect(sp) {
  * Rechteck, das nach der Änderung kein achsenparalleles Rechteck mehr ist, wird zu m/l/l/l/h.
  */
 export function subpathOps(sp) {
-  const r = (v) => (Math.abs(v) < EPS ? 0 : Math.round(v * 1e5) / 1e5);
+  // auf 0,001 pt runden: genauer als jede Zeigerbewegung, ohne Rundungsrauschen im Content-Stream
+  const r = (v) => (Math.abs(v) < EPS ? 0 : Math.round(v * 1e3) / 1e3 || 0);
   if (stillRect(sp)) {
     const [a, , c] = sp.nodes;
     return [newOp('re', r(a[0]), r(a[1]), r(c[0] - a[0]), r(c[1] - a[1]))];
@@ -327,4 +328,86 @@ export function svgSegment(sp, k, map) {
     f(sp.nodes[a]) +
     (seg ? 'C' + f(seg.c1) + ' ' + f(seg.c2) + ' ' + f(sp.nodes[b]) : 'L' + f(sp.nodes[b]))
   );
+}
+
+/**
+ * Löst Segment `k` aus Teilpfad `spIndex` als eigenen Teilpfad heraus („Kante lösen“). Der Rest
+ * bleibt als offener Teilpfad erhalten. Ergebnis: { subpaths, index } – `index` = neuer Teilpfad.
+ */
+export function detachSegment(subpaths, spIndex, k) {
+  const sp = subpaths[spIndex];
+  const n = sp.nodes.length;
+  const [a, b] = segEnds(sp, k);
+  const seg = sp.segs[k];
+  const piece = {
+    nodes: [sp.nodes[a].slice(), sp.nodes[b].slice()],
+    segs: [seg ? { c1: seg.c1.slice(), c2: seg.c2.slice() } : null],
+    closed: false,
+    re: false,
+    ops: [],
+    implicit: false,
+    changed: true,
+  };
+  const rest = [];
+  const restParts = [];
+  const pushPart = (nodes, segs) => {
+    if (nodes.length >= 2)
+      restParts.push({ nodes, segs, closed: false, re: false, ops: [], implicit: false, changed: true });
+  };
+  if (sp.closed) {
+    // offener Weg von Knoten k+1 einmal herum bis Knoten k
+    const nodes = [];
+    const segs = [];
+    for (let i = 1; i <= n; i++) {
+      nodes.push(sp.nodes[(k + i) % n].slice());
+      if (i < n) segs.push(sp.segs[(k + i) % n]);
+    }
+    pushPart(nodes, segs);
+  } else {
+    pushPart(
+      sp.nodes.slice(0, k + 1).map((p) => p.slice()),
+      sp.segs.slice(0, k),
+    );
+    pushPart(
+      sp.nodes.slice(k + 1).map((p) => p.slice()),
+      sp.segs.slice(k + 1),
+    );
+  }
+  subpaths.forEach((other, i) => {
+    if (i === spIndex) rest.push(...restParts);
+    else rest.push(other);
+  });
+  rest.push(piece);
+  return { subpaths: rest, index: rest.length - 1 };
+}
+
+/**
+ * Verschiebt Knoten um (dx, dy); angrenzende Kurven-Kontrollpunkte wandern mit, damit die
+ * Kurvenform am Knoten erhalten bleibt. `keys` = Menge von 'teilpfad:knoten'.
+ */
+export function moveNodes(subpaths, keys, dx, dy) {
+  return subpaths.map((sp, spIndex) => {
+    let changed = sp.changed;
+    const nodes = sp.nodes.map((p) => p.slice());
+    const segs = sp.segs.map((s) => (s ? { c1: s.c1.slice(), c2: s.c2.slice() } : null));
+    const n = nodes.length;
+    nodes.forEach((p, k) => {
+      if (!keys.has(spIndex + ':' + k)) return;
+      changed = true;
+      p[0] += dx;
+      p[1] += dy;
+      const out = segs[k];
+      if (out) {
+        out.c1[0] += dx;
+        out.c1[1] += dy;
+      }
+      const inIndex = k > 0 ? k - 1 : sp.closed ? n - 1 : -1;
+      const inc = inIndex >= 0 ? segs[inIndex] : null;
+      if (inc) {
+        inc.c2[0] += dx;
+        inc.c2[1] += dy;
+      }
+    });
+    return { ...sp, nodes, segs, changed };
+  });
 }

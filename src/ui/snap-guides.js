@@ -1,15 +1,22 @@
 /**
  * Hilfslinien und Einrasten beim Verschieben/Skalieren.
  */
+import { flattenSeg, pointSegment } from '../pdf/path-geometry.js';
+import { pagePaths } from './hit-test.js';
 
 /**
  * Hilfslinien beim Ziehen: Seitenmitte, Seitenränder, häufige linke/rechte Kanten (Satzspiegel)
  * und Kanten/Mitten der übrigen Elemente. `snap()` rastet innerhalb von 6 Bildschirmpixeln ein
  * und liefert die anzuzeigenden Linien; `show()`/`clear()` zeichnen sie als `.guide` in die Ebene.
+ *
+ * Für Endpunkte und Ankerpunkte rastet `snapPoint()` an Punkten (Endpunkte, Ecken) und Segmenten
+ * anderer Objekte ein; `showPoint()` markiert den Fangpunkt.
  */
 export class SnapGuides {
   constructor(pv, model, isMoving) {
     this.pv = pv;
+    this.model = model;
+    this.isMoving = isMoving;
     const width = pv.W;
     const height = pv.H;
     const xs = [];
@@ -127,6 +134,71 @@ export class SnapGuides {
           }
     }
     return { dx, dy, lines };
+  }
+  /** Fangziele in Ebenen-Pixeln: Punkte und Strecken (Kurven zerlegt) der übrigen Objekte. */
+  pointTargets() {
+    if (this._targets) return this._targets;
+    const pv = this.pv;
+    const map = (p) => pv.pdfToLayer(p[0], p[1]);
+    const points = [];
+    const segments = [];
+    for (const obj of this.model.objects) {
+      if (!obj.selectable || obj.background || this.isMoving(obj)) continue;
+      if (obj.type === 'path' && obj.geom) {
+        for (const sp of pagePaths(obj)) {
+          sp.nodes.forEach((n) => points.push(map(n)));
+          for (let k = 0; k < sp.segs.length; k++) {
+            const pts = flattenSeg(sp, k).map(map);
+            for (let i = 0; i + 1 < pts.length; i++) segments.push([pts[i], pts[i + 1]]);
+          }
+        }
+      } else {
+        const [x0, y0, x1, y1] = obj.vis;
+        const corners = [
+          [x0, y0],
+          [x1, y0],
+          [x1, y1],
+          [x0, y1],
+        ].map(map);
+        points.push(...corners);
+        corners.forEach((c, i) => segments.push([c, corners[(i + 1) % 4]]));
+      }
+      if (points.length > 20000) break;
+    }
+    this._targets = { points, segments };
+    return this._targets;
+  }
+  /**
+   * Fangpunkt für einen Punkt (Ebenen-Pixel): Punkte innerhalb von 8, Segmente innerhalb von
+   * 6 Bildschirmpixeln; `extra` = zusätzliche feste Punkte (z. B. andere Knoten desselben Pfads).
+   * Ergebnis `{ x, y, kind: 'point' | 'segment' }` oder null.
+   */
+  snapPoint(x, y, extra = []) {
+    const { points, segments } = this.pointTargets();
+    let best = null;
+    const pointRadius = 8 * this.k;
+    for (const p of [...points, ...extra]) {
+      const d = Math.hypot(p[0] - x, p[1] - y);
+      if (d <= pointRadius && (!best || d < best.d)) best = { x: p[0], y: p[1], d, kind: 'point' };
+    }
+    if (best) return best;
+    const segRadius = 6 * this.k;
+    for (const [a, b] of segments) {
+      const r = pointSegment(x, y, a, b);
+      if (r.d <= segRadius && (!best || r.d < best.d)) best = { x: r.x, y: r.y, d: r.d, kind: 'segment' };
+    }
+    return best;
+  }
+  /** Markiert einen Fangpunkt (Kreis für Punkte, Raute für Segmente). */
+  showPoint(snap) {
+    this.clear();
+    if (!snap) return;
+    const el = document.createElement('div');
+    el.className = 'guide pt ' + snap.kind;
+    el.style.left = snap.x + 'px';
+    el.style.top = snap.y + 'px';
+    this.pv.layer.appendChild(el);
+    this.els.push(el);
   }
   show(lines) {
     this.clear();
