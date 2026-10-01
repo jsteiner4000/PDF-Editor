@@ -5,7 +5,8 @@
  * Läuft ohne Browser direkt in Node.
  */
 import { test, expect } from '@playwright/test';
-import { extractSignature, otsuThreshold } from '../src/signature/signature-extract.js';
+import { readFileSync } from 'node:fs';
+import { extractSignature, otsuThreshold, rotateImage } from '../src/signature/signature-extract.js';
 
 const DPI = 600;
 const PX_PER_MM = DPI / 25.4;
@@ -229,4 +230,61 @@ test('Leeres Papier ergibt keine Unterschrift', () => {
     data.set([p, p, p, 255], i * 4);
   }
   expect(extractSignature({ width, height, data }, { dpi: DPI })).toBeNull();
+});
+
+test('Handyfoto mit weichem Schattenwurf und Farbverlauf: Schatten wird nicht zu Tinte', async ({ page }) => {
+  // 3000 × 1300 px, ca. 400 dpi; Schatten von rechts oben über einen Teil der Unterschrift
+  // (Unterschrift reicht bis x ≈ 2310, rechts davon nur Papier im Schatten).
+  const b64 = readFileSync(new URL('./fixtures/signature-shadow-photo.jpg', import.meta.url)).toString(
+    'base64',
+  );
+  await page.setContent('<body></body>');
+  const raw = await page.evaluate(async (b64) => {
+    const blob = await (await fetch('data:image/jpeg;base64,' + b64)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    const bytes = new Uint8Array(ctx.getImageData(0, 0, bitmap.width, bitmap.height).data.buffer);
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return { width: bitmap.width, height: bitmap.height, data: btoa(s) };
+  }, b64);
+  const img = {
+    width: raw.width,
+    height: raw.height,
+    data: new Uint8ClampedArray(Buffer.from(raw.data, 'base64')),
+  };
+  const result = extractSignature(img, { dpi: 400 });
+  expect(result).not.toBeNull();
+  const [x0, , x1] = result.bbox;
+  // Zuschnitt endet mit der Unterschrift, nicht am Bildrand im Schatten
+  expect(x0).toBeGreaterThan(300);
+  expect(x1).toBeLessThan(2420);
+  // Deckende Pixel: nur Striche (wenige Prozent der Fläche), keine Schattenfläche
+  const d = result.image.data;
+  let opaque = 0;
+  for (let p = 3; p < d.length; p += 4) if (d[p] > 128) opaque++;
+  const share = opaque / (result.image.width * result.image.height);
+  expect(share).toBeGreaterThan(0.01);
+  expect(share).toBeLessThan(0.1);
+  // Striche im Schattenbereich (x 1900…2300) bleiben erhalten
+  let inShadow = 0;
+  for (let y = 0; y < result.image.height; y++)
+    for (let x = 1900 - x0; x < Math.min(result.image.width, 2300 - x0); x++)
+      if (d[(y * result.image.width + x) * 4 + 3] > 128) inShadow++;
+  expect(inShadow).toBeGreaterThan(1500);
+});
+
+test('rotateImage dreht im Uhrzeigersinn', () => {
+  // 2 × 1: links rot, rechts blau
+  const img = { width: 2, height: 1, data: new Uint8ClampedArray([255, 0, 0, 255, 0, 0, 255, 255]) };
+  const r90 = rotateImage(img, 90);
+  expect([r90.width, r90.height]).toEqual([1, 2]);
+  expect([...r90.data.subarray(0, 4)]).toEqual([255, 0, 0, 255]); // rot oben
+  const r180 = rotateImage(img, 180);
+  expect([...r180.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]); // blau links
+  const r270 = rotateImage(img, 270);
+  expect([...r270.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]); // blau oben
 });

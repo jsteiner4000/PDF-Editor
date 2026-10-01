@@ -56,51 +56,72 @@ function histPercentile(hist, total, q) {
   return 255;
 }
 
+/** Gleitendes Maximum (`max = true`) bzw. Minimum eines Rasters, quadratisches Fenster ±r. */
+function rankFilter(grid, cols, rows, r, max) {
+  const tmp = new Float32Array(grid.length);
+  const out = new Float32Array(grid.length);
+  const pick = max ? Math.max : Math.min;
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      let v = grid[y * cols + x];
+      for (let k = Math.max(0, x - r), e = Math.min(cols - 1, x + r); k <= e; k++)
+        v = pick(v, grid[y * cols + k]);
+      tmp[y * cols + x] = v;
+    }
+  for (let x = 0; x < cols; x++)
+    for (let y = 0; y < rows; y++) {
+      let v = tmp[y * cols + x];
+      for (let k = Math.max(0, y - r), e = Math.min(rows - 1, y + r); k <= e; k++)
+        v = pick(v, tmp[k * cols + x]);
+      out[y * cols + x] = v;
+    }
+  return out;
+}
+
 /**
- * Papierhelligkeit je Pixel: Kacheln von ca. 1/6 der kürzeren Seite, darin das 90%-Perzentil,
- * Ausreißer (Kacheln voller Tinte) durch Median der Nachbarn ersetzt, bilinear interpoliert.
+ * Papierhelligkeit je Pixel als morphologisches Closing der Helligkeit: Auf einem groben Raster
+ * (Kacheln ≈ 0,5 mm, je Kachel die hellste leicht geglättete Stelle) erst Maximum-, dann
+ * Minimum-Filter mit Radius ≈ 1,5 mm. Striche (schmaler als ≈ 3 mm) verschwinden dabei, große
+ * dunkle Flächen wie Schatten, Farbverläufe oder graues Scan-Papier bleiben als „Papier“ erhalten
+ * und werden damit nicht zu Tinte. Zum Schluss leicht geglättet und bilinear hochgerechnet.
+ * @param {number} [pxPerMm]  Auflösung der Quelle (Pixel je mm), Standard 600 dpi
  */
-export function estimateBackground(lum, width, height) {
-  const cell = Math.max(24, Math.round(Math.min(width, height) / 6));
+export function estimateBackground(lum, width, height, pxPerMm = 600 / 25.4) {
+  const cell = Math.max(2, Math.round(pxPerMm * 0.5));
   const cols = Math.max(1, Math.ceil(width / cell));
   const rows = Math.max(1, Math.ceil(height / cell));
+  // Hellste Stelle je Kachel nach waagerechter 3er-Mittelung (dämpft Rauschspitzen)
   const grid = new Float32Array(cols * rows);
-  const hist = new Uint32Array(256);
-  const globalHist = new Uint32Array(256);
-  for (let i = 0; i < lum.length; i++) globalHist[lum[i] | 0]++;
-  const globalBg = Math.max(histPercentile(globalHist, lum.length, 0.9), 1);
-  for (let cy = 0; cy < rows; cy++)
-    for (let cx = 0; cx < cols; cx++) {
-      hist.fill(0);
-      const x0 = cx * cell;
-      const y0 = cy * cell;
-      const x1 = Math.min(width, x0 + cell);
-      const y1 = Math.min(height, y0 + cell);
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) hist[lum[y * width + x] | 0]++;
-      grid[cy * cols + cx] = histPercentile(hist, (x1 - x0) * (y1 - y0), 0.9);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    const gy = ((y / cell) | 0) * cols;
+    for (let x = 0; x < width; x++) {
+      const l =
+        x > 0 && x < width - 1 ? (lum[row + x - 1] + lum[row + x] + lum[row + x + 1]) / 3 : lum[row + x];
+      const g = gy + ((x / cell) | 0);
+      if (l > grid[g]) grid[g] = l;
     }
-  // Kacheln, die deutlich dunkler sind als das Papier insgesamt, enthalten v. a. Tinte.
-  const fixed = new Float32Array(grid.length);
-  for (let cy = 0; cy < rows; cy++)
-    for (let cx = 0; cx < cols; cx++) {
-      const v = grid[cy * cols + cx];
-      if (v >= globalBg * 0.8) {
-        fixed[cy * cols + cx] = v;
-        continue;
-      }
-      const around = [];
+  }
+  const r = Math.max(1, Math.round((pxPerMm * 1.5) / cell));
+  let closed = rankFilter(rankFilter(grid, cols, rows, r, true), cols, rows, r, false);
+  // leichte Glättung (Mittelwert 3×3)
+  const smooth = new Float32Array(closed.length);
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      let sum = 0;
+      let n = 0;
       for (let dy = -1; dy <= 1; dy++)
         for (let dx = -1; dx <= 1; dx++) {
-          const nx = cx + dx;
-          const ny = cy + dy;
+          const nx = x + dx;
+          const ny = y + dy;
           if (nx >= 0 && ny >= 0 && nx < cols && ny < rows) {
-            const w = grid[ny * cols + nx];
-            if (w >= globalBg * 0.8) around.push(w);
+            sum += closed[ny * cols + nx];
+            n++;
           }
         }
-      around.sort((a, b) => a - b);
-      fixed[cy * cols + cx] = around.length ? around[around.length >> 1] : globalBg;
+      smooth[y * cols + x] = sum / n;
     }
+  closed = smooth;
   const bg = new Float32Array(width * height);
   for (let y = 0; y < height; y++) {
     const gy = Math.min(rows - 1, Math.max(0, (y + 0.5) / cell - 0.5));
@@ -112,9 +133,11 @@ export function estimateBackground(lum, width, height) {
       const x0 = Math.floor(gx);
       const x1 = Math.min(cols - 1, x0 + 1);
       const fx = gx - x0;
-      const top = fixed[y0 * cols + x0] * (1 - fx) + fixed[y0 * cols + x1] * fx;
-      const bottom = fixed[y1 * cols + x0] * (1 - fx) + fixed[y1 * cols + x1] * fx;
-      bg[y * width + x] = Math.max(1, top * (1 - fy) + bottom * fy);
+      const top = closed[y0 * cols + x0] * (1 - fx) + closed[y0 * cols + x1] * fx;
+      const bottom = closed[y1 * cols + x0] * (1 - fx) + closed[y1 * cols + x1] * fx;
+      const i = y * width + x;
+      // nie dunkler als das Pixel selbst (sonst negative „Dunkelheit“)
+      bg[i] = Math.max(1, lum[i], top * (1 - fy) + bottom * fy);
     }
   }
   return bg;
@@ -211,10 +234,12 @@ export function removeLines(core, width, height, { horizontal = true, minRun, ma
 }
 
 /**
- * Zusammenhangskomponenten (8er-Nachbarschaft) der Maske; Komponenten mit weniger als `minArea`
- * Pixeln werden entfernt. Rückgabe: Anzahl verbliebener Komponenten.
+ * Zusammenhangskomponenten (8er-Nachbarschaft) der Maske. Entfernt werden Komponenten mit weniger
+ * als `minArea` Pixeln (Staub, Rauschen) und flächig gefüllte Komponenten, deren mittlere Dicke
+ * (2 · Fläche / Umfang) `maxThickness` übersteigt (Schatten, Stempelflächen, Balken) – Striche
+ * sind dagegen schmal. Rückgabe: Anzahl verbliebener Komponenten.
  */
-export function removeSpecks(mask, width, height, minArea) {
+export function removeSpecks(mask, width, height, minArea, maxThickness = Infinity) {
   const label = new Int32Array(width * height);
   const stack = new Int32Array(width * height);
   let kept = 0;
@@ -247,7 +272,17 @@ export function removeSpecks(mask, width, height, minArea) {
         }
       }
     }
-    if (count < minArea) for (const p of members) mask[p] = 0;
+    let remove = count < minArea;
+    if (!remove && Number.isFinite(maxThickness) && count > maxThickness * maxThickness) {
+      let perimeter = 0;
+      for (const p of members) {
+        const x = p % width;
+        if (x === 0 || x === width - 1 || p < width || p >= mask.length - width) perimeter++;
+        else if (!mask[p - 1] || !mask[p + 1] || !mask[p - width] || !mask[p + width]) perimeter++;
+      }
+      remove = (2 * count) / Math.max(1, perimeter) > maxThickness;
+    }
+    if (remove) for (const p of members) mask[p] = 0;
     else kept++;
   }
   return kept;
@@ -297,7 +332,7 @@ export function extractSignature(img, opts = {}) {
   const n = width * height;
   if (!n) return null;
   const lum = luminanceOf(img);
-  const bg = estimateBackground(lum, width, height);
+  const bg = estimateBackground(lum, width, height, dpi / 25.4);
   const dark = new Float32Array(n);
   for (let i = 0; i < n; i++) dark[i] = clamp01((bg[i] - lum[i]) / Math.max(bg[i], 40));
 
@@ -339,7 +374,7 @@ export function extractSignature(img, opts = {}) {
     });
   }
   const minArea = Math.max(4, Math.round(px * px * 0.05)); // ≈ 0,05 mm² – i-Punkte bleiben
-  removeSpecks(core, width, height, minArea);
+  removeSpecks(core, width, height, minArea, px * 2.5); // Striche sind höchstens ≈ 2,5 mm dick
 
   // Typische Dunkelheit voller Tinte (Median der Kernpixel) für das Abdeckungsmodell.
   const hist = new Uint32Array(256);
@@ -460,4 +495,49 @@ export function cropToAlpha(img, pad = 0) {
   for (let y = 0; y < outH; y++)
     out.set(data.subarray(((y + y0) * width + x0) * 4, ((y + y0) * width + x1) * 4), y * outW * 4);
   return { image: { width: outW, height: outH, data: out }, bbox: [x0, y0, x1, y1] };
+}
+
+/**
+ * Dreht ein RGBA-Bild um `degrees` (0, 90, 180, 270) im Uhrzeigersinn – z. B. um einen auf einer
+ * gedrehten Seite ungedreht gerenderten Bereich so auszurichten, wie er angezeigt wird.
+ */
+export function rotateImage(img, degrees) {
+  const rot = (((Math.round(degrees / 90) * 90) % 360) + 360) % 360;
+  if (!rot) return img;
+  const { width, height, data } = img;
+  const outW = rot === 180 ? width : height;
+  const outH = rot === 180 ? height : width;
+  const out = new Uint8ClampedArray(width * height * 4);
+  const src = new Uint32Array(data.buffer, data.byteOffset, width * height);
+  const dst = new Uint32Array(out.buffer);
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      let nx;
+      let ny;
+      if (rot === 90) {
+        nx = height - 1 - y;
+        ny = x;
+      } else if (rot === 180) {
+        nx = width - 1 - x;
+        ny = height - 1 - y;
+      } else {
+        nx = y;
+        ny = width - 1 - x;
+      }
+      dst[ny * outW + nx] = src[y * width + x];
+    }
+  return { width: outW, height: outH, data: out };
+}
+
+/** Ausschnitt [x0, y0, x1, y1] (Pixel, x1/y1 exklusiv) eines RGBA-Bildes. */
+export function cutImage(img, rect) {
+  const x0 = Math.max(0, Math.min(img.width - 1, Math.floor(rect[0])));
+  const y0 = Math.max(0, Math.min(img.height - 1, Math.floor(rect[1])));
+  const x1 = Math.max(x0 + 1, Math.min(img.width, Math.ceil(rect[2])));
+  const y1 = Math.max(y0 + 1, Math.min(img.height, Math.ceil(rect[3])));
+  const w = x1 - x0;
+  const out = new Uint8ClampedArray(w * (y1 - y0) * 4);
+  for (let y = y0; y < y1; y++)
+    out.set(img.data.subarray((y * img.width + x0) * 4, (y * img.width + x1) * 4), (y - y0) * w * 4);
+  return { width: w, height: y1 - y0, data: out };
 }
