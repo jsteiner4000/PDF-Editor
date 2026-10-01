@@ -85,6 +85,28 @@ Löschen und Verschieben werden die Seitenzahlen automatisch angepasst, und neue
 leere Seiten erhalten auf Wunsch Kopf- und Fußzeile der Nachbarseite.
 
 
+ZOOMEN UND ANSICHT VERSCHIEBEN
+------------------------------
+Für feine Arbeiten (z. B. sehr dünne Linien verschieben) lässt sich bis
+3200 % vergrößern. Die Darstellung bleibt auf jeder Stufe scharf – kurz nach
+dem Zoomen oder Verschieben wird der sichtbare Ausschnitt in voller Auflösung
+nachgezeichnet.
+- Strg + Mausrad: zoomt um die Stelle unter dem Mauszeiger, diese bleibt stehen.
+- Touchpad: mit zwei Fingern auf- bzw. zuziehen zoomt stufenlos.
+- Strg+Plus / Strg+Minus: nächste Zoomstufe. Ist etwas ausgewählt, bleibt die
+  Auswahl im Blick, sonst die Fenstermitte.
+- Strg+0 = Seitenbreite · Strg+1 = 100 % · Strg+2 = auf die Auswahl zoomen.
+- Unten auf die Prozentanzeige klicken: eigenen Wert eintippen (z. B. 1600) und
+  Enter, oder eine Stufe bzw. „Seitenbreite“, „Ganze Seite“, „Auf Auswahl
+  zoomen“ wählen.
+- Leertaste gedrückt halten und mit der Maus ziehen (oder mit gedrückter
+  mittlerer Maustaste ziehen): Ausschnitt verschieben, ohne etwas auszuwählen.
+  Im Dokument blättert die Leertaste deshalb nicht mehr seitenweise weiter
+  (dafür Bild ab/Bild auf). Beim Schreiben in einem Text oder Eingabefeld
+  bleibt sie ein Leerzeichen; auf einer ausgewählten Schaltfläche oder einem
+  Menüeintrag löst sie diesen wie gewohnt aus.
+
+
 SPEICHERN
 ---------
 „Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
@@ -110,7 +132,8 @@ Im Ordner „Schriften“ liegen die mitgelieferten Schriften zusätzlich als Da
 TASTENKÜRZEL
 ------------
 Strg+O öffnen · Strg+S speichern · Strg+Z / Strg+Y rückgängig / wiederholen
-Strg + Mausrad oder Strg+Plus/Minus zoomen · Strg+0 Seitenbreite
+Strg + Mausrad oder Strg+Plus/Minus zoomen (bis 3200 %) · Strg+0 Seitenbreite
+Strg+1 Zoom 100 % · Strg+2 auf Auswahl zoomen · Leertaste + Ziehen Ansicht verschieben
 Entf löschen · Pfeiltasten verschieben (Umschalt = größere Schritte)
 Esc Bearbeitung beenden und Textblock auswählen · Enter Text wieder bearbeiten
 Alt+Klick Element dahinter auswählen

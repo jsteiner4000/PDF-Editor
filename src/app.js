@@ -5,7 +5,8 @@ import { PDFName } from 'pdf-lib';
 import BUNDLED_FONTS from 'virtual:bundled-fonts';
 import { FontLibrary } from './fonts/font-manager.js';
 import { PdfSession } from './pdf/session.js';
-import { PdfRenderer } from './render/pdf-renderer.js';
+import { PdfRenderer, PREVIEW_MAX_PX } from './render/pdf-renderer.js';
+import { DetailRenderer } from './render/detail-renderer.js';
 import { PageView } from './ui/page-view.js';
 import { icon, LOGO_LARGE, LOGO_SMALL } from './ui/icons.js';
 import { $, $$, escapeHtml, htmlToElement } from './ui/dom.js';
@@ -15,11 +16,36 @@ import { idbDelete, idbList, idbPut } from './storage/idb.js';
 import { EditMode } from './ui/edit-mode.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
+import { ZoomGestures } from './ui/zoom-gestures.js';
 
 /**
  * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
  */
-const ZOOM_LEVELS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
+const ZOOM_LEVELS = [
+  0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 6, 8, 12, 16, 24, 32,
+];
+
+/** Grenzen für den Zoom (auch für stufenloses Zoomen und eigene Eingaben). */
+const MIN_ZOOM = 0.1;
+const MAX_ZOOM = 32;
+
+/** Voreinstellungen im Zoom-Menü. */
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 8, 16, 32];
+
+/**
+ * Pixelbudget für Vorschau-Canvas von Seiten außer Sicht; darüber werden die am längsten nicht
+ * mehr sichtbaren Seiten freigegeben (beim erneuten Anzeigen neu gerendert).
+ */
+const HIDDEN_PREVIEW_BUDGET_PX = 16e6;
+
+/** Anteil des Fensters, den die Auswahl nach „Auf Auswahl zoomen“ einnimmt (Rest = Rand). */
+const SELECTION_FILL = 0.7;
+
+/** Wartezeit (ms) vor dem Neurendern der Vorschau, solange gezoomt wird. */
+const ZOOM_RENDER_HOLD_MS = 140;
+
+/** Zoom als Text, z. B. „125 %“, „3.200 %“. */
+export const formatZoom = (zoom) => Math.round(zoom * 100).toLocaleString('de-DE') + ' %';
 
 /**
  * CSS-Pixel je PDF-Punkt bei 100 % Zoom.
@@ -57,6 +83,8 @@ export class App {
     this.tool = null;
     this.renderQueue = new Set();
     this.rendering = false;
+    this.renderHoldUntil = 0;
+    this.previewJob = null;
     this.edit = new EditMode(this);
     this.org = new OrganizeMode(this);
     this.fontsPanel = new FontsPanel(this);
@@ -116,20 +144,7 @@ export class App {
     on('bZin', 'click', () => this.zoomStep(1));
     on('bZout', 'click', () => this.zoomStep(-1));
     on('bFit', 'click', () => this.setZoom(null, 'width'));
-    on('bZoom', 'click', (n) =>
-      showMenu(
-        [
-          ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((a) => ({
-            label: Math.round(a * 100) + ' %',
-            run: () => this.setZoom(a),
-          })),
-          '-',
-          { label: 'Seitenbreite', icon: 'fitw', run: () => this.setZoom(null, 'width') },
-          { label: 'Ganze Seite', icon: 'fitp', run: () => this.setZoom(null, 'page') },
-        ],
-        n.currentTarget,
-      ),
-    );
+    on('bZoom', 'click', (n) => this.zoomMenu(n.currentTarget));
     on('rThumbs', 'click', () => this.toggleRight());
     on('rFonts', 'click', () => this.setTool(this.tool === 'fonts' ? null : 'fonts'));
     const pageInput = $('#pgIn');
@@ -151,16 +166,9 @@ export class App {
     });
     const scroller = $('#scroller');
     scroller.addEventListener('scroll', () => this.onScroll(), { passive: true });
-    scroller.addEventListener(
-      'wheel',
-      (ev) => {
-        if (ev.ctrlKey) {
-          ev.preventDefault();
-          this.zoomStep(ev.deltaY < 0 ? 1 : -1, ev);
-        }
-      },
-      { passive: false },
-    );
+    this.detail = new DetailRenderer(this, scroller);
+    this.gestures = new ZoomGestures(this, scroller);
+    this.watchDpr();
     this.io = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
@@ -170,9 +178,14 @@ export class App {
             if (pv.visible) {
               this.queueRender(pv);
               if (this.edit.active) this.edit.drawBoxes(pv);
+            } else {
+              pv.lastSeen = performance.now();
+              pv.clearDetail();
             }
           }
         }
+        this.trimPreviews();
+        this.detail.schedule();
       },
       { root: scroller, rootMargin: '600px 0px' },
     );
@@ -184,6 +197,7 @@ export class App {
     );
     window.addEventListener('resize', () => {
       if (this.session && this.fit) this.setZoom(null, this.fit, true);
+      this.detail.schedule();
     });
     window.addEventListener('keydown', (ev) => this.onKey(ev));
     window.addEventListener('beforeunload', (n) => {
@@ -392,6 +406,9 @@ export class App {
     return ok;
   }
   closeDoc() {
+    this.lastPin = null;
+    this.detail.reset();
+    PageView.forgetRemembered();
     this.edit.reset();
     this.org.reset();
     for (const pv of this.pvs) this.io.unobserve(pv.el);
@@ -678,6 +695,7 @@ export class App {
         this.pvByKey.delete(key);
       }
     this.pvs = views;
+    PageView.forgetRemembered(new Set(views));
     views.forEach((A, s) => {
       if (pagesEl.children[s] !== A.el) pagesEl.insertBefore(A.el, pagesEl.children[s] || null);
     });
@@ -687,16 +705,34 @@ export class App {
     this.setCur(this.cur);
     this.renderThumbs();
     for (const pv of this.pvs) if (pv.visible) this.queueRender(pv);
+    this.detail.schedule(0);
   }
   layoutPages() {
     const scale = this.zoom * CSS_PX_PER_PT;
     for (const pv of this.pvs) pv.setGeometry(pv.infoRaw, scale);
     this.edit.layoutChanged();
   }
+  /**
+   * Ist die Vorschau von `pv` aktuell? Gleiche Seite und gleiche Pixelgröße genügen – oberhalb von
+   * PREVIEW_MAX_PX ist die Vorschau unabhängig vom Zoom gleich groß und muss nicht neu entstehen.
+   */
+  previewFresh(pv) {
+    const rendered = pv.rendered;
+    return !!rendered && rendered.sig === pv.sig && rendered.key === pv.previewSize().key;
+  }
+  /**
+   * Prüft die Vorschau; ist sie trotz anderem Zoom gültig (gleiche Pixelgröße), gilt sie als für
+   * den aktuellen Zoom gerendert.
+   */
+  adoptPreview(pv) {
+    if (!this.previewFresh(pv)) return false;
+    pv.rendered.scale = pv.scale;
+    return true;
+  }
   queueRender(pv) {
     if (this.session) {
       if (!(
-        (pv.rendered && pv.rendered.sig === pv.sig && pv.rendered.scale === pv.scale) ||
+        this.adoptPreview(pv) ||
         (pv.rendered && pv.rendered.sig !== pv.sig && pv.restoreFrom(pv.sig, pv.scale))
       )) {
         this.renderQueue.add(pv);
@@ -709,33 +745,78 @@ export class App {
       this.rendering = true;
       try {
         while (this.renderQueue.size) {
+          // während einer Zoomgeste nicht jede Zwischenstufe rendern
+          for (let wait; (wait = this.renderHoldUntil - performance.now()) > 0;)
+            await new Promise((resolve) => setTimeout(resolve, wait));
           const queue = [...this.renderQueue].filter((s) => this.pvByKey.get(s.key) === s);
           this.renderQueue.clear();
           queue.sort((s, o) => Math.abs(s.index - this.cur) - Math.abs(o.index - this.cur));
           const [next, ...rest] = queue;
           rest.forEach((s) => this.renderQueue.add(s));
-          if (
-            !next ||
-            !next.visible ||
-            (next.rendered && next.rendered.sig === next.sig && next.rendered.scale === next.scale)
-          )
-            continue;
+          if (!next || !next.visible || this.adoptPreview(next)) continue;
           const sig = next.sig;
           const scale = next.scale;
+          const key = next.previewSize().key;
           const gen = this.renderer.gen;
+          const job = (this.previewJob = { pv: next, key, task: null });
           try {
-            if ((await this.renderer.render(next.index, next.canvas, scale)) && gen === this.renderer.gen)
-              next.rendered = { sig, scale };
+            if (
+              (await this.renderer.render(next.index, next.canvas, scale, {
+                maxPx: PREVIEW_MAX_PX,
+                onTask: (task) => (job.task = task),
+              })) &&
+              gen === this.renderer.gen
+            )
+              next.rendered = { sig, scale, key };
             else if (next.visible) this.renderQueue.add(next);
           } catch (err) {
             console.warn('Darstellung fehlgeschlagen', err);
-            next.rendered = { sig, scale };
+            next.rendered = { sig, scale, key };
+          } finally {
+            if (this.previewJob === job) this.previewJob = null;
           }
         }
       } finally {
         this.rendering = false;
       }
     }
+  }
+  /** Gibt Vorschau-Canvas nicht sichtbarer Seiten frei, sobald sie das Pixelbudget übersteigen. */
+  trimPreviews() {
+    const hidden = this.pvs
+      .filter((pv) => !pv.visible && pv.canvas.width)
+      .sort((a, b) => (a.lastSeen || 0) - (b.lastSeen || 0));
+    let total = hidden.reduce((sum, pv) => sum + pv.canvas.width * pv.canvas.height, 0);
+    for (const pv of hidden) {
+      if (total <= HIDDEN_PREVIEW_BUDGET_PX) break;
+      total -= pv.canvas.width * pv.canvas.height;
+      pv.release();
+    }
+  }
+  /** Summe der Pixel aller Seiten-Canvas (Vorschau + Detail) – für Tests und Diagnose. */
+  canvasPixels() {
+    let preview = 0;
+    let detail = 0;
+    for (const pv of this.pvs) {
+      preview += pv.canvas.width * pv.canvas.height;
+      detail += pv.detail.width * pv.detail.height;
+    }
+    return { preview, detail, total: preview + detail };
+  }
+  /** Bei geändertem devicePixelRatio (Fenster auf anderen Bildschirm, Browser-Zoom) neu rendern. */
+  watchDpr() {
+    const query = matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    query.addEventListener(
+      'change',
+      () => {
+        if (this.session) {
+          for (const pv of this.pvs) if (pv.visible) this.queueRender(pv);
+          this.detail.schedule(0);
+        }
+        this.watchDpr();
+      },
+      { once: true },
+    );
   }
   toggleRight(show) {
     const panel = $('#right');
@@ -802,11 +883,17 @@ export class App {
       });
   }
   /**
-   * Setzt den Zoom (0,1–5) oder passt an Seitenbreite (`fit = 'width'`, höchstens 125 %) bzw.
-   * ganze Seite an. Die Seitengröße ist info.w × zoom × 96/72 CSS-Pixel; die Canvas-Auflösung
-   * zusätzlich × devicePixelRatio (höchstens 16 Mio. Pixel, siehe PdfRenderer.render).
+   * Setzt den Zoom (MIN_ZOOM–MAX_ZOOM) oder passt an Seitenbreite (`fit = 'width'`, höchstens
+   * 125 %) bzw. ganze Seite an. Die Seitengröße ist info.w × zoom × 96/72 CSS-Pixel. Die Vorschau
+   * hat höchstens PREVIEW_MAX_PX Pixel; die Schärfe darüber liefert der Detail-Canvas
+   * (DetailRenderer) für den sichtbaren Ausschnitt.
+   *
+   * `anchor`: Punkt, der beim Zoomen stehen bleibt – { clientX, clientY } (z. B. Mausposition)
+   * oder ein Ergebnis von `selectionAnchor()`; ohne Angabe die Mitte des Fensters. Beim Anpassen
+   * (`fit`) bleibt wie bisher die relative Lage in der aktuellen Seite erhalten.
+   * `opts.live`: Teil einer laufenden Geste – Neurendern erst nach kurzer Ruhepause.
    */
-  setZoom(zoom, fit, force) {
+  setZoom(zoom, fit, force, anchor, opts = {}) {
     if (!this.session) return;
     const scroller = $('#scroller');
     const cur = this.cur;
@@ -830,22 +917,181 @@ export class App {
         );
       }
     }
-    zoom = Math.max(0.1, Math.min(5, zoom));
+    zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
     if (!(Math.abs(zoom - this.zoom) < 1e-4 && !force && !fit)) {
+      const pin = fit ? null : this.zoomAnchor(anchor);
       this.edit.finishEdit();
       this.zoom = zoom;
-      $('#bZoom').textContent = Math.round(zoom * 100) + ' %';
+      $('#bZoom').textContent = formatZoom(zoom);
       this.layoutPages();
-      if (curPv) scroller.scrollTop = curPv.el.offsetTop + relScroll * curPv.el.offsetHeight;
+      if (pin) this.restoreAnchor(pin);
+      else if (curPv) scroller.scrollTop = curPv.el.offsetTop + relScroll * curPv.el.offsetHeight;
+      if (opts.live) this.renderHoldUntil = performance.now() + ZOOM_RENDER_HOLD_MS;
+      const job = this.previewJob;
+      if (job && job.task && job.key !== job.pv.previewSize().key) job.task.cancel();
       for (const pv of this.pvs) if (pv.visible) this.queueRender(pv);
+      this.detail.schedule(opts.live ? ZOOM_RENDER_HOLD_MS : 30);
     }
   }
-  zoomStep(dir) {
+  /**
+   * Hält einen Punkt fest, der beim Zoomen an derselben Bildschirmstelle bleiben soll:
+   * { pv, pdf: [x, y], clientX, clientY } – die Seite unter (oder nächst) dem Punkt und die
+   * PDF-Koordinaten darauf.
+   */
+  zoomAnchor(anchor) {
+    if (anchor && anchor.pv) return anchor;
+    const scroller = $('#scroller');
+    const rect = scroller.getBoundingClientRect();
+    const x = anchor ? anchor.clientX : rect.left + scroller.clientWidth / 2;
+    const y = anchor ? anchor.clientY : rect.top + scroller.clientHeight / 2;
+    // Mehrere Zoomschritte an derselben Stelle: den ursprünglichen PDF-Punkt weiterverwenden.
+    // Neu abgetastet würde der Rundungsfehler der Bildlaufposition mit jedem Schritt vergrößert.
+    const last = this.lastPin;
+    if (
+      last &&
+      Math.abs(last.clientX - x) < 0.5 &&
+      Math.abs(last.clientY - y) < 0.5 &&
+      last.scrollLeft === scroller.scrollLeft &&
+      last.scrollTop === scroller.scrollTop &&
+      this.pvByKey.get(last.pv.key) === last.pv
+    )
+      return last;
+    let best = null;
+    let bestDist = Infinity;
+    const candidates = this.pvs.filter((pv) => pv.visible);
+    for (const pv of candidates.length ? candidates : this.pvs) {
+      const r = pv.el.getBoundingClientRect();
+      const dist = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = pv;
+      }
+    }
+    return best ? { pv: best, pdf: best.clientToPdf(x, y), clientX: x, clientY: y } : null;
+  }
+  restoreAnchor(pin) {
+    if (!pin || this.pvByKey.get(pin.pv.key) !== pin.pv) return;
+    const scroller = $('#scroller');
+    const [x, y] = pin.pv.layerToClient(...pin.pv.pdfToLayer(...pin.pdf));
+    scroller.scrollLeft += x - pin.clientX;
+    scroller.scrollTop += y - pin.clientY;
+    this.lastPin = { ...pin, scrollLeft: scroller.scrollLeft, scrollTop: scroller.scrollTop };
+  }
+  /**
+   * Anker auf der Mitte der Auswahl (Bearbeiten-Modus): bleibt stehen, wenn er sichtbar ist,
+   * sonst wird er in die Fenstermitte gerückt. Ohne Auswahl null.
+   */
+  selectionAnchor() {
+    const edit = this.edit;
+    if (!edit.active || !edit.hasSelection()) return null;
+    const pv = edit.sel.pv;
+    const box = edit.selBox();
+    const pdf = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
+    const scroller = $('#scroller');
+    const rect = scroller.getBoundingClientRect();
+    let [x, y] = pv.layerToClient(...pv.pdfToLayer(...pdf));
+    if (
+      x < rect.left ||
+      y < rect.top ||
+      x > rect.left + scroller.clientWidth ||
+      y > rect.top + scroller.clientHeight
+    ) {
+      x = rect.left + scroller.clientWidth / 2;
+      y = rect.top + scroller.clientHeight / 2;
+    }
+    return { pv, pdf, clientX: x, clientY: y };
+  }
+  /** Nächste/vorige Zoomstufe; Anker: Mausposition, sonst Auswahl, sonst Fenstermitte. */
+  zoomStep(dir, anchor) {
     let idx = ZOOM_LEVELS.findIndex((i) => i >= this.zoom - 0.001);
     if (idx < 0) idx = ZOOM_LEVELS.length - 1;
     if (dir > 0) idx = ZOOM_LEVELS[idx] > this.zoom + 0.001 ? idx : idx + 1;
     else idx = idx - 1;
-    this.setZoom(ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx))]);
+    this.setZoom(
+      ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, idx))],
+      null,
+      false,
+      anchor || this.selectionAnchor(),
+    );
+  }
+  /**
+   * Stufenloses Zoomen um `factor` (Touchpad-Pinch). Mehrere Ereignisse je Bildschirmbild werden
+   * zusammengefasst; gerendert wird erst nach einer kurzen Pause.
+   */
+  zoomBy(factor, anchor) {
+    if (!this.session) return;
+    this.pinch = this.pinch || { zoom: this.zoom, frame: 0 };
+    this.pinch.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.pinch.zoom * factor));
+    this.pinch.anchor = anchor;
+    if (this.pinch.frame) return;
+    this.pinch.frame = requestAnimationFrame(() => {
+      const { zoom, anchor: at } = this.pinch;
+      this.pinch = null;
+      this.setZoom(zoom, null, false, at, { live: true });
+    });
+  }
+  /** Zoomt so, dass die Auswahl das Fenster mit etwas Rand füllt (höchstens MAX_ZOOM). */
+  zoomToSelection() {
+    const anchor = this.selectionAnchor();
+    if (!anchor) {
+      toast('Zuerst ein Element auswählen (Bearbeiten-Modus).');
+      return;
+    }
+    const box = this.edit.selBox();
+    const rotated = anchor.pv.rot % 180 !== 0;
+    const w = Math.max(1e-3, rotated ? box[3] - box[1] : box[2] - box[0]);
+    const h = Math.max(1e-3, rotated ? box[2] - box[0] : box[3] - box[1]);
+    const scroller = $('#scroller');
+    const zoom = Math.min(
+      (scroller.clientWidth * SELECTION_FILL) / (w * CSS_PX_PER_PT),
+      (scroller.clientHeight * SELECTION_FILL) / (h * CSS_PX_PER_PT),
+    );
+    const rect = scroller.getBoundingClientRect();
+    anchor.clientX = rect.left + scroller.clientWidth / 2;
+    anchor.clientY = rect.top + scroller.clientHeight / 2;
+    this.setZoom(zoom, null, true, anchor);
+  }
+  /** Zoom-Menü: Eingabefeld für eigene Werte, Voreinstellungen, Anpassen. */
+  zoomMenu(anchorEl) {
+    const hasSel = this.edit.active && this.edit.hasSelection();
+    const menu = showMenu(
+      [
+        ...ZOOM_PRESETS.map((zoom) => ({
+          label: formatZoom(zoom),
+          key: zoom === 1 ? 'Strg+1' : undefined,
+          run: () => this.setZoom(zoom, null, false, this.selectionAnchor()),
+        })),
+        '-',
+        { label: 'Seitenbreite', icon: 'fitw', key: 'Strg+0', run: () => this.setZoom(null, 'width') },
+        { label: 'Ganze Seite', icon: 'fitp', run: () => this.setZoom(null, 'page') },
+        { label: 'Auf Auswahl zoomen', key: 'Strg+2', disabled: !hasSel, run: () => this.zoomToSelection() },
+      ],
+      anchorEl,
+    );
+    const row = htmlToElement(
+      '<label class="zin"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Zoom in Prozent"><span>%</span></label>',
+    );
+    const input = row.querySelector('input');
+    input.value = String(Math.round(this.zoom * 100));
+    input.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') {
+        const value = parseFloat(
+          input.value
+            .replace(/[^\d,.]/g, '')
+            .replace(/\.(?=\d{3}(\D|$))/g, '')
+            .replace(',', '.'),
+        );
+        if (value > 0) {
+          closeMenu();
+          this.setZoom(value / 100, null, false, this.selectionAnchor());
+        } else input.select();
+      } else if (ev.key === 'Escape') closeMenu();
+    });
+    menu.insertBefore(row, menu.firstChild);
+    menu.insertBefore(document.createElement('hr'), row.nextSibling);
+    input.focus();
+    input.select();
   }
   goto(index) {
     if (!this.pvs.length) return;
@@ -859,6 +1105,7 @@ export class App {
     this.setCur(index);
   }
   onScroll() {
+    this.detail.schedule();
     const scroller = $('#scroller');
     const probeY = scroller.scrollTop + scroller.clientHeight * 0.35;
     let current = 0;
@@ -1010,6 +1257,16 @@ export class App {
         if (mod && key === '0') {
           ev.preventDefault();
           this.setZoom(null, 'width');
+          return;
+        }
+        if (mod && !ev.shiftKey && !ev.altKey && key === '1') {
+          ev.preventDefault();
+          this.setZoom(1, null, false, this.selectionAnchor());
+          return;
+        }
+        if (mod && !ev.shiftKey && !ev.altKey && key === '2') {
+          ev.preventDefault();
+          this.zoomToSelection();
           return;
         }
         if (!(
