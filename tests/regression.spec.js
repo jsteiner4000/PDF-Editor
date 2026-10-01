@@ -67,6 +67,14 @@ test('Laden und Darstellen', async ({ browser }) => {
     const opened = await openPdf(page);
     const state = await uiState(page);
     const canvases = await canvasHashes(page);
+    // Neu gegenüber 1.0: Eintrag „Unterschrift“ in „Alle Werkzeuge“. Er wird separat geprüft und
+    // für den Bildschirmvergleich der Seitenleiste ausgeblendet (display:none – ohne Platzbedarf).
+    const signatureTool = await page.evaluate(() => {
+      const el = document.querySelector('#lpBody .tool[data-tool="signature"]');
+      if (!el) return null;
+      el.style.display = 'none';
+      return el.textContent;
+    });
     const shot = await screenshots(page);
     const model = await page.evaluate(() => {
       const s = window.pdfEditor.session;
@@ -93,9 +101,13 @@ test('Laden und Darstellen', async ({ browser }) => {
       [...document.querySelectorAll('#thumbs .th canvas')].map((c) => c.toDataURL()),
     );
     const shotThumbs = await screenshots(page, ['#right', '#thumbs .th']);
-    return { opened, state, canvases, shot, model, thumbs: thumbs.map(sha), shotThumbs };
+    return { opened, state, canvases, shot, model, thumbs: thumbs.map(sha), shotThumbs, signatureTool };
   });
   noErrors(r);
+  expect(r.original.signatureTool).toBeNull();
+  expect(r.neubau.signatureTool).toBe('UnterschriftHinterlegen und einsetzen');
+  delete r.original.signatureTool;
+  delete r.neubau.signatureTool;
   expect(r.original.opened).toBe(true);
   expect(r.original.state.pages).toBe(3);
   expect(r.original.model[0].blocks.map((b) => b.text)).toContain('Regressionstest');
