@@ -96,10 +96,20 @@ async function dokument() {
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const helvBold = await doc.embedFont(StandardFonts.HelveticaBold);
   const times = await doc.embedFont(StandardFonts.TimesRoman);
-  const barlow = await doc.embedFont(await readFile(path.join(ROOT, 'assets/fonts/embedded/Barlow-Regular.ttf')), { subset: true });
-  const mono = await doc.embedFont(await readFile(path.join(ROOT, 'assets/fonts/embedded/IBMPlexMono-Regular.ttf')), { subset: false });
+  const barlow = await doc.embedFont(
+    await readFile(path.join(ROOT, 'assets/fonts/embedded/Barlow-Regular.ttf')),
+    { subset: true },
+  );
+  const mono = await doc.embedFont(
+    await readFile(path.join(ROOT, 'assets/fonts/embedded/IBMPlexMono-Regular.ttf')),
+    { subset: false },
+  );
   const png = await doc.embedPng(
-    makePng(120, 80, (x, y) => [Math.round((x / 119) * 255), Math.round((y / 79) * 255), 160 - ((x + y) % 40)]),
+    makePng(120, 80, (x, y) => [
+      Math.round((x / 119) * 255),
+      Math.round((y / 79) * 255),
+      160 - ((x + y) % 40),
+    ]),
   );
 
   const total = 3;
@@ -110,33 +120,78 @@ async function dokument() {
     const page = doc.addPage([W, H]);
     // Kopfzeile + Linie (wiederkehrende Elemente)
     page.drawText('Testdokument PDF-Editor', { x: 56, y: 800, size: 9, font: helv, color: ink });
-    page.drawLine({ start: { x: 56, y: 792 }, end: { x: W - 56, y: 792 }, thickness: 0.75, color: rgb(0.5, 0.5, 0.5) });
+    page.drawLine({
+      start: { x: 56, y: 792 },
+      end: { x: W - 56, y: 792 },
+      thickness: 0.75,
+      color: rgb(0.5, 0.5, 0.5),
+    });
     // Seitenzahl „n / 3“ zentriert
     const label = `${i + 1} / ${total}`;
-    page.drawText(label, { x: W / 2 - helv.widthOfTextAtSize(label, 9) / 2, y: 30, size: 9, font: helv, color: ink });
+    page.drawText(label, {
+      x: W / 2 - helv.widthOfTextAtSize(label, 9) / 2,
+      y: 30,
+      size: 9,
+      font: helv,
+      color: ink,
+    });
   }
   const [p1, p2, p3] = doc.getPages();
 
   p1.drawText('Regressionstest', { x: 56, y: 740, size: 20, font: helvBold, color: ink });
-  const para = ['Dies ist ein Absatz in Helvetica, der über mehrere', 'Zeilen läuft und für die Bearbeitung von Text', 'verwendet wird.'];
+  const para = [
+    'Dies ist ein Absatz in Helvetica, der über mehrere',
+    'Zeilen läuft und für die Bearbeitung von Text',
+    'verwendet wird.',
+  ];
   para.forEach((line, k) => p1.drawText(line, { x: 56, y: 700 - k * 14, size: 11, font: helv, color: ink }));
-  p1.drawText('Times Roman: Fließtext mit Umlauten äöü.', { x: 56, y: 640, size: 12, font: times, color: ink });
-  p1.drawText('Barlow eingebettet: Hallo Welt', { x: 56, y: 600, size: 14, font: barlow, color: rgb(0.13, 0.25, 0.75) });
+  p1.drawText('Times Roman: Fließtext mit Umlauten äöü.', {
+    x: 56,
+    y: 640,
+    size: 12,
+    font: times,
+    color: ink,
+  });
+  p1.drawText('Barlow eingebettet: Hallo Welt', {
+    x: 56,
+    y: 600,
+    size: 14,
+    font: barlow,
+    color: rgb(0.13, 0.25, 0.75),
+  });
   p1.drawText('Mono 0123456789', { x: 56, y: 570, size: 10, font: mono, color: ink });
 
   // Rechteck aus vier einzelnen Linien
   const blue = rgb(0.1, 0.2, 0.6);
   const box = { x0: 56, y0: 380, x1: 256, y1: 500 };
   for (const [a, b] of [
-    [[box.x0, box.y0], [box.x1, box.y0]],
-    [[box.x1, box.y0], [box.x1, box.y1]],
-    [[box.x1, box.y1], [box.x0, box.y1]],
-    [[box.x0, box.y1], [box.x0, box.y0]],
+    [
+      [box.x0, box.y0],
+      [box.x1, box.y0],
+    ],
+    [
+      [box.x1, box.y0],
+      [box.x1, box.y1],
+    ],
+    [
+      [box.x1, box.y1],
+      [box.x0, box.y1],
+    ],
+    [
+      [box.x0, box.y1],
+      [box.x0, box.y0],
+    ],
   ])
     p1.drawLine({ start: { x: a[0], y: a[1] }, end: { x: b[0], y: b[1] }, thickness: 1.5, color: blue });
 
   // Rechteck als „re“-Operator (gefüllt)
-  p1.pushOperators(pushGraphicsState(), setFillingRgbColor(0.95, 0.55, 0.1), rectangle(300, 380, 200, 120), fill(), popGraphicsState());
+  p1.pushOperators(
+    pushGraphicsState(),
+    setFillingRgbColor(0.95, 0.55, 0.1),
+    rectangle(300, 380, 200, 120),
+    fill(),
+    popGraphicsState(),
+  );
 
   // freie Linie
   p1.drawLine({ start: { x: 56, y: 340 }, end: { x: 280, y: 260 }, thickness: 2, color: rgb(0.7, 0.1, 0.1) });
@@ -145,8 +200,20 @@ async function dokument() {
   p1.drawImage(png, { x: 320, y: 200, width: 150, height: 100 });
 
   p2.drawText('Seite zwei', { x: 56, y: 740, size: 16, font: helvBold, color: ink });
-  p2.drawText('Zweite Seite mit etwas Text in Helvetica.', { x: 56, y: 710, size: 11, font: helv, color: ink });
-  p2.pushOperators(pushGraphicsState(), setFillingRgbColor(0.2, 0.6, 0.3), rectangle(56, 560, 120, 80), fill(), popGraphicsState());
+  p2.drawText('Zweite Seite mit etwas Text in Helvetica.', {
+    x: 56,
+    y: 710,
+    size: 11,
+    font: helv,
+    color: ink,
+  });
+  p2.pushOperators(
+    pushGraphicsState(),
+    setFillingRgbColor(0.2, 0.6, 0.3),
+    rectangle(56, 560, 120, 80),
+    fill(),
+    popGraphicsState(),
+  );
 
   p3.drawText('Seite drei', { x: 56, y: 740, size: 16, font: helvBold, color: ink });
   p3.drawText('Letzte Seite des Testdokuments.', { x: 56, y: 710, size: 11, font: helv, color: ink });
@@ -161,13 +228,22 @@ async function layout() {
   const helv = await doc.embedFont(StandardFonts.Helvetica);
   const helvBold = await doc.embedFont(StandardFonts.HelveticaBold);
   const times = await doc.embedFont(StandardFonts.TimesRoman);
-  const barlow = await doc.embedFont(await readFile(path.join(ROOT, 'assets/fonts/embedded/Barlow-Regular.ttf')), { subset: true });
+  const barlow = await doc.embedFont(
+    await readFile(path.join(ROOT, 'assets/fonts/embedded/Barlow-Regular.ttf')),
+    { subset: true },
+  );
   const ink = rgb(0.1, 0.12, 0.16);
   const page = doc.addPage([595.28, 841.89]);
 
   // zentrierte Überschrift
   const title = 'Zentrierte Überschrift';
-  page.drawText(title, { x: (595.28 - helvBold.widthOfTextAtSize(title, 18)) / 2, y: 780, size: 18, font: helvBold, color: ink });
+  page.drawText(title, {
+    x: (595.28 - helvBold.widthOfTextAtSize(title, 18)) / 2,
+    y: 780,
+    size: 18,
+    font: helvBold,
+    color: ink,
+  });
 
   // Blocksatz über Wortabstand (Tw): jede Zeile außer der letzten ist genau 300 pt breit
   const justified = [
@@ -178,18 +254,33 @@ async function layout() {
   ];
   page.setFont(times);
   const timesKey = page.fontKey;
-  const ops = [pushGraphicsState(), beginText(), setFontAndSize(timesKey, 11), setFillingRgbColor(0.1, 0.12, 0.16)];
+  const ops = [
+    pushGraphicsState(),
+    beginText(),
+    setFontAndSize(timesKey, 11),
+    setFillingRgbColor(0.1, 0.12, 0.16),
+  ];
   justified.forEach((line, k) => {
     const spaces = line.split(' ').length - 1;
     const tw = k === justified.length - 1 ? 0 : (300 - times.widthOfTextAtSize(line, 11)) / spaces;
-    ops.push(setWordSpacing(tw), k === 0 ? moveText(56, 730) : moveText(0, -14), showText(times.encodeText(line)));
+    ops.push(
+      setWordSpacing(tw),
+      k === 0 ? moveText(56, 730) : moveText(0, -14),
+      showText(times.encodeText(line)),
+    );
   });
   ops.push(setWordSpacing(0), endText(), popGraphicsState());
   page.pushOperators(...ops);
 
   // rechtsbündig
   for (const [k, line] of ['Rechtsbündiger Text', 'in zwei Zeilen'].entries())
-    page.drawText(line, { x: 539 - helv.widthOfTextAtSize(line, 10), y: 650 - k * 13, size: 10, font: helv, color: ink });
+    page.drawText(line, {
+      x: 539 - helv.widthOfTextAtSize(line, 10),
+      y: 650 - k * 13,
+      size: 10,
+      font: helv,
+      color: ink,
+    });
 
   // zwei Spalten
   const colA = ['Linke Spalte mit etwas', 'Text, der in der Spalte', 'bleibt.'];
@@ -209,9 +300,27 @@ async function layout() {
 
   // Farbwechsel und hochgestelltes Zeichen in einer Zeile
   page.drawText('Farbe:', { x: 56, y: 340, size: 12, font: helv, color: ink });
-  page.drawText('rot', { x: 56 + helv.widthOfTextAtSize('Farbe: ', 12), y: 340, size: 12, font: helv, color: rgb(0.8, 0.1, 0.1) });
-  page.drawText('und m', { x: 56 + helv.widthOfTextAtSize('Farbe: rot ', 12), y: 340, size: 12, font: helv, color: ink });
-  page.drawText('2', { x: 56 + helv.widthOfTextAtSize('Farbe: rot und m', 12), y: 345, size: 7, font: helv, color: ink });
+  page.drawText('rot', {
+    x: 56 + helv.widthOfTextAtSize('Farbe: ', 12),
+    y: 340,
+    size: 12,
+    font: helv,
+    color: rgb(0.8, 0.1, 0.1),
+  });
+  page.drawText('und m', {
+    x: 56 + helv.widthOfTextAtSize('Farbe: rot ', 12),
+    y: 340,
+    size: 12,
+    font: helv,
+    color: ink,
+  });
+  page.drawText('2', {
+    x: 56 + helv.widthOfTextAtSize('Farbe: rot und m', 12),
+    y: 345,
+    size: 7,
+    font: helv,
+    color: ink,
+  });
   return doc.save({ useObjectStreams: false });
 }
 

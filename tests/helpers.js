@@ -49,12 +49,16 @@ export async function launch(browser, build) {
   await page.clock.setFixedTime(new Date('2026-03-01T10:00:00+01:00'));
   await page.addInitScript(DETERMINISM);
   await page.goto(pathToFileURL(file).href);
-  await page.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10, null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10, null, {
+    timeout: 30_000,
+  });
   // alle Hinweise (Toasts) mitschreiben – sie verschwinden nach wenigen Sekunden wieder
   await page.evaluate(() => {
     window.__toastLog = [];
     new MutationObserver((records) => {
-      for (const r of records) for (const n of r.addedNodes) if (n.classList && n.classList.contains('toast')) window.__toastLog.push(n.textContent);
+      for (const r of records)
+        for (const n of r.addedNodes)
+          if (n.classList && n.classList.contains('toast')) window.__toastLog.push(n.textContent);
     }).observe(document.getElementById('toasts'), { childList: true });
   });
   return { page, context, errors };
@@ -78,7 +82,9 @@ export async function settled(page) {
   await page.waitForFunction(
     () => {
       const app = window.pdfEditor;
-      return app && !app._syncP && !(app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge));
+      return (
+        app && !app._syncP && !(app.edit && (app.edit._finishing || app.edit._nudging || app.edit.nudge))
+      );
     },
     null,
     { timeout: 30_000, polling: 50 },
@@ -106,7 +112,10 @@ export async function idle(page) {
         const scroller = document.getElementById('scroller');
         const pagesShown = app.session && scroller && !scroller.classList.contains('hidden');
         if (pagesShown && app.pvs.length && !app.pvs.some((pv) => pv.visible)) return false;
-        const stale = app.pvs.filter((pv) => pv.visible && !(pv.rendered && pv.rendered.sig === pv.sig && pv.rendered.scale === pv.scale));
+        const stale = app.pvs.filter(
+          (pv) =>
+            pv.visible && !(pv.rendered && pv.rendered.sig === pv.sig && pv.rendered.scale === pv.scale),
+        );
         if (!stale.length) {
           window.__staleSince = 0;
           return true;
@@ -127,7 +136,9 @@ export async function idle(page) {
 
 /** Hashes der Seiten-Canvas (Pixelinhalt als PNG). */
 export async function canvasHashes(page) {
-  const urls = await page.evaluate(() => window.pdfEditor.pvs.map((pv) => (pv.rendered ? pv.canvas.toDataURL('image/png') : null)));
+  const urls = await page.evaluate(() =>
+    window.pdfEditor.pvs.map((pv) => (pv.rendered ? pv.canvas.toDataURL('image/png') : null)),
+  );
   return urls.map((u) => (u ? sha(u) : null));
 }
 
@@ -158,7 +169,8 @@ export async function savedBytes(page) {
   const b64 = await page.evaluate(async () => {
     const bytes = await window.pdfEditor.bytesForSave();
     let s = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    for (let i = 0; i < bytes.length; i += 0x8000)
+      s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return btoa(s);
   });
   return Buffer.from(b64, 'base64');
@@ -167,12 +179,19 @@ export async function savedBytes(page) {
 /** Textinhalt aller Seiten eines PDFs (pdf.js in Node). */
 export async function extractText(bytes) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0, isEvalSupported: false }).promise;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(bytes), verbosity: 0, isEvalSupported: false })
+    .promise;
   const pages = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const tc = await page.getTextContent();
-    pages.push(tc.items.map((it) => it.str + (it.hasEOL ? '\n' : '')).join('').replace(/[ \t]+/g, ' ').trim());
+    pages.push(
+      tc.items
+        .map((it) => it.str + (it.hasEOL ? '\n' : ''))
+        .join('')
+        .replace(/[ \t]+/g, ' ')
+        .trim(),
+    );
   }
   await doc.destroy();
   return pages;
@@ -203,7 +222,14 @@ export async function findBlock(page, index, needle) {
   return page.evaluate(
     ({ index, needle }) => {
       const b = window.pdfEditor.session.model(index).blocks.find((bl) => bl.text.includes(needle));
-      return b ? { bbox: b.bbox, text: b.text, editable: b.editable, lines: b.lines.map((l) => ({ y: l.y, x0: l.x0, ex: l.ex })) } : null;
+      return b
+        ? {
+            bbox: b.bbox,
+            text: b.text,
+            editable: b.editable,
+            lines: b.lines.map((l) => ({ y: l.y, x0: l.x0, ex: l.ex })),
+          }
+        : null;
     },
     { index, needle },
   );
@@ -215,7 +241,12 @@ export async function objectsOf(page, index) {
     (index) =>
       window.pdfEditor.session
         .model(index)
-        .objects.map((o) => ({ type: o.type, vis: o.vis.map((v) => Math.round(v * 100) / 100), selectable: o.selectable, group: o.cluster ? o.cluster.members.length : 0 })),
+        .objects.map((o) => ({
+          type: o.type,
+          vis: o.vis.map((v) => Math.round(v * 100) / 100),
+          selectable: o.selectable,
+          group: o.cluster ? o.cluster.members.length : 0,
+        })),
     index,
   );
 }
@@ -236,7 +267,12 @@ export async function uiState(page) {
       undo: app.session ? app.session.hist.undo.map((e) => e.label) : [],
       redo: app.session ? app.session.hist.redo.map((e) => e.label) : [],
       dirty: app.session ? app.session.dirty : false,
-      pageSizes: app.pvs.map((pv) => [pv.el.style.width, pv.el.style.height, pv.canvas.width, pv.canvas.height]),
+      pageSizes: app.pvs.map((pv) => [
+        pv.el.style.width,
+        pv.el.style.height,
+        pv.canvas.width,
+        pv.canvas.height,
+      ]),
       undoDisabled: q('#bUndo').disabled,
       redoDisabled: q('#bRedo').disabled,
       undoTitle: q('#bUndo').title,

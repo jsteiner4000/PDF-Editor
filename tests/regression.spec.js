@@ -53,7 +53,9 @@ async function dragBy(page, from, dx, dy) {
   await page.mouse.move(from[0], from[1]);
   await page.mouse.down();
   for (let i = 1; i <= 8; i++) await page.mouse.move(from[0] + (dx * i) / 8, from[1] + (dy * i) / 8);
-  const guides = await page.evaluate(() => [...document.querySelectorAll('.guide')].map((g) => g.className + '|' + g.style.cssText));
+  const guides = await page.evaluate(() =>
+    [...document.querySelectorAll('.guide')].map((g) => g.className + '|' + g.style.cssText),
+  );
   await page.mouse.up();
   await page.waitForFunction(() => !window.pdfEditor.edit.drag);
   await idle(page);
@@ -69,16 +71,29 @@ test('Laden und Darstellen', async ({ browser }) => {
     const model = await page.evaluate(() => {
       const s = window.pdfEditor.session;
       return [0, 1, 2].map((i) => ({
-        blocks: s.model(i).blocks.map((b) => ({ text: b.text, align: b.align, editable: b.editable, bbox: b.bbox.map((v) => Math.round(v * 100) / 100) })),
+        blocks: s
+          .model(i)
+          .blocks.map((b) => ({
+            text: b.text,
+            align: b.align,
+            editable: b.editable,
+            bbox: b.bbox.map((v) => Math.round(v * 100) / 100),
+          })),
         objects: s.model(i).objects.length,
       }));
     });
     // Miniaturansicht einblenden
     await page.locator('#rThumbs').click();
-    await page.waitForFunction(() => [...document.querySelectorAll('#thumbs .th')].every((t) => t.dataset.sig && t.querySelector('canvas').width > 0));
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#thumbs .th')].every(
+        (t) => t.dataset.sig && t.querySelector('canvas').width > 0,
+      ),
+    );
     await idle(page);
     await page.waitForTimeout(300);
-    const thumbs = await page.evaluate(() => [...document.querySelectorAll('#thumbs .th canvas')].map((c) => c.toDataURL()));
+    const thumbs = await page.evaluate(() =>
+      [...document.querySelectorAll('#thumbs .th canvas')].map((c) => c.toDataURL()),
+    );
     const shotThumbs = await screenshots(page, ['#right', '#thumbs .th']);
     return { opened, state, canvases, shot, model, thumbs: thumbs.map(sha), shotThumbs };
   });
@@ -98,7 +113,14 @@ test('Text bearbeiten und speichern (Standardschrift)', async ({ browser }) => {
     const state = await uiState(page);
     const block = await findBlock(page, 0, 'Ergänzt');
     const bytes = await savedBytes(page);
-    return { state, block, toasts: await toasts(page), text: await extractText(bytes), bytes: sha(bytes), canvases: await canvasHashes(page) };
+    return {
+      state,
+      block,
+      toasts: await toasts(page),
+      text: await extractText(bytes),
+      bytes: sha(bytes),
+      canvases: await canvasHashes(page),
+    };
   });
   noErrors(r);
   expect(r.original.text[0]).toContain('Ergänzt');
@@ -113,8 +135,18 @@ test('Text in eingebetteter Schrift mit neuen Zeichen', async ({ browser }) => {
     await appendToLine(page, 'Barlow eingebettet', 0, ' Quiz Ü');
     await appendToLine(page, 'Mono 0123456789', 0, ' QX');
     const bytes = await savedBytes(page);
-    const fonts = await page.evaluate(() => window.pdfEditor.session.fonts.list().map((f) => ({ key: f.key, label: f.label, full: !!window.pdfEditor.session.fonts.fullFor(f) })));
-    return { state: await uiState(page), fonts, text: await extractText(bytes), bytes: sha(bytes), canvases: await canvasHashes(page) };
+    const fonts = await page.evaluate(() =>
+      window.pdfEditor.session.fonts
+        .list()
+        .map((f) => ({ key: f.key, label: f.label, full: !!window.pdfEditor.session.fonts.fullFor(f) })),
+    );
+    return {
+      state: await uiState(page),
+      fonts,
+      text: await extractText(bytes),
+      bytes: sha(bytes),
+      canvases: await canvasHashes(page),
+    };
   });
   noErrors(r);
   expect(r.original.text[0]).toContain('Quiz Ü');
@@ -199,7 +231,15 @@ test('Seiten löschen und einfügen (Seitenzahlen, Kopfzeile)', async ({ browser
     await expect(page.locator('#org .ocard')).toHaveCount(3);
     await idle(page);
     const bytes = await savedBytes(page);
-    return { panel, afterDelete, dialogText, state: await uiState(page), toasts: await toasts(page), text: await extractText(bytes), bytes: sha(bytes) };
+    return {
+      panel,
+      afterDelete,
+      dialogText,
+      state: await uiState(page),
+      toasts: await toasts(page),
+      text: await extractText(bytes),
+      bytes: sha(bytes),
+    };
   });
   noErrors(r);
   const o = r.original;
@@ -224,7 +264,12 @@ test('Rückgängig und Wiederholen', async ({ browser }) => {
     for (const key of ['Control+z', 'Control+y', 'Control+z', 'Control+Shift+z']) {
       await page.keyboard.press(key);
       await idle(page);
-      steps.push({ key, state: await uiState(page), text: (await extractText(await savedBytes(page)))[0], toasts: await toasts(page) });
+      steps.push({
+        key,
+        state: await uiState(page),
+        text: (await extractText(await savedBytes(page)))[0],
+        toasts: await toasts(page),
+      });
     }
     await page.locator('#bUndo').click();
     await idle(page);
@@ -292,7 +337,13 @@ test('Speichern mit Strg+S (Download ohne Dateisystem-Zugriff)', async ({ browse
     const { readFile } = await import('node:fs/promises');
     const bytes = await readFile(file);
     await idle(page);
-    return { name: download.suggestedFilename(), bytes: sha(bytes), text: await extractText(bytes), state: await uiState(page), toasts: await toasts(page) };
+    return {
+      name: download.suggestedFilename(),
+      bytes: sha(bytes),
+      text: await extractText(bytes),
+      state: await uiState(page),
+      toasts: await toasts(page),
+    };
   });
   noErrors(r);
   expect(r.original.name).toBe('dokument.pdf');
@@ -328,8 +379,16 @@ test('Textblöcke und Inline-Editor (Blocksatz, Spalten, Liste, Trennung)', asyn
       await page.locator('.te').waitFor();
       const info = await page.evaluate(() => {
         const ed = window.pdfEditor.edit.editor;
-        const segs = ed.collect().map((l) => l.segs.map((sg) => ({ text: sg.text, x: sg.x, y: sg.y, size: sg.size, xs: sg.xs })));
-        return { mode: ed.mode, html: ed.te.innerHTML, width: ed.te.style.width, frame: [ed.frame.style.left, ed.frame.style.top], segs };
+        const segs = ed
+          .collect()
+          .map((l) => l.segs.map((sg) => ({ text: sg.text, x: sg.x, y: sg.y, size: sg.size, xs: sg.xs })));
+        return {
+          mode: ed.mode,
+          html: ed.te.innerHTML,
+          width: ed.te.style.width,
+          frame: [ed.frame.style.left, ed.frame.style.top],
+          segs,
+        };
       });
       editors.push(info);
       await page.keyboard.press('Escape');
@@ -340,7 +399,14 @@ test('Textblöcke und Inline-Editor (Blocksatz, Spalten, Liste, Trennung)', asyn
     // Blocksatz-Absatz bearbeiten: Text in der Mitte einfügen
     await appendToLine(page, 'Dieser Absatz', 1, ' NEU');
     const bytes = await savedBytes(page);
-    return { model, editors, round: round(1), state: await uiState(page), text: await extractText(bytes), bytes: sha(bytes) };
+    return {
+      model,
+      editors,
+      round: round(1),
+      state: await uiState(page),
+      text: await extractText(bytes),
+      bytes: sha(bytes),
+    };
   });
   noErrors(r);
   const o = r.original;

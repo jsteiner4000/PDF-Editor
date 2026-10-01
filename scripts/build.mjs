@@ -65,7 +65,10 @@ function virtualModules(contents) {
 
 /** SVG als data:-URI (gleiche Kodierung wie in Version 1.0). */
 function svgDataUri(svg) {
-  return 'data:image/svg+xml,' + svg.trim().replace(/[%<>"()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  return (
+    'data:image/svg+xml,' +
+    svg.trim().replace(/[%<>"()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  );
 }
 
 function fill(template, values) {
@@ -95,7 +98,8 @@ export async function build() {
     ],
   });
   const script = result.outputFiles[0].text;
-  if (/<\/script/i.test(script)) throw new Error('Das Skript enthält "</script" und kann nicht inline eingebettet werden.');
+  if (/<\/script/i.test(script))
+    throw new Error('Das Skript enthält "</script" und kann nicht inline eingebettet werden.');
   const [template, styles, favicon] = await Promise.all([
     readFile(path.join(SRC, 'index.html'), 'utf8'),
     readFile(path.join(SRC, 'styles.css'), 'utf8'),
@@ -105,7 +109,9 @@ export async function build() {
   await mkdir(path.dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, html);
   const kb = (n) => (n / 1024).toFixed(0) + ' KB';
-  console.log(`dist/PDF-Editor.html geschrieben (${kb(html.length)}, Skript ${kb(script.length)}, Worker ${kb(workerSource.length)}) in ${Date.now() - started} ms`);
+  console.log(
+    `dist/PDF-Editor.html geschrieben (${kb(html.length)}, Skript ${kb(script.length)}, Worker ${kb(workerSource.length)}) in ${Date.now() - started} ms`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

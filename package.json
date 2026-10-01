@@ -8,6 +8,7 @@
     "build": "node scripts/build.mjs",
     "dev": "node scripts/build.mjs --watch",
     "fixtures": "node tests/fixtures/generate.mjs",
+    "pretest": "node scripts/build.mjs",
     "test": "playwright test",
     "format": "prettier --write src scripts tests"
   },
@@ -20,5 +21,8 @@
     "@playwright/test": "1.56.1",
     "esbuild": "0.28.2",
     "prettier": "3.9.9"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
