@@ -3,19 +3,24 @@
  * Bilddateien einlesen, RGBA-Bilder als PNG kodieren.
  */
 import { AnnotationMode } from 'pdfjs-dist';
+import { rotateImage } from './signature-extract.js';
 
 /** Auflösung, mit der ein Seitenbereich für das Freistellen gerendert wird. */
 export const CAPTURE_DPI = 600;
 
-/** Obergrenze für die Pixelzahl eines gerenderten Bereichs (große Rahmen werden geringer aufgelöst). */
-const MAX_CAPTURE_PX = 24e6;
+/**
+ * Obergrenze für die Pixelzahl, die freigestellt wird (gerenderte Bereiche, Bilddateien): große
+ * Rahmen und Fotos werden geringer aufgelöst.
+ */
+export const MAX_PROCESS_PX = 8e6;
 
 /**
  * Rendert den PDF-Bereich `rect` = [x0, y0, x1, y1] (Punkte, PDF-Koordinaten) der Seite `index`
  * mit pdf.js – unabhängig vom aktuellen Zoom – mit `dpi` (Standard 600, bei sehr großen Rahmen
- * weniger). Rückgabe: `{ image: ImageData, dpi }`.
+ * weniger). Auf gedrehten Seiten (`rotate` = /Rotate) wird das Ergebnis so gedreht, wie die Seite
+ * angezeigt wird. Rückgabe: `{ image, dpi }`.
  */
-export async function renderPdfRegion(renderer, index, rect, dpi = CAPTURE_DPI) {
+export async function renderPdfRegion(renderer, index, rect, dpi = CAPTURE_DPI, rotate = 0) {
   const doc = renderer.doc;
   if (!doc) throw new Error('Kein Dokument geladen');
   const page = await doc.getPage(index + 1);
@@ -23,7 +28,7 @@ export async function renderPdfRegion(renderer, index, rect, dpi = CAPTURE_DPI) 
   const heightPt = Math.abs(rect[3] - rect[1]);
   let scale = dpi / 72;
   const px = widthPt * heightPt * scale * scale;
-  if (px > MAX_CAPTURE_PX) scale *= Math.sqrt(MAX_CAPTURE_PX / px);
+  if (px > MAX_PROCESS_PX) scale *= Math.sqrt(MAX_PROCESS_PX / px);
   const base = page.getViewport({ scale, rotation: 0 });
   const [ax, ay] = base.convertToViewportPoint(Math.min(rect[0], rect[2]), Math.max(rect[1], rect[3]));
   const [bx, by] = base.convertToViewportPoint(Math.max(rect[0], rect[2]), Math.min(rect[1], rect[3]));
@@ -40,16 +45,18 @@ export async function renderPdfRegion(renderer, index, rect, dpi = CAPTURE_DPI) 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvasContext: ctx, viewport, annotationMode: AnnotationMode.ENABLE }).promise;
-  return { image: ctx.getImageData(0, 0, canvas.width, canvas.height), dpi: scale * 72 };
+  const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return { image: rotateImage(image, rotate), dpi: scale * 72 };
 }
 
 /**
- * Liest eine Bilddatei (PNG, JPG, …) als ImageData; sehr große Fotos werden auf `maxSide` Pixel
- * (längste Seite) verkleinert. Transparente Bereiche werden auf Weiß gelegt.
+ * Liest eine Bilddatei (PNG, JPG, …) als ImageData; große Fotos werden auf höchstens
+ * MAX_PROCESS_PX Pixel verkleinert. Transparente Bereiche werden auf Weiß gelegt.
+ * Rückgabe: `{ image, factor }` (factor = Verkleinerung, 1 = Originalgröße).
  */
-export async function decodeImageFile(file, maxSide = 4000) {
+export async function decodeImageFile(file, maxPx = MAX_PROCESS_PX) {
   const bitmap = await createImageBitmap(file);
-  const fit = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const fit = Math.min(1, Math.sqrt(maxPx / (bitmap.width * bitmap.height)));
   const width = Math.max(1, Math.round(bitmap.width * fit));
   const height = Math.max(1, Math.round(bitmap.height * fit));
   const canvas = document.createElement('canvas');
@@ -60,7 +67,26 @@ export async function decodeImageFile(file, maxSide = 4000) {
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close && bitmap.close();
-  return ctx.getImageData(0, 0, width, height);
+  return { image: ctx.getImageData(0, 0, width, height), factor: fit };
+}
+
+/**
+ * Verkleinert ein RGBA-Bild auf höchstens `maxPx` Pixel bzw. `maxWidth` Breite (mit Glättung,
+ * Alphakanal bleibt erhalten). Rückgabe: `{ image, factor }`; bei factor = 1 dasselbe Bild.
+ */
+export function downscaleImage(img, { maxPx = Infinity, maxWidth = Infinity } = {}) {
+  const factor = Math.min(1, Math.sqrt(maxPx / (img.width * img.height)), maxWidth / img.width);
+  if (factor >= 1) return { image: img, factor: 1 };
+  const width = Math.max(1, Math.round(img.width * factor));
+  const height = Math.max(1, Math.round(img.height * factor));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(imageToCanvas(img), 0, 0, width, height);
+  return { image: ctx.getImageData(0, 0, width, height), factor: width / img.width };
 }
 
 /** RGBA-Bild → Canvas. */

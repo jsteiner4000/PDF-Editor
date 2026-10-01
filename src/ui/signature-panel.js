@@ -1,15 +1,19 @@
 /**
- * Werkzeug „Unterschrift“ im Modus „PDF bearbeiten“.
+ * Werkzeug „Unterschrift“.
  *
- * - Schaltflächen in der Werkzeugleiste (#ctx) und der Seitenleiste öffnen ein Popover mit den
- *   gespeicherten Unterschriften und den Wegen, eine neue anzulegen.
+ * - Schaltflächen in der Werkzeugleiste (#ctx), der Seitenleiste des Bearbeiten-Modus, in „Alle
+ *   Werkzeuge“ und auf der Startseite öffnen ein Popover mit den gespeicherten Unterschriften und
+ *   den Wegen, eine neue anzulegen. Die Wege stehen sofort bereit – unabhängig davon, ob die
+ *   Datenbank (noch) erreichbar ist.
  * - Erfassen: aus dem geöffneten Dokument (Rahmen aufziehen → 600 dpi rendern → freistellen),
- *   aus einer Bilddatei (gleiche Pipeline) oder gezeichnet. Ein Vorschau-Sheet zeigt das Ergebnis
- *   mit Empfindlichkeit, Farbe, Linienentfernung, Art und Name.
+ *   aus einer Bilddatei (gleiche Pipeline) oder gezeichnet. Das Vorschau-Sheet zeigt das Ergebnis
+ *   (auf reduzierter Auflösung, damit die Regler flüssig bleiben) mit Zuschnittrahmen,
+ *   Empfindlichkeit, Farbe, Linienentfernung, Art und Name; „Sichern“ rechnet in voller Auflösung.
  * - Einsetzen: Unterschrift wählen (oder Taste U für die Standard-Unterschrift), die Vorschau folgt
  *   dem Zeiger, ein Klick setzt sie als normales Bild (PNG mit Alpha → Image-XObject mit SMask)
- *   über `PdfSession.insertImage` ein – rückgängig machbar, danach wie jedes Bild verschieb- und
- *   skalierbar.
+ *   über `PdfSession.insertImage` ein – aufrecht auch auf gedrehten Seiten, rückgängig machbar,
+ *   danach wie jedes Bild verschieb- und skalierbar. Dieselbe Unterschrift wird pro Dokument nur
+ *   einmal eingebettet.
  *
  * Eingriffe in EditMode beschränken sich auf `mountToolbar()`, `mountPanel()` und `cancel()`.
  * Zeigerereignisse beim Erfassen/Platzieren werden in der Capture-Phase am Fenster abgefangen, so
@@ -20,9 +24,11 @@ import { icon } from './icons.js';
 import { escapeHtml, htmlToElement } from './dom.js';
 import { pickFiles, showDialog, toast, withBusy } from './dialogs.js';
 import { mmToPt } from './geometry.js';
-import { extractSignature } from '../signature/signature-extract.js';
+import { IDB_BLOCKED_MESSAGE, onIdbBlocked } from '../storage/idb.js';
+import { cropToAlpha, cutImage, extractSignature } from '../signature/signature-extract.js';
 import {
   decodeImageFile,
+  downscaleImage,
   encodePng,
   imageToCanvas,
   pickPageRegion,
@@ -45,6 +51,16 @@ const PLACE_SIZE_MM = {
   initials: { width: 20, maxHeight: 15 },
 };
 
+/**
+ * Auflösung des gespeicherten PNG: höchstens 300 dpi bezogen auf das 1,6-Fache der Einsetzbreite
+ * (Spielraum zum Vergrößern) – und nie mehr als die Quelle hergibt.
+ */
+const STORE_DPI = 300;
+const STORE_WIDTH_FACTOR = 1.6;
+
+/** Pixelzahl der Vorschau im Sheet (reduziert, damit Regler ohne Verzögerung reagieren). */
+const PREVIEW_PX = 1.2e6;
+
 const KIND_LABEL = { signature: 'Unterschrift', initials: 'Initialen' };
 
 let stylesInjected = false;
@@ -58,19 +74,37 @@ function ensureStyles() {
   document.head.appendChild(style);
 }
 
+// Blockiert ein anderes Fenster (ältere Version) die Umstellung der Datenbank, einmal deutlich melden.
+onIdbBlocked((isBlocked) => {
+  if (isBlocked) toast(IDB_BLOCKED_MESSAGE, 'warn', 9000);
+});
+
 const pngUrl = (record) => URL.createObjectURL(new Blob([record.png], { type: 'image/png' }));
 
-const formatMm = (mm) => String(Math.round(mm)).replace('.', ',');
+const formatMm = (mm) => String(Math.round(mm));
+
+const maxStoreWidth = (kind) =>
+  Math.round(
+    (STORE_DPI / 25.4) * (PLACE_SIZE_MM[kind] || PLACE_SIZE_MM.signature).width * STORE_WIDTH_FACTOR,
+  );
+
+const FOCUSABLE =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * Sheet im Stil der vorhandenen Dialoge, aber mit eigener Kontrolle über das Schließen
  * (z. B. bleibt es offen, wenn noch keine Tinte erkannt wurde).
- * `buttons`: [{ label, primary, run(close) }] – `run` entscheidet selbst, ob `close()` aufgerufen wird.
+ * - `buttons`: [{ label, primary, run(close) }] – `run` entscheidet selbst, ob `close()` aufgerufen wird.
+ * - `confirmDismiss`: optionale Rückfrage (Promise<boolean>) vor dem Schließen per Esc/Klick daneben.
+ * - Fokus: beim Öffnen ins Sheet (`initialFocus` oder erstes Bedienelement), Tab bleibt im Sheet,
+ *   beim Schließen zurück zum vorher fokussierten Element.
  */
-function openSheet({ title, iconName, body, buttons, onClose }) {
+function openSheet({ title, iconName, body, buttons, onClose, confirmDismiss, initialFocus }) {
+  const previousFocus = document.activeElement;
   const backdrop = htmlToElement('<div class="backdrop"></div>');
+  const titleId = 'sigSheetTitle' + Math.floor(Math.random() * 1e9);
   const dialog = htmlToElement(
-    `<div class="dlg sig-sheet" role="dialog" aria-modal="true"><div class="dh">${iconName ? icon(iconName) : ''}<span>${escapeHtml(title)}</span></div><div class="db"></div><div class="df"></div></div>`,
+    `<div class="dlg sig-sheet" role="dialog" aria-modal="true" aria-labelledby="${titleId}"><div class="dh">${iconName ? icon(iconName) : ''}<span id="${titleId}">${escapeHtml(title)}</span></div><div class="db"></div><div class="df"></div></div>`,
   );
   dialog.querySelector('.db').appendChild(body);
   const footer = dialog.querySelector('.df');
@@ -81,6 +115,18 @@ function openSheet({ title, iconName, body, buttons, onClose }) {
     document.removeEventListener('keydown', onKey, true);
     backdrop.remove();
     if (onClose) onClose();
+    if (previousFocus && previousFocus.isConnected && previousFocus.focus) previousFocus.focus();
+  };
+  let asking = false;
+  const dismiss = async () => {
+    if (asking) return;
+    if (confirmDismiss) {
+      asking = true;
+      const ok = await confirmDismiss();
+      asking = false;
+      if (!ok) return;
+    }
+    close();
   };
   const buttonEls = buttons.map((b) => {
     const el = htmlToElement(
@@ -99,7 +145,21 @@ function openSheet({ title, iconName, body, buttons, onClose }) {
     if (ev.key === 'Escape') {
       ev.preventDefault();
       ev.stopPropagation();
-      close();
+      dismiss();
+    } else if (ev.key === 'Tab') {
+      // Fokus im Sheet halten
+      const items = [...dialog.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = dialog.contains(document.activeElement);
+      if (ev.shiftKey && (document.activeElement === first || !inside)) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && (document.activeElement === last || !inside)) {
+        ev.preventDefault();
+        first.focus();
+      }
     } else if (
       ev.key === 'Enter' &&
       !(ev.target instanceof HTMLButtonElement) &&
@@ -117,10 +177,12 @@ function openSheet({ title, iconName, body, buttons, onClose }) {
   };
   document.addEventListener('keydown', onKey, true);
   backdrop.addEventListener('pointerdown', (ev) => {
-    if (ev.target === backdrop) close();
+    if (ev.target === backdrop) dismiss();
   });
   backdrop.appendChild(dialog);
   document.body.appendChild(backdrop);
+  const target = initialFocus || dialog.querySelector(FOCUSABLE);
+  if (target) target.focus();
   return { dialog, close, buttons: buttonEls };
 }
 
@@ -145,7 +207,79 @@ function segmented(options, value, onChange) {
   return seg;
 }
 
+/**
+ * Zuschnittrahmen über der Vorschau: acht Griffe und Verschieben im Inneren. Der Rahmen arbeitet
+ * in normierten Koordinaten [x0, y0, x1, y1] ∈ [0, 1] der Vorschau. `onChange(frame)` meldet jede
+ * Änderung durch den Nutzer.
+ */
+function cropFrame(stage, onChange) {
+  const el = htmlToElement(
+    `<div class="sig-crop" aria-label="Zuschnitt">${['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((h) => `<i data-h="${h}"></i>`).join('')}</div>`,
+  );
+  stage.appendChild(el);
+  let frame = [0, 0, 1, 1];
+  const draw = () => {
+    Object.assign(el.style, {
+      left: frame[0] * 100 + '%',
+      top: frame[1] * 100 + '%',
+      width: (frame[2] - frame[0]) * 100 + '%',
+      height: (frame[3] - frame[1]) * 100 + '%',
+    });
+  };
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    const handle = ev.target.dataset.h || 'move';
+    const rect = stage.getBoundingClientRect();
+    const start = frame.slice();
+    const sx = ev.clientX;
+    const sy = ev.clientY;
+    el.setPointerCapture(ev.pointerId);
+    const min = 0.04;
+    const onMove = (e) => {
+      const dx = (e.clientX - sx) / rect.width;
+      const dy = (e.clientY - sy) / rect.height;
+      let [x0, y0, x1, y1] = start;
+      if (handle === 'move') {
+        const w = x1 - x0;
+        const h = y1 - y0;
+        x0 = Math.max(0, Math.min(1 - w, x0 + dx));
+        y0 = Math.max(0, Math.min(1 - h, y0 + dy));
+        x1 = x0 + w;
+        y1 = y0 + h;
+      } else {
+        if (handle.includes('w')) x0 = Math.max(0, Math.min(x1 - min, x0 + dx));
+        if (handle.includes('e')) x1 = Math.min(1, Math.max(x0 + min, x1 + dx));
+        if (handle.includes('n')) y0 = Math.max(0, Math.min(y1 - min, y0 + dy));
+        if (handle.includes('s')) y1 = Math.min(1, Math.max(y0 + min, y1 + dy));
+      }
+      frame = [x0, y0, x1, y1];
+      draw();
+      onChange(frame);
+    };
+    const onUp = () => {
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', onUp);
+      el.removeEventListener('pointercancel', onUp);
+    };
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp);
+    el.addEventListener('pointercancel', onUp);
+  });
+  return {
+    set(next) {
+      frame = next.slice();
+      draw();
+    },
+    get: () => frame.slice(),
+  };
+}
+
 export class SignatureTool {
+  /** Das Werkzeug zum Bearbeiten-Modus (wird beim ersten Gebrauch angelegt). */
+  static of(edit) {
+    return (edit.signature ||= new SignatureTool(edit));
+  }
   constructor(edit) {
     this.edit = edit;
     this.app = edit.app;
@@ -157,7 +291,7 @@ export class SignatureTool {
     window.addEventListener('keydown', (ev) => this.onKey(ev), true);
     window.addEventListener('pointerdown', (ev) => this.onOutside(ev), true);
     onSignaturesChanged(() => {
-      if (this.pop) this.renderPop();
+      if (this.pop) this.renderList();
     });
   }
 
@@ -200,7 +334,7 @@ export class SignatureTool {
       ev.preventDefault();
       ev.stopPropagation();
       if (this.placing) this.cancelPlacing();
-      else this.closePop();
+      else this.closePop(true);
       return;
     }
     const target = ev.target;
@@ -226,13 +360,18 @@ export class SignatureTool {
     const target = ev.target;
     if (!(target instanceof Element)) return;
     if (target.closest('#cAddSig,[data-sig-btn],.sig-hint')) return;
-    if (this.pop && !this.pop.contains(target)) this.closePop();
+    if (this.pop && !this.pop.contains(target) && !(this.popAnchor && this.popAnchor.contains(target)))
+      this.closePop();
     if (this.placing && !target.closest('#pages .page')) this.cancelPlacing();
   }
 
   /* ---------- Popover ---------- */
 
   toggle(anchor) {
+    if (this.capture) {
+      this.capture.cancel(); // Klick auf „Unterschrift“ beendet das Erfassen
+      return;
+    }
     if (this.pop || this.placing) {
       this.closePop();
       this.cancelPlacing();
@@ -240,16 +379,44 @@ export class SignatureTool {
     }
     this.openPop(anchor);
   }
-  async openPop(anchor) {
+  /**
+   * Öffnet das Popover an `anchor`. Die Erfassen-Knöpfe stehen sofort bereit; die Liste der
+   * gespeicherten Unterschriften wird nachgeladen (mit Ladezustand bzw. Fehlermeldung).
+   */
+  openPop(anchor) {
     this.cancelPlacing();
     this.closePop();
-    const pop = htmlToElement('<div class="sig-pop" role="dialog" aria-label="Unterschriften"></div>');
+    const pop = htmlToElement(
+      `<div class="sig-pop" role="dialog" aria-label="Unterschriften">
+        <div class="sig-pop-head"><h5>Unterschriften</h5><span class="k" title="Taste U setzt die Standard-Unterschrift">U = Standard einsetzen</span></div>
+        <div class="sig-pop-list"><div class="sig-empty">Gespeicherte Unterschriften werden geladen …</div></div>
+        <hr>
+      </div>`,
+    );
     this.pop = pop;
     this.popAnchor = anchor;
+    this.popReturnFocus = document.activeElement;
+    const add = (iconName, label, run, attrs = '') => {
+      const btn = htmlToElement(
+        `<button class="mi" ${attrs}>${icon(iconName, 's')}<span>${escapeHtml(label)}</span></button>`,
+      );
+      btn.addEventListener('click', () => {
+        this.closePop();
+        run();
+      });
+      pop.appendChild(btn);
+      return btn;
+    };
+    add('sigcapture', 'Aus Dokument übernehmen', () => this.captureFromDocument());
+    add('image', 'Aus Bilddatei …', () => this.fromImageFile());
+    add('pen', 'Zeichnen …', () => this.drawNew());
+    pop.appendChild(htmlToElement('<hr data-manage hidden>'));
+    add('list', 'Unterschriften verwalten …', () => this.manage(), 'data-manage hidden');
     document.body.appendChild(pop);
     this.syncButtons();
-    await this.renderPop();
-    pop.querySelector('.sig-card, .mi')?.focus();
+    this.position();
+    pop.querySelector('.mi').focus();
+    this.renderList();
   }
   position() {
     const pop = this.pop;
@@ -267,22 +434,37 @@ export class SignatureTool {
     pop.style.left = x + 'px';
     pop.style.top = y + 'px';
   }
-  async renderPop() {
+  async renderList() {
     const pop = this.pop;
     if (!pop) return;
-    const items = await listSignatures();
+    const box = pop.querySelector('.sig-pop-list');
+    let items;
+    try {
+      items = await listSignatures();
+    } catch (err) {
+      if (pop !== this.pop) return;
+      const msg = htmlToElement(
+        `<div class="sig-empty err">${icon('warn', 's')}<span></span><button class="btn outline">Erneut versuchen</button></div>`,
+      );
+      msg.querySelector('span').textContent =
+        err && err.name === 'IdbBlockedError'
+          ? IDB_BLOCKED_MESSAGE
+          : 'Gespeicherte Unterschriften können gerade nicht geladen werden.';
+      msg.querySelector('button').addEventListener('click', () => this.renderList());
+      box.replaceChildren(msg);
+      this.position();
+      return;
+    }
     if (pop !== this.pop) return;
     for (const url of this.popUrls || []) URL.revokeObjectURL(url);
     this.popUrls = [];
-    pop.replaceChildren();
-    pop.appendChild(htmlToElement('<h5>Unterschriften</h5>'));
     if (items.length) {
       const grid = htmlToElement('<div class="sig-grid"></div>');
       for (const record of items) {
         const url = pngUrl(record);
         this.popUrls.push(url);
         const card = htmlToElement(
-          `<button class="sig-card" title="Einsetzen: danach auf die gewünschte Stelle klicken"><img alt=""><span class="nm"></span>${record.isDefault ? '<span class="def">Standard</span>' : ''}</button>`,
+          `<button class="sig-card" title="Einsetzen: danach auf die gewünschte Stelle klicken"><img alt=""><span class="row"><span class="nm"></span>${record.isDefault ? '<span class="def">Standard</span>' : ''}</span></button>`,
         );
         card.querySelector('img').src = url;
         card.querySelector('.nm').textContent = record.name;
@@ -290,39 +472,23 @@ export class SignatureTool {
         card.addEventListener('click', () => this.startPlacing(record));
         grid.appendChild(card);
       }
-      pop.appendChild(grid);
+      box.replaceChildren(grid);
     } else
-      pop.appendChild(
+      box.replaceChildren(
         htmlToElement(
           '<div class="sig-empty">Noch keine Unterschrift gespeichert. Übernehmen Sie Ihre Unterschrift aus einem unterschriebenen Dokument, aus einem Foto oder zeichnen Sie sie.</div>',
         ),
       );
-    pop.appendChild(document.createElement('hr'));
-    const add = (iconName, label, run, opts = {}) => {
-      const btn = htmlToElement(
-        `<button class="mi" ${opts.disabled ? 'disabled' : ''}>${icon(iconName, 's')}<span>${escapeHtml(label)}</span>${opts.key ? `<span class="k">${escapeHtml(opts.key)}</span>` : ''}</button>`,
-      );
-      btn.addEventListener('click', () => {
-        this.closePop();
-        run();
-      });
-      pop.appendChild(btn);
-    };
-    add('sigcapture', 'Aus Dokument übernehmen', () => this.captureFromDocument());
-    add('image', 'Aus Bilddatei …', () => this.fromImageFile());
-    add('pen', 'Zeichnen …', () => this.drawNew());
-    if (items.length) {
-      pop.appendChild(document.createElement('hr'));
-      add('list', 'Unterschriften verwalten …', () => this.manage());
-    }
+    for (const el of pop.querySelectorAll('[data-manage]')) el.hidden = !items.length;
     this.position();
   }
-  closePop() {
+  closePop(restoreFocus = false) {
     if (!this.pop) return;
     this.pop.remove();
     this.pop = null;
     for (const url of this.popUrls || []) URL.revokeObjectURL(url);
     this.popUrls = [];
+    if (restoreFocus && this.popReturnFocus && this.popReturnFocus.isConnected) this.popReturnFocus.focus();
     this.syncButtons();
   }
 
@@ -350,7 +516,7 @@ export class SignatureTool {
     if (record) this.startPlacing(record);
     else this.openPop(document.getElementById('cAddSig'));
   }
-  /** Größe in pt beim Einsetzen: Standardbreite, Höhe begrenzt, Seitenverhältnis fest. */
+  /** Größe in pt beim Einsetzen (aufrecht, wie angezeigt): Standardbreite, Höhe begrenzt. */
   sizeFor(record) {
     const spec = PLACE_SIZE_MM[record.kind] || PLACE_SIZE_MM.signature;
     let width = mmToPt(spec.width);
@@ -362,12 +528,19 @@ export class SignatureTool {
     }
     return { width, height };
   }
-  /** Lage (PDF-Koordinaten) für den Mittelpunkt `point`, innerhalb der Seite gehalten. */
+  /**
+   * PDF-Rechteck [x, y, b, h] für den Mittelpunkt `point`, innerhalb der Seite gehalten. Auf um
+   * 90°/270° gedrehten Seiten sind Breite und Höhe im PDF vertauscht (das Bild wird von
+   * `PdfSession.insertImage` zurückgedreht und steht in der Anzeige aufrecht).
+   */
   rectAt(pv, point, size) {
     const info = pv.infoRaw;
-    const fit = Math.min(1, (info.w * 0.9) / size.width, (info.h * 0.9) / size.height);
-    const width = size.width * fit;
-    const height = size.height * fit;
+    const swap = info.rotate % 180 !== 0;
+    const fullW = swap ? size.height : size.width;
+    const fullH = swap ? size.width : size.height;
+    const fit = Math.min(1, (info.w * 0.9) / fullW, (info.h * 0.9) / fullH);
+    const width = fullW * fit;
+    const height = fullH * fit;
     const x = Math.max(info.x, Math.min(info.x + info.w - width, point[0] - width / 2));
     const y = Math.max(info.y, Math.min(info.y + info.h - height, point[1] - height / 2));
     return [x, y, width, height];
@@ -375,14 +548,22 @@ export class SignatureTool {
   async startPlacing(record) {
     this.closePop();
     this.cancelPlacing();
-    if (!this.app.session) return;
+    if (!this.app.session) {
+      toast(
+        'Öffnen Sie zuerst ein PDF – dann die Unterschrift wählen und auf die Seite klicken.',
+        'warn',
+        4200,
+      );
+      return;
+    }
+    if (this.app.tool !== 'edit') await this.app.setTool('edit');
     if (this.edit.editor) await this.edit.finishEdit();
     this.edit.arm(null);
     const url = pngUrl(record);
-    const ghost = document.createElement('img');
-    ghost.className = 'sig-ghost';
-    ghost.alt = '';
-    ghost.src = url;
+    // Vorschau: Rahmen in Seitenkoordinaten, darin das Bild gegen die Seitendrehung gedreht
+    const ghost = htmlToElement('<div class="sig-ghost"><img alt=""></div>');
+    const ghostImg = ghost.firstChild;
+    ghostImg.src = url;
     const size = this.sizeFor(record);
     const pages = document.getElementById('pages');
     pages.classList.add('sig-placing');
@@ -400,11 +581,22 @@ export class SignatureTool {
       if (ghost.parentNode !== pv.layer) pv.layer.appendChild(ghost);
       const [x, y, w, h] = this.rectAt(pv, pv.clientToPdf(ev.clientX, ev.clientY), size);
       const box = pv.boxOf([x, y, x + w, y + h]);
+      const rotate = ((pv.infoRaw.rotate % 360) + 360) % 360;
+      const swap = rotate % 180 !== 0;
+      const imgW = swap ? box.height : box.width;
+      const imgH = swap ? box.width : box.height;
       Object.assign(ghost.style, {
         left: box.left + 'px',
         top: box.top + 'px',
         width: box.width + 'px',
         height: box.height + 'px',
+      });
+      Object.assign(ghostImg.style, {
+        width: imgW + 'px',
+        height: imgH + 'px',
+        left: (box.width - imgW) / 2 + 'px',
+        top: (box.height - imgH) / 2 + 'px',
+        transform: rotate ? `rotate(${-rotate}deg)` : '',
       });
     };
     const onDown = (ev) => {
@@ -475,7 +667,16 @@ export class SignatureTool {
 
   async captureFromDocument() {
     this.cancel();
-    if (!this.app.session) return;
+    if (!this.app.session) {
+      toast(
+        'Öffnen Sie zuerst das unterschriebene PDF, dann „Unterschrift“ > „Aus Dokument übernehmen“.',
+        'warn',
+        5000,
+      );
+      this.app.openDialog();
+      return;
+    }
+    if (this.app.tool !== 'edit') await this.app.setTool('edit');
     if (this.edit.editor) await this.edit.finishEdit();
     this.edit.clearSelection();
     this.edit.arm(null);
@@ -492,7 +693,9 @@ export class SignatureTool {
     if (!picked) return;
     let rendered = null;
     try {
-      rendered = await withBusy(() => renderPdfRegion(this.app.renderer, picked.pv.index, picked.rect));
+      rendered = await withBusy(() =>
+        renderPdfRegion(this.app.renderer, picked.pv.index, picked.rect, undefined, picked.pv.infoRaw.rotate),
+      );
     } catch (err) {
       console.warn('Bereich rendern', err);
       toast('Der Bereich konnte nicht gelesen werden.', 'err');
@@ -504,27 +707,37 @@ export class SignatureTool {
     this.cancel();
     const file = await pickFiles('image/png,image/jpeg,image/webp,image/gif,image/bmp');
     if (!file) return;
-    let image;
+    let decoded;
     try {
-      image = await withBusy(() => decodeImageFile(file, 3000));
+      decoded = await withBusy(() => decodeImageFile(file));
     } catch {
       toast('Dieses Bildformat wird nicht unterstützt (bitte PNG oder JPG).', 'err');
       return;
     }
     // Auflösung unbekannt: Annahme, das Bild zeigt etwa 10 cm Breite (für Fleck-/Liniengrößen).
+    const image = decoded.image;
     const dpi = Math.max(150, Math.min(1200, image.width / (100 / 25.4)));
     const name = file.name.replace(/\.[^.]+$/, '');
     return this.review({ source: 'image', image, dpi, name });
   }
 
   /**
-   * Vorschau-Sheet nach dem Erfassen: freigestelltes Ergebnis mit Empfindlichkeit, Farbe,
-   * Linienentfernung, Art und Name; „Sichern“ speichert in IndexedDB.
+   * Vorschau-Sheet nach dem Erfassen: freigestelltes Ergebnis (reduzierte Auflösung) mit
+   * Zuschnittrahmen, Empfindlichkeit, Farbe, Linienentfernung, Art und Name. „Sichern“ stellt in
+   * voller Auflösung frei (innerhalb des Rahmens) und speichert.
    */
   review({ source, image, dpi, name = '' }) {
     const state = { sensitivity: 50, color: 'original', removeLines: true, kind: 'signature' };
+    const preview = downscaleImage(image, { maxPx: PREVIEW_PX });
+    const pImage = preview.image;
+    const pDpi = dpi * preview.factor;
     const body = htmlToElement(`<div>
-      <div class="sig-preview"><canvas></canvas><div class="msg hidden"></div></div>
+      <div class="sig-preview"><div class="sig-stage"><canvas></canvas></div><div class="msg hidden"></div></div>
+      <div class="sig-prevbar">
+        <span class="hint">Rahmen anpassen, um Text oder Stempel neben der Unterschrift auszuschließen.</span>
+        <button class="btn outline" data-a="reset" hidden>Rahmen zurücksetzen</button>
+        ${source === 'document' ? '<button class="btn outline" data-a="again">Bereich neu wählen</button>' : ''}
+      </div>
       <div class="sig-form">
         <label for="sigSens">Empfindlichkeit</label>
         <div class="sig-range"><span>weniger</span><input id="sigSens" type="range" min="0" max="100" step="1" value="50"><span>mehr</span></div>
@@ -535,38 +748,95 @@ export class SignatureTool {
       </div>
       <p class="hint" data-slot="info" style="margin:6px 0 0"></p>
     </div>`);
+    const previewBox = body.querySelector('.sig-preview');
+    const stage = body.querySelector('.sig-stage');
     const canvas = body.querySelector('canvas');
     const msg = body.querySelector('.msg');
     const info = body.querySelector('[data-slot=info]');
     const nameInput = body.querySelector('#sigName');
+    const resetBtn = body.querySelector('[data-a=reset]');
     nameInput.value = name;
-    let result = null;
+    let result = null; // Vorschau-Ergebnis (ganzer Bereich, nicht zugeschnitten)
+    let autoFrame = [0, 0, 1, 1];
+    let userFrame = null;
+    let sheet = null;
+    const frame = cropFrame(stage, (f) => {
+      userFrame = f;
+      resetBtn.hidden = false;
+      updateInfo();
+    });
+    const currentFrame = () => userFrame || autoFrame;
+    /** Tinte innerhalb des Rahmens (Vorschau), zugeschnitten – für Größenangabe und „leer?“. */
+    const inkInFrame = () => {
+      if (!result) return null;
+      const [fx0, fy0, fx1, fy1] = currentFrame();
+      const w = result.image.width;
+      const h = result.image.height;
+      return cropToAlpha(cutImage(result.image, [fx0 * w, fy0 * h, fx1 * w, fy1 * h]));
+    };
+    const fitStage = () => {
+      if (!result) return;
+      const availW = previewBox.clientWidth - 32;
+      const availH = previewBox.clientHeight - 32;
+      const s = Math.min(availW / result.image.width, availH / result.image.height, 2);
+      stage.style.width = Math.max(1, Math.round(result.image.width * s)) + 'px';
+      stage.style.height = Math.max(1, Math.round(result.image.height * s)) + 'px';
+    };
+    const updateInfo = () => {
+      const ink = inkInFrame();
+      const ok = !!(ink && ink.image.width > 2);
+      if (sheet) sheet.buttons[1].disabled = !ok;
+      if (!ok) {
+        info.textContent = 'Im Rahmen ist keine Unterschrift erkennbar.';
+        return;
+      }
+      const w = (ink.image.width / pDpi) * 25.4;
+      const h = (ink.image.height / pDpi) * 25.4;
+      const place = PLACE_SIZE_MM[state.kind].width;
+      info.textContent =
+        source === 'document'
+          ? `Größe im Dokument: ${formatMm(w)} × ${formatMm(h)} mm. Eingesetzt wird sie standardmäßig ${place} mm breit; danach frei skalierbar.`
+          : `Der Hintergrund wird transparent. Eingesetzt wird sie standardmäßig ${place} mm breit; danach frei skalierbar.`;
+    };
     const run = () => {
-      result = extractSignature(image, { ...state, dpi });
-      canvas.classList.toggle('hidden', !result);
+      result = extractSignature(pImage, { ...state, dpi: pDpi, crop: false });
+      stage.classList.toggle('hidden', !result);
       msg.classList.toggle('hidden', !!result);
       if (result) {
         imageToCanvas(result.image, canvas);
-        const w = (result.image.width / dpi) * 25.4;
-        const h = (result.image.height / dpi) * 25.4;
-        info.textContent =
-          source === 'document'
-            ? `Größe im Dokument: ${formatMm(w)} × ${formatMm(h)} mm. Eingesetzt wird sie standardmäßig ${PLACE_SIZE_MM[state.kind].width} mm breit; danach frei skalierbar.`
-            : 'Der Hintergrund wird transparent. Eingesetzt wird die Unterschrift standardmäßig ' +
-              PLACE_SIZE_MM[state.kind].width +
-              ' mm breit; danach frei skalierbar.';
+        const trimmed = cropToAlpha(result.image, Math.round((pDpi / 25.4) * 0.8));
+        const w = result.image.width;
+        const h = result.image.height;
+        autoFrame = trimmed
+          ? [trimmed.bbox[0] / w, trimmed.bbox[1] / h, trimmed.bbox[2] / w, trimmed.bbox[3] / h]
+          : [0, 0, 1, 1];
+        frame.set(currentFrame());
+        fitStage();
+        updateInfo();
       } else {
         msg.textContent =
           'Keine Unterschrift erkannt. Empfindlichkeit erhöhen oder einen anderen Bereich wählen.';
         info.textContent = '';
+        if (sheet) sheet.buttons[1].disabled = true;
       }
-      if (sheet) sheet.buttons[1].disabled = !result;
     };
     let timer = 0;
-    const rerun = (delay = 40) => {
+    const rerun = (delay = 30) => {
       clearTimeout(timer);
       timer = setTimeout(run, delay);
     };
+    resetBtn.addEventListener('click', () => {
+      userFrame = null;
+      resetBtn.hidden = true;
+      frame.set(autoFrame);
+      updateInfo();
+    });
+    const againBtn = body.querySelector('[data-a=again]');
+    if (againBtn)
+      againBtn.addEventListener('click', () => {
+        sheet.close();
+        this.captureFromDocument();
+      });
     body.querySelector('#sigSens').addEventListener('input', (ev) => {
       state.sensitivity = Number(ev.target.value);
       rerun();
@@ -598,43 +868,59 @@ export class SignatureTool {
         state.kind,
         (v) => {
           state.kind = v;
-          rerun(0);
+          updateInfo();
         },
       ),
     );
-    let sheet = null;
+    let saving = false;
     sheet = openSheet({
       title:
         source === 'document' ? 'Unterschrift aus Dokument übernehmen' : 'Unterschrift aus Bild übernehmen',
       iconName: 'signature',
       body,
+      initialFocus: nameInput,
       buttons: [
         { label: 'Abbrechen', run: (close) => close() },
         {
           label: 'Sichern',
           primary: true,
           run: async (close) => {
+            if (saving) return;
             clearTimeout(timer);
-            run();
-            if (!result || saving) return;
             saving = true;
-            const saved = await this.save({
-              image: result.image,
-              name: nameInput.value,
-              kind: state.kind,
-              source,
-              widthMm: (result.image.width / dpi) * 25.4,
-              heightMm: (result.image.height / dpi) * 25.4,
-            });
-            saving = false;
-            if (saved) close();
+            try {
+              // volle Auflösung, nur innerhalb des Rahmens
+              const final = await withBusy(async () => {
+                const [fx0, fy0, fx1, fy1] = currentFrame();
+                const cut = cutImage(image, [
+                  fx0 * image.width,
+                  fy0 * image.height,
+                  fx1 * image.width,
+                  fy1 * image.height,
+                ]);
+                return extractSignature(cut, { ...state, dpi });
+              });
+              if (!final) {
+                toast('Im Rahmen ist keine Unterschrift erkennbar.', 'warn');
+                return;
+              }
+              const saved = await this.save({
+                image: final.image,
+                name: nameInput.value,
+                kind: state.kind,
+                source,
+                widthMm: (final.image.width / dpi) * 25.4,
+                heightMm: (final.image.height / dpi) * 25.4,
+              });
+              if (saved) close();
+            } finally {
+              saving = false;
+            }
           },
         },
       ],
     });
-    let saving = false;
     run();
-    nameInput.focus();
     return sheet;
   }
 
@@ -695,6 +981,21 @@ export class SignatureTool {
       title: 'Unterschrift zeichnen',
       iconName: 'pen',
       body,
+      initialFocus: nameInput,
+      // Esc oder Klick daneben: eine begonnene Zeichnung nicht stillschweigend verwerfen
+      confirmDismiss: () =>
+        pad.isEmpty()
+          ? Promise.resolve(true)
+          : showDialog({
+              title: 'Zeichnung verwerfen?',
+              icon: 'warn',
+              body: 'Die Unterschrift ist noch nicht gesichert.',
+              buttons: [
+                { label: 'Weiter zeichnen', value: false },
+                { label: 'Verwerfen', primary: true, value: true },
+              ],
+              cancelValue: false,
+            }).then((v) => v === true),
       buttons: [
         { label: 'Abbrechen', run: (close) => close() },
         {
@@ -725,32 +1026,36 @@ export class SignatureTool {
     return sheet;
   }
 
-  /** Speichert das freigestellte Bild; danach Einsetzen (bei Bild/Zeichnung) oder Hinweis. */
+  /**
+   * Speichert das freigestellte Bild (auf höchstens STORE_DPI bezogen auf die Einsetzgröße
+   * verkleinert); danach Einsetzen (bei Bild/Zeichnung) oder Hinweis.
+   */
   async save({ image, name, kind, source, widthMm, heightMm }) {
-    const png = await encodePng(image);
+    const stored = downscaleImage(image, { maxWidth: maxStoreWidth(kind) }).image;
+    const png = await encodePng(stored);
     const record = await addSignature({
       name,
       kind,
       source,
       png: png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength),
-      width: image.width,
-      height: image.height,
+      width: stored.width,
+      height: stored.height,
       widthMm,
       heightMm,
     });
     if (!record) {
       toast(
-        'Die Unterschrift konnte nicht gespeichert werden (Browser-Speicher nicht verfügbar).',
+        'Die Unterschrift konnte nicht gespeichert werden. Bitte andere Fenster des PDF-Editors schließen und erneut versuchen.',
         'err',
-        5000,
+        6000,
       );
       return null;
     }
-    if (source === 'document')
+    if (source === 'document' || !this.app.session)
       toast(`„${record.name}“ gesichert – einsetzen über „Unterschrift“ oder mit der Taste U.`, '', 4200);
     else {
       toast(`„${record.name}“ gesichert.`);
-      if (this.app.session && this.app.tool === 'edit') this.startPlacing(record);
+      this.startPlacing(record);
     }
     return record;
   }
@@ -765,7 +1070,17 @@ export class SignatureTool {
     const list = body.querySelector('.sig-list');
     let urls = [];
     const render = async () => {
-      const items = await listSignatures();
+      let items;
+      try {
+        items = await listSignatures();
+      } catch (err) {
+        list.replaceChildren(
+          htmlToElement(
+            `<p class="hint">${escapeHtml(err && err.name === 'IdbBlockedError' ? IDB_BLOCKED_MESSAGE : 'Die gespeicherten Unterschriften können gerade nicht geladen werden.')}</p>`,
+          ),
+        );
+        return;
+      }
       for (const url of urls) URL.revokeObjectURL(url);
       urls = [];
       list.replaceChildren();
@@ -777,8 +1092,8 @@ export class SignatureTool {
         const row = htmlToElement(`<div class="sig-row">
           <div class="th"><img alt=""></div>
           <div class="meta"><input class="fld" maxlength="60" aria-label="Name"><small></small></div>
-          <button class="btn outline" data-a="def"></button>
-          <button class="btn outline ic" data-a="del" title="Löschen">${icon('trash', 's')}</button>
+          <div class="def"></div>
+          <button class="btn outline ic" data-a="del" title="Löschen" aria-label="Löschen">${icon('trash', 's')}</button>
         </div>`);
         row.querySelector('img').src = url;
         const input = row.querySelector('input');
@@ -790,7 +1105,6 @@ export class SignatureTool {
         input.addEventListener('keydown', (ev) => {
           if (ev.key === 'Enter') {
             ev.preventDefault();
-            ev.stopPropagation();
             input.blur();
           }
         });
@@ -801,11 +1115,14 @@ export class SignatureTool {
         });
         row.querySelector('small').textContent =
           `${KIND_LABEL[record.kind] || 'Unterschrift'} · ${formatMm(record.widthMm)} × ${formatMm(record.heightMm)} mm · ${created}`;
-        const defBtn = row.querySelector('[data-a=def]');
-        defBtn.textContent = record.isDefault ? 'Standard' : 'Als Standard';
-        defBtn.classList.toggle('on', !!record.isDefault);
-        defBtn.disabled = !!record.isDefault;
-        defBtn.addEventListener('click', () => setDefaultSignature(record.id));
+        const def = row.querySelector('.def');
+        if (record.isDefault)
+          def.appendChild(htmlToElement(`<span class="sig-isdef">${icon('check', 's')}Standard</span>`));
+        else {
+          const btn = htmlToElement('<button class="btn outline">Als Standard</button>');
+          btn.addEventListener('click', () => setDefaultSignature(record.id));
+          def.appendChild(btn);
+        }
         row.querySelector('[data-a=del]').addEventListener('click', async () => {
           const ok = await showDialog({
             title: 'Unterschrift löschen?',

@@ -58,7 +58,15 @@
   height: 48px;
   object-fit: contain;
 }
+.sig-card .row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .sig-card .nm {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
   color: var(--ink2);
   white-space: nowrap;
@@ -66,9 +74,7 @@
   text-overflow: ellipsis;
 }
 .sig-card .def {
-  position: absolute;
-  right: 6px;
-  top: 6px;
+  flex: none;
   font-size: 10px;
   font-weight: 600;
   color: var(--acc);
@@ -144,10 +150,13 @@
   outline: 1px dashed var(--acc-line);
   outline-offset: 2px;
 }
+/* oben über der Seite; Zeigerereignisse gehen durch (Rahmen lässt sich auch darunter
+   aufziehen), nur der Knopf „Abbrechen“ fängt Klicks */
 .sig-hint {
   position: absolute;
   left: 50%;
   top: 60px;
+  pointer-events: none;
   transform: translateX(-50%);
   z-index: 30;
   display: flex;
@@ -164,6 +173,7 @@
 }
 .sig-hint .btn {
   height: 28px;
+  pointer-events: auto;
 }
 
 /* Sheets */
@@ -172,7 +182,7 @@
 }
 .sig-preview {
   position: relative;
-  height: 200px;
+  height: 220px;
   border-radius: 10px;
   border: 1px solid var(--line);
   display: grid;
@@ -191,9 +201,86 @@
     8px -8px,
     -8px 0;
 }
-.sig-preview canvas {
-  max-width: calc(100% - 32px);
-  max-height: calc(100% - 32px);
+.sig-stage {
+  position: relative;
+}
+.sig-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Zuschnittrahmen: außen abgeblendet, acht Griffe */
+.sig-crop {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(255, 255, 255, 0.62);
+  outline: 1.5px solid var(--acc);
+  cursor: move;
+  touch-action: none;
+}
+.sig-crop i {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid var(--acc);
+  border-radius: 2px;
+}
+.sig-crop i[data-h='nw'] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.sig-crop i[data-h='n'] {
+  left: 50%;
+  top: 0;
+  cursor: ns-resize;
+}
+.sig-crop i[data-h='ne'] {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+.sig-crop i[data-h='e'] {
+  left: 100%;
+  top: 50%;
+  cursor: ew-resize;
+}
+.sig-crop i[data-h='se'] {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+.sig-crop i[data-h='s'] {
+  left: 50%;
+  top: 100%;
+  cursor: ns-resize;
+}
+.sig-crop i[data-h='sw'] {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+.sig-crop i[data-h='w'] {
+  left: 0;
+  top: 50%;
+  cursor: ew-resize;
+}
+.sig-prevbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sig-prevbar .hint {
+  flex: 1;
+}
+.sig-prevbar .btn {
+  height: 28px;
+}
+.sig-prevbar [hidden],
+.sig-pop [hidden] {
+  display: none;
 }
 .sig-preview .msg {
   color: var(--ink3);
@@ -295,7 +382,7 @@
 }
 .sig-row {
   display: grid;
-  grid-template-columns: 112px 1fr auto auto;
+  grid-template-columns: 112px minmax(0, 1fr) 118px 32px;
   gap: 12px;
   align-items: center;
   padding: 8px;
@@ -329,4 +416,43 @@
 }
 .sig-row .btn {
   height: 30px;
+}
+.sig-row .def {
+  display: flex;
+  justify-content: flex-end;
+}
+.sig-isdef {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--acc);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sig-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 4px 6px 8px;
+}
+.sig-pop-head h5 {
+  margin: 0;
+}
+.sig-pop-head .k {
+  color: var(--ink3);
+  font-size: 11px;
+}
+.sig-empty.err {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--warn);
+}
+.sig-empty.err .btn {
+  height: 28px;
+}
+.sig-ghost img {
+  position: absolute;
+  max-width: none;
 }
