@@ -4,7 +4,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { pathToFileURL } from 'node:url';
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+import { PDFDocument, StandardFonts, rgb, degrees } from 'pdf-lib';
 import { BUILDS, openPdf, idle, objectsOf } from './helpers.js';
 
 const PT = 96 / 72;
@@ -448,7 +448,9 @@ test('Objekt bei 3200 % verschieben und speichern', async ({ browser }) => {
     await page.mouse.up();
     await page.waitForFunction(() => !window.pdfEditor.edit.drag);
     await zoomIdle(page);
-    if (ghost) expect(ghost.w / ghost.css).toBeGreaterThan(0.2); // auf 4 MP begrenzt, nicht leer
+    // Bildkopie vorhanden, auf 4 MP begrenzt und nicht leer
+    expect(ghost).not.toBeNull();
+    expect(ghost.w / ghost.css).toBeGreaterThan(0.2);
     const after = (await objectsOf(page, 0)).find((o) => o.type === 'image');
     expect(after.vis[0] - before.vis[0]).toBeCloseTo(64 / scale, 2);
     expect(after.vis[1] - before.vis[1]).toBeCloseTo(32 / scale, 2);
@@ -473,4 +475,237 @@ test('Objekt bei 3200 % verschieben und speichern', async ({ browser }) => {
   } finally {
     await reopened.context.close();
   }
+});
+
+test('Leertaste: Hand-Werkzeug nur im Dokumentbereich, nicht auf Schaltflächen und Feldern', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 1);
+  try {
+    await openPdf(page);
+    const app = (fn) => page.evaluate(fn);
+    // fokussierte Schaltfläche „Vergrößern“: Leertaste löst sie aus
+    await app(() => window.pdfEditor.setZoom(1));
+    await page.focus('#bZin');
+    await page.keyboard.down('Space');
+    expect(await page.locator('#scroller.pan-ready').count()).toBe(0);
+    await page.keyboard.up('Space');
+    expect(await app(() => window.pdfEditor.zoom)).toBeCloseTo(1.1, 5);
+    // Menüeintrag im Zoom-Menü per Tastatur
+    await page.locator('#bZoom').click();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Space');
+    expect(await page.locator('.menu').count()).toBe(0);
+    expect(await app(() => window.pdfEditor.zoom)).toBeCloseTo(0.5, 5);
+    // Seitenfeld: Leertaste bleibt Eingabe
+    await page.focus('#pgIn');
+    await page.keyboard.down('Space');
+    expect(await page.locator('#scroller.pan-ready').count()).toBe(0);
+    await page.keyboard.up('Space');
+    // Kachel „PDF bearbeiten“ per Leertaste
+    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).focus();
+    await page.keyboard.press('Space');
+    await idle(page);
+    expect(await app(() => window.pdfEditor.tool)).toBe('edit');
+    // Klick in den Dokumentbereich holt den Fokus zurück: danach ist die Leertaste das Hand-Werkzeug
+    await zoomOnto(page, 8, 0, 560, 110); // leere Stelle unten rechts
+    const box = await page.locator('#scroller').boundingBox();
+    await page.locator('#bZin').focus();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await app(() => !!window.pdfEditor.edit.editor)).toBe(false);
+    await page.keyboard.down('Space');
+    expect(await page.locator('#scroller.pan-ready').count()).toBe(1);
+    await page.keyboard.up('Space');
+    // Texteditor: Leertaste schreibt ein Leerzeichen
+    await zoomOnto(page, 2, 0, 150, 745);
+    const [ex, ey] = await app(() => {
+      const pv = window.pdfEditor.pvs[0];
+      const b = window.pdfEditor.session.model(0).blocks.find((bl) => bl.text.includes('Regressionstest'));
+      return pv.layerToClient(...pv.pdfToLayer(b.bbox[2] - 2, (b.bbox[1] + b.bbox[3]) / 2));
+    });
+    await page.mouse.click(ex, ey);
+    await page.locator('.te').waitFor();
+    await page.waitForFunction(
+      () => document.activeElement && document.activeElement.classList.contains('te'),
+    );
+    await page.keyboard.press('End');
+    await page.keyboard.down('Space');
+    expect(await page.locator('#scroller.pan-ready').count()).toBe(0);
+    await page.keyboard.up('Space');
+    await page.keyboard.type('X');
+    expect(await page.locator('.te').textContent()).toContain('Regressionstest X');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.pdfEditor.edit.editor && !window.pdfEditor.edit._finishing);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Gemerkte Seitenbilder werden beim Schließen freigegeben', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 1.5);
+  try {
+    await openPdf(page);
+    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await idle(page);
+    await zoomOnto(page, 3, 0, 150, 745);
+    const [x, y] = await page.evaluate(() => {
+      const pv = window.pdfEditor.pvs[0];
+      const b = window.pdfEditor.session.model(0).blocks.find((bl) => bl.text.includes('Regressionstest'));
+      return pv.layerToClient(...pv.pdfToLayer((b.bbox[0] + b.bbox[2]) / 2, (b.bbox[1] + b.bbox[3]) / 2));
+    });
+    await page.mouse.dblclick(x, y);
+    await page.waitForFunction(() => !!window.pdfEditor.edit.editor);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !window.pdfEditor.edit.editor && !window.pdfEditor.edit._finishing);
+    await idle(page);
+    const before = await page.evaluate(() => {
+      const app = window.pdfEditor;
+      window.__canvases = app.pvs.flatMap((pv) => pv.bitmaps.map((b) => b.canvas));
+      window.__views = app.pvs.map((pv) => new WeakRef(pv));
+      const n = window.__canvases.length;
+      app.closeDoc();
+      return n;
+    });
+    expect(before).toBeGreaterThan(0);
+    const cdp = await context.newCDPSession(page);
+    for (let i = 0; i < 3; i++) await cdp.send('HeapProfiler.collectGarbage');
+    const after = await page.evaluate(() => ({
+      pixels: window.__canvases.reduce((sum, c) => sum + c.width * c.height, 0),
+      alive: window.__views.filter((w) => w.deref()).length,
+    }));
+    expect(after.pixels).toBe(0);
+    expect(after.alive).toBe(0);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+/**
+ * Testdokument mit /Rotate 0/90/180/270, MediaBox-Ursprung ≠ 0, CropBox ≠ MediaBox und
+ * unterschiedlichen Größen; je Seite rote 6-pt-Marker an Ecken und Mitte.
+ */
+async function markerPdf() {
+  const doc = await PDFDocument.create();
+  const specs = [
+    { size: [595.28, 841.89], rot: 0 },
+    { size: [595.28, 841.89], rot: 90 },
+    { size: [595.28, 841.89], rot: 180 },
+    { size: [595.28, 841.89], rot: 270 },
+    { size: [1190, 842], rot: 0, media: [50, 50, 1190, 842] },
+    { size: [612, 792], rot: 90, crop: [100, 120, 400, 500] },
+  ];
+  const markers = [];
+  specs.forEach((sp, i) => {
+    const p = doc.addPage(sp.size);
+    if (sp.media) p.setMediaBox(...sp.media);
+    if (sp.crop) p.setCropBox(...sp.crop);
+    if (sp.rot) p.setRotation(degrees(sp.rot));
+    const [bx, by, bw, bh] = sp.crop || sp.media || [0, 0, ...sp.size];
+    for (const [x, y] of [
+      [bx + 20, by + 20],
+      [bx + bw - 30, by + bh - 30],
+      [bx + bw / 2 - 3, by + bh / 2 - 3],
+    ]) {
+      p.drawRectangle({ x, y, width: 6, height: 6, color: rgb(1, 0, 0) });
+      markers.push([i, x, y]);
+    }
+  });
+  return { bytes: Buffer.from(await doc.save()), markers };
+}
+
+/**
+ * Kanten eines roten Markers im angezeigten Bild (Detail-Canvas, sonst Vorschau) gegen die
+ * Seitengeometrie (pdfToLayer/layerToClient): Abweichungen in CSS-px.
+ */
+const markerEdges = (page, i, x, y, size) =>
+  page.evaluate(
+    ({ i, x, y, size }) => {
+      const pv = window.pdfEditor.pvs[i];
+      const pts = [
+        [x, y],
+        [x + size, y + size],
+      ].map((p) => pv.layerToClient(...pv.pdfToLayer(...p)));
+      const exp = {
+        left: Math.min(pts[0][0], pts[1][0]),
+        right: Math.max(pts[0][0], pts[1][0]),
+        top: Math.min(pts[0][1], pts[1][1]),
+        bottom: Math.max(pts[0][1], pts[1][1]),
+      };
+      const cx = (exp.left + exp.right) / 2;
+      const cy = (exp.top + exp.bottom) / 2;
+      const canvas = pv.previewSize().capped ? pv.detail : pv.canvas;
+      if (!canvas.width || canvas.hidden) return { src: 'leer' };
+      const r = canvas.getBoundingClientRect();
+      const kx = canvas.width / r.width;
+      const ky = canvas.height / r.height;
+      const ctx = canvas.getContext('2d');
+      const red = (px, py) => {
+        const ix = Math.floor((px - r.left) * kx);
+        const iy = Math.floor((py - r.top) * ky);
+        if (ix < 0 || iy < 0 || ix >= canvas.width || iy >= canvas.height) return false;
+        const d = ctx.getImageData(ix, iy, 1, 1).data;
+        return d[0] > 150 && d[1] < 110 && d[2] < 110;
+      };
+      const scan = (horizontal, from, to) => {
+        let first = null;
+        let last = null;
+        for (let t = from; t <= to; t += 0.25)
+          if (horizontal ? red(t, cy) : red(cx, t)) {
+            if (first === null) first = t;
+            last = t;
+          }
+        return [first, last];
+      };
+      const w = exp.right - exp.left;
+      const h = exp.bottom - exp.top;
+      const [l, rr] = scan(true, exp.left - w, exp.right + w);
+      const [t, b] = scan(false, exp.top - h, exp.bottom + h);
+      if (l === null || t === null)
+        return { src: canvas === pv.detail ? 'detail' : 'vorschau', found: false };
+      return {
+        src: canvas === pv.detail ? 'detail' : 'vorschau',
+        err: Math.max(
+          Math.abs(l - exp.left),
+          Math.abs(rr - exp.right),
+          Math.abs(t - exp.top),
+          Math.abs(b - exp.bottom),
+        ),
+      };
+    },
+    { i, x, y, size },
+  );
+
+test('Inhalt deckungsgleich mit der Seitengeometrie bei gedrehten Seiten und Crop-/MediaBox', async ({
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const { bytes, markers } = await markerPdf();
+  const worst = {};
+  for (const dpr of [1, 1.5]) {
+    const { page, context, errors } = await launch(browser, dpr);
+    try {
+      await openPdf(page, bytes, 'marker.pdf');
+      for (const zoom of [4, 32]) {
+        for (const [i, x, y] of markers) {
+          await zoomOnto(page, zoom, i, x + 3, y + 3);
+          const r = await markerEdges(page, i, x, y, 6);
+          expect(
+            r.err,
+            `dpr ${dpr}, ${zoom}×, Seite ${i + 1}, Marker ${x}/${y} (${r.src})`,
+          ).toBeLessThanOrEqual(1.5);
+          const key = `dpr ${dpr} ${zoom}× ${r.src}`;
+          worst[key] = Math.max(worst[key] || 0, r.err);
+          // Detail deckt den sichtbaren Bereich scharf ab
+          const m = await sharpness(page);
+          expect(m.min).toBeGreaterThanOrEqual(0.95);
+        }
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }
+  console.log('größte Kantenabweichung (CSS-px):', worst);
 });
