@@ -15,6 +15,7 @@ import { idbDelete, idbList, idbPut } from './storage/idb.js';
 import { EditMode } from './ui/edit-mode.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
+import { notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
 
 /**
  * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
@@ -308,6 +309,7 @@ export class App {
     if (file) this.openFile(file, null);
   }
   async openHandle(handle) {
+    handle = reviveFileHandle(handle);
     try {
       if (
         handle.queryPermission &&
@@ -608,6 +610,7 @@ export class App {
         ? 'Wiederholen: ' + session.hist.redo[session.hist.redo.length - 1].label + ' (Strg+Y)'
         : 'Wiederholen (Strg+Y)';
     $('#dirtyDot').classList.toggle('hidden', !session || !session.dirty);
+    notifyDocumentState();
   }
   /**
    * Speichert das Dokument intern (ohne Aufräumen), lädt es in pdf.js neu und baut die
