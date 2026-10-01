@@ -50,18 +50,47 @@ Enter bearbeitet wieder den Text. Alternativ Alt+Klick auf den Text.
 
 BILDER UND GRAFIKEN
 -------------------
-- Anklicken zum Auswählen, ziehen zum Verschieben.
-- Pfeiltasten = verschieben (1 Punkt je Tastendruck, mit Umschalt 10 Punkte).
+- Anklicken zum Auswählen, ziehen zum Verschieben. Getroffen wird, was unter
+  dem Mauszeiger zu sehen ist: Linien schon knapp daneben, Flächen nur, wenn
+  sie gefüllt sind – ein Klick ins leere Innere eines Rahmens wählt nichts aus.
+  Liegen Elemente dicht beieinander, gewinnt das nächstgelegene bzw. das
+  oberste. Vor dem Klick hebt der Editor blau hervor, was getroffen würde.
+- Pfeiltasten = verschieben (1 Punkt je Tastendruck, mit Umschalt 10 Punkte,
+  mit Alt 0,1 Punkt für Feinarbeiten).
 - Hilfslinien: Beim Ziehen erscheinen pinke Linien, sobald das Element mittig auf
   der Seite sitzt („Mitte“), am Seitenrand bzw. Satzspiegel anliegt oder bündig
   mit anderen Texten und Bildern ist (Kanten oder Mitten). Dort rastet es ein.
   Mit gedrückter Alt-Taste ziehen = frei, ohne Einrasten. Das gilt auch beim
   Verschieben von Textblöcken am Griff ⠿ und beim Ändern der Größe.
-- Eckpunkte ziehen = Größe ändern (Umschalttaste = Seitenverhältnis frei).
+- Griffe am Rahmen ziehen = Größe ändern (an den Ecken proportional,
+  Umschalttaste = Seitenverhältnis frei). Linien und Formen behalten dabei ihre
+  Strichstärke. Ein Klick auf einen Griff ohne Ziehen wirkt wie ein normaler
+  Klick an dieser Stelle.
+- Linien: Eine ausgewählte Linie hat an beiden Enden einen runden Griff.
+  Endpunkt ziehen = Linie verlängern, kürzen oder drehen – mit Umschalt in
+  Schritten von 45° (waagerecht, senkrecht, diagonal). Der Endpunkt rastet an
+  Endpunkten, Ecken und Kanten anderer Elemente ein (pinke Markierung), mit Alt
+  frei. Die Griffe sind bei jeder Zoomstufe gleich groß.
+- Esc während des Ziehens bricht ab – das Element bleibt, wo es war.
 - Entf-Taste = löschen.
 - Zusammengehörige Teile (z. B. Kreisnummer mit Linie) werden als Gruppe
   ausgewählt. Ein weiterer Klick in die ausgewählte Gruppe wählt nur das
-  Element unter dem Mauszeiger.
+  Element unter dem Mauszeiger. Gruppen bleiben, wie sie beim Öffnen erkannt
+  wurden: Wer ein Element an ein anderes heranschiebt, gruppiert es dadurch
+  nicht mit diesem.
+- Pfad bearbeiten (einzelne Kanten und Punkte, z. B. nur eine Seite eines
+  Rechtecks): Doppelklick auf die Grafik oder ein weiterer Klick auf die
+  ausgewählte Grafik. Die Ankerpunkte erscheinen als kleine Quadrate (gefüllt =
+  ausgewählt), die angeklickte Kante ist hervorgehoben.
+  - Ankerpunkt oder Kante anklicken und ziehen, Umschalt+Klick wählt mehrere.
+    Umschalt beim Ziehen = Schritte von 45°.
+  - Verbundene Punkte wandern mit: Eine Rechteck-Ecke zieht beide Kanten mit,
+    aneinanderstoßende Linien einer Gruppe bleiben verbunden. Mit Alt wird die
+    Verbindung gelöst; eine Kante mit gedrückter Alt-Taste ziehen löst sie als
+    eigene Linie heraus.
+  - Pfeiltasten verschieben die ausgewählten Punkte (Umschalt 10, Alt 0,1 Punkt).
+  - Esc oder ein Klick daneben beendet die Pfadbearbeitung. Jeder Schritt lässt
+    sich mit Strg+Z rückgängig machen.
 - Verdeckte Elemente (z. B. etwas hinter einem Bild): Alt+Klick (oder Strg+Klick)
   wählt das Element dahinter – jeder weitere Alt+Klick das nächste. Oder
   Rechtsklick: Das Menü listet alle Elemente an dieser Stelle zum Auswählen auf.
@@ -111,9 +140,10 @@ TASTENKÜRZEL
 ------------
 Strg+O öffnen · Strg+S speichern · Strg+Z / Strg+Y rückgängig / wiederholen
 Strg + Mausrad oder Strg+Plus/Minus zoomen · Strg+0 Seitenbreite
-Entf löschen · Pfeiltasten verschieben (Umschalt = größere Schritte)
+Entf löschen · Pfeiltasten verschieben (Umschalt = 10 Punkte, Alt = 0,1 Punkt)
 Esc Bearbeitung beenden und Textblock auswählen · Enter Text wieder bearbeiten
-Alt+Klick Element dahinter auswählen
+Alt+Klick Element dahinter auswählen · Doppelklick auf Grafik: Pfad bearbeiten
+Esc während des Ziehens: abbrechen
 
 
 GUT ZU WISSEN
