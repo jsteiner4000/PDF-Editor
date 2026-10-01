@@ -259,6 +259,17 @@ export class PageView {
     remembered = [{ pv: this, sig, scale, canvas }, ...keep];
     for (const entry of remembered.splice(MAX_REMEMBERED)) entry.canvas.width = entry.canvas.height = 0;
   }
+  /**
+   * Gemerkte Seitenbilder freigeben: alle (Dokument geschlossen) bzw. die von Seitenansichten,
+   * die nicht mehr in `alive` stehen (Seiten gelöscht/ersetzt).
+   */
+  static forgetRemembered(alive = null) {
+    const keep = [];
+    for (const entry of remembered)
+      if (alive && alive.has(entry.pv)) keep.push(entry);
+      else entry.canvas.width = entry.canvas.height = 0;
+    remembered = keep;
+  }
   get bitmaps() {
     return remembered.filter((entry) => entry.pv === this);
   }

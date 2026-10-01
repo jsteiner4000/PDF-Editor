@@ -408,6 +408,7 @@ export class App {
     this.edit.reset();
     this.org.reset();
     for (const pv of this.pvs) this.io.unobserve(pv.el);
+    PageView.forgetRemembered();
     this.pvs = [];
     this.pvByKey.clear();
     $('#pages').innerHTML = '';
@@ -694,6 +695,7 @@ export class App {
     views.forEach((A, s) => {
       if (pagesEl.children[s] !== A.el) pagesEl.insertBefore(A.el, pagesEl.children[s] || null);
     });
+    PageView.forgetRemembered(new Set(views));
     this.layoutPages();
     $('#pgN').textContent = numPages;
     this.cur = Math.max(0, Math.min(this.cur, numPages - 1));
