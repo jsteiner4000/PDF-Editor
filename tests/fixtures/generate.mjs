@@ -9,6 +9,10 @@
  *   layout.pdf    – 1 Seite mit Blocksatz, zentriertem und rechtsbündigem Text, zwei Spalten,
  *                   Aufzählung, Silbentrennung, hochgestelltem Zeichen und Farbwechseln (für den
  *                   Aufbau der Textblöcke und den Inline-Editor).
+ *   grafik.pdf    – 1 Seite mit typischen Grafik-Konstellationen für die Interaktionstests:
+ *                   ungefülltes re-Rechteck, Rechteck aus vier Linien, gefülltes Rechteck mit
+ *                   Linie knapp darunter, zwei parallele Linien, geschlossener Pfad (m/l/l/l/h),
+ *                   Kreis mit Linie, Linie auf dunkler Fläche, dazu eine Textzeile.
  *
  * Aufruf: npm run fixtures
  */
@@ -324,9 +328,57 @@ async function layout() {
   return doc.save({ useObjectStreams: false });
 }
 
+async function grafik() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.setTitle('Grafiktest PDF-Editor', { showInWindowTitleBar: false });
+  const helv = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  page.drawText('Grafiktest', { x: 60, y: 780, size: 18, font: helv });
+  page.drawText('Eine Textzeile zum Bearbeiten.', { x: 60, y: 740, size: 11, font: helv });
+  const ops = `
+q 1.5 w 0 0 0 RG
+100 560 200 120 re S
+Q
+q 1 w 0 0 1 RG
+350 560 m 550 560 l S
+550 560 m 550 680 l S
+550 680 m 350 680 l S
+350 680 m 350 560 l S
+Q
+q 0.8 0 0 rg
+100 400 120 60 re f
+Q
+q 2 w 0 0.5 0 RG
+100 395 m 220 395 l S
+Q
+q 1 w 0 0 0 RG
+350 400 m 550 400 l S
+Q
+q 1 w 0 0 0 RG
+350 380 m 550 380 l S
+Q
+q 1 w 0 0 0 RG
+100 200 m 300 200 l 300 300 l 100 300 l h S
+Q
+q 1 w 0.2 0.2 0.2 RG
+400 250 m 400 263.8 388.8 275 375 275 c 361.2 275 350 263.8 350 250 c 350 236.2 361.2 225 375 225 c 388.8 225 400 236.2 400 250 c S
+400 250 m 520 250 l S
+Q
+q 0.12 0.13 0.15 rg
+60 60 260 80 re f
+Q
+q 3 w 1 1 1 RG
+100 100 m 280 100 l S
+Q
+`;
+  page.node.addContentStream(doc.context.register(doc.context.stream(ops)));
+  return doc.save({ useObjectStreams: false });
+}
+
 for (const [name, make] of [
   ['dokument.pdf', dokument],
   ['layout.pdf', layout],
+  ['grafik.pdf', grafik],
 ]) {
   const bytes = await make();
   await writeFile(path.join(DIR, name), bytes);
