@@ -59,7 +59,7 @@ const STORE_DPI = 300;
 const STORE_WIDTH_FACTOR = 1.6;
 
 /** Pixelzahl der Vorschau im Sheet (reduziert, damit Regler ohne Verzögerung reagieren). */
-const PREVIEW_PX = 1.2e6;
+const PREVIEW_PX = 0.5e6;
 
 const KIND_LABEL = { signature: 'Unterschrift', initials: 'Initialen' };
 
@@ -99,8 +99,8 @@ const FOCUSABLE =
  * - Fokus: beim Öffnen ins Sheet (`initialFocus` oder erstes Bedienelement), Tab bleibt im Sheet,
  *   beim Schließen zurück zum vorher fokussierten Element.
  */
-function openSheet({ title, iconName, body, buttons, onClose, confirmDismiss, initialFocus }) {
-  const previousFocus = document.activeElement;
+function openSheet({ title, iconName, body, buttons, onClose, confirmDismiss, initialFocus, returnFocus }) {
+  const previousFocus = returnFocus || document.activeElement;
   const backdrop = htmlToElement('<div class="backdrop"></div>');
   const titleId = 'sigSheetTitle' + Math.floor(Math.random() * 1e9);
   const dialog = htmlToElement(
@@ -601,7 +601,7 @@ export class SignatureTool {
     };
     const onDown = (ev) => {
       const pv = pvOf(ev.target);
-      if (!pv || ev.button !== 0) return;
+      if (!pv || ev.button !== 0 || (this.app.gestures && this.app.gestures.spaceDown)) return; // Leertaste = Hand
       ev.preventDefault();
       ev.stopPropagation();
       const point = pv.clientToPdf(ev.clientX, ev.clientY);
@@ -714,9 +714,10 @@ export class SignatureTool {
       toast('Dieses Bildformat wird nicht unterstützt (bitte PNG oder JPG).', 'err');
       return;
     }
-    // Auflösung unbekannt: Annahme, das Bild zeigt etwa 10 cm Breite (für Fleck-/Liniengrößen).
+    // Auflösung unbekannt: vorsichtige Annahme, das Bild zeigt etwa 15 cm Breite. Die
+    // Freistellung skaliert zusätzlich mit der Bildgröße (dicke Striche in Nahaufnahmen).
     const image = decoded.image;
-    const dpi = Math.max(150, Math.min(1200, image.width / (100 / 25.4)));
+    const dpi = Math.max(150, Math.min(1200, image.width / (150 / 25.4)));
     const name = file.name.replace(/\.[^.]+$/, '');
     return this.review({ source: 'image', image, dpi, name });
   }
@@ -756,6 +757,7 @@ export class SignatureTool {
     const nameInput = body.querySelector('#sigName');
     const resetBtn = body.querySelector('[data-a=reset]');
     nameInput.value = name;
+    const previewCache = {};
     let result = null; // Vorschau-Ergebnis (ganzer Bereich, nicht zugeschnitten)
     let autoFrame = [0, 0, 1, 1];
     let userFrame = null;
@@ -799,7 +801,7 @@ export class SignatureTool {
           : `Der Hintergrund wird transparent. Eingesetzt wird sie standardmäßig ${place} mm breit; danach frei skalierbar.`;
     };
     const run = () => {
-      result = extractSignature(pImage, { ...state, dpi: pDpi, crop: false });
+      result = extractSignature(pImage, { ...state, dpi: pDpi, crop: false, cache: previewCache });
       stage.classList.toggle('hidden', !result);
       msg.classList.toggle('hidden', !!result);
       if (result) {
@@ -1063,6 +1065,8 @@ export class SignatureTool {
   /* ---------- Verwalten ---------- */
 
   manage() {
+    // Das Popover (Auslöser) verschwindet – Fokus kehrt zur Schaltfläche zurück, die es geöffnet hat
+    const returnFocus = this.popAnchor && this.popAnchor.isConnected ? this.popAnchor : null;
     this.cancel();
     const body = htmlToElement(
       '<div><div class="sig-list" data-local-enter></div><p class="hint" style="margin:10px 0 0">Unterschriften werden nur auf diesem Rechner gespeichert (im Browser-Speicher des PDF-Editors).</p></div>',
@@ -1144,6 +1148,7 @@ export class SignatureTool {
       title: 'Unterschriften verwalten',
       iconName: 'signature',
       body,
+      returnFocus,
       buttons: [{ label: 'Fertig', primary: true, run: (close) => close() }],
       onClose: () => {
         unsubscribe();

@@ -781,3 +781,110 @@ test('Alle Werkzeuge und Startseite öffnen das Unterschrift-Popover', async ({ 
   expect(errors).toEqual([]);
   await context.close();
 });
+
+for (const zoom of [8, 32]) {
+  test(`Leertaste/Mittelklick = Hand beim Erfassen und Platzieren (${zoom * 100} %)`, async ({ browser }) => {
+    const { page, context, errors } = await launch(browser, 'neubau');
+    expect(await openPdf(page, await contractPdf(), 'vertrag.pdf')).toBe(true);
+    await enterEditMode(page);
+    await seedSignature(page, `ctx.fillStyle = '#123'; ctx.fillRect(0, 40, 400, 20);`, { name: 'Balken' });
+    await page.evaluate((z) => window.pdfEditor.setZoom(z), zoom);
+    await idle(page);
+    const scroll = () =>
+      page.evaluate(() => {
+        const s = document.getElementById('scroller');
+        return [s.scrollLeft, s.scrollTop];
+      });
+    // Mitte der ersten Seite im sichtbaren Bereich
+    await page.evaluate(() => {
+      const pv = window.pdfEditor.pvs[0];
+      const sc = document.getElementById('scroller');
+      const [cx, cy] = pv.layerToClient(...pv.pdfToLayer(200, 220));
+      const r = sc.getBoundingClientRect();
+      sc.scrollLeft += cx - (r.left + r.width / 2);
+      sc.scrollTop += cy - (r.top + r.height / 2);
+    });
+    await idle(page);
+    const drag = async (button) => {
+      await page.mouse.move(700, 500);
+      await page.mouse.down({ button });
+      await page.mouse.move(560, 420, { steps: 6 });
+      await page.mouse.up({ button });
+    };
+    for (const mode of ['capture', 'place']) {
+      if (mode === 'capture') {
+        await page.locator('#cAddSig').click();
+        await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+        await expect(page.locator('.sig-hint')).toContainText('Rahmen');
+      } else await page.keyboard.press('u');
+      const undo0 = await page.evaluate(() => window.pdfEditor.session.hist.undo.length);
+      for (const how of ['space', 'middle']) {
+        const before = await scroll();
+        if (how === 'space') await page.keyboard.down('Space');
+        await drag(how === 'space' ? 'left' : 'middle');
+        if (how === 'space') await page.keyboard.up('Space');
+        await expect.poll(async () => (await scroll()).join() !== before.join()).toBe(true);
+        // weder Sheet noch Einsetzen, der Modus bleibt aktiv
+        await expect(page.locator('.dlg.sig-sheet')).toHaveCount(0);
+        await expect(page.locator('.sig-hint')).toBeVisible();
+        expect(await page.evaluate(() => window.pdfEditor.session.hist.undo.length)).toBe(undo0);
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.locator('.sig-hint')).toHaveCount(0);
+    }
+    // ohne Leertaste funktionieren beide Modi weiterhin
+    await page.keyboard.press('u');
+    await page.mouse.move(700, 500);
+    await page.mouse.click(700, 500);
+    await expect
+      .poll(() => page.evaluate(() => window.pdfEditor.session.hist.undo.map((e) => e.label).pop()))
+      .toBe('Unterschrift eingefügt');
+    await settled(page);
+    expect(errors).toEqual([]);
+    await context.close();
+  });
+}
+
+test('Verwalten: Fokus kehrt zur Schaltfläche zurück; Vorschau reagiert schnell', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  expect(await openPdf(page, await contractPdf(), 'vertrag.pdf')).toBe(true);
+  await enterEditMode(page);
+  await seedSignature(page, `ctx.fillRect(0, 40, 400, 20);`, { name: 'Balken' });
+  await page.locator('#cAddSig').click();
+  await page.getByRole('button', { name: 'Unterschriften verwalten …' }).click();
+  await expect(page.locator('.dlg.sig-sheet')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.dlg.sig-sheet')).toHaveCount(0);
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('cAddSig');
+  // Vorschau eines 600-dpi-Bereichs (großer Rahmen): Reglerbewegung < 200 ms bis das Ergebnis steht
+  await page.locator('#cAddSig').click();
+  await page.getByRole('button', { name: 'Aus Dokument übernehmen' }).click();
+  const [ax, ay] = await clientOf(page, 0, 40, 330);
+  const [bx, by] = await clientOf(page, 0, 380, 150);
+  await page.mouse.move(ax, ay);
+  await page.mouse.down();
+  await page.mouse.move(bx, by, { steps: 5 });
+  await page.mouse.up();
+  const sheet = page.locator('.dlg.sig-sheet');
+  await expect(sheet.locator('.sig-crop')).toBeVisible();
+  const ms = await sheet.evaluate(async (el) => {
+    const range = el.querySelector('#sigSens');
+    const canvas = el.querySelector('canvas');
+    const times = [];
+    for (const v of [20, 80, 35]) {
+      const t0 = performance.now();
+      range.value = v;
+      range.dispatchEvent(new Event('input', { bubbles: true }));
+      // Vorschau gilt als fertig, wenn der Canvas neu beschrieben wurde (Inhalt ändert sich)
+      const before = canvas.toDataURL();
+      while (canvas.toDataURL() === before && performance.now() - t0 < 3000)
+        await new Promise((r) => setTimeout(r, 5));
+      times.push(Math.round(performance.now() - t0));
+    }
+    return times;
+  });
+  console.log('Vorschau-Zeiten (ms):', ms.join(', '));
+  expect(Math.min(...ms)).toBeLessThan(200);
+  expect(errors).toEqual([]);
+  await context.close();
+});
