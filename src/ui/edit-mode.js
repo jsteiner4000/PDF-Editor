@@ -284,12 +284,26 @@ export class EditMode {
     // Text); in der schmalen Toleranz um den Block gewinnt dagegen ein Strich (z. B. eine
     // Unterstreichung).
     const inside = blockAt(model, x, y, ppt, 0);
-    if (inside) return { block: inside };
+    if (inside && !(best && best.px <= 2 && this.isUnderline(best.obj, inside)))
+      return { block: inside };
     const block = blockAt(model, x, y, ppt);
     if (block && !(best && best.ink && best.stroke)) return { block };
     if (!best) return null;
     const obj = best.obj;
     return { obj, group: obj.cluster ? obj.cluster.members : [obj], info: best };
+  }
+  /**
+   * Ist `obj` eine Unter- oder Überstreichung von `block`: eine waagerechte Linie im oberen oder
+   * unteren Randbereich des Blocks (30 % der Höhe, mindestens 2 pt)? Tabellenlinien, die quer
+   * durch den Text laufen, gehören nicht dazu und nehmen dem Text nichts weg.
+   */
+  isUnderline(obj, block) {
+    if (obj.type !== 'path' || !obj.geom) return false;
+    const height = obj.vis[3] - obj.vis[1];
+    if (height > Math.max(obj.lw || 0, 0) + 1.5) return false; // nicht waagerecht
+    const band = Math.max(2, 0.3 * (block.bbox[3] - block.bbox[1]));
+    const mid = (obj.vis[1] + obj.vis[3]) / 2;
+    return mid <= block.bbox[1] + band || mid >= block.bbox[3] - band;
   }
   /** Alle Elemente unter dem Zeiger (für Alt+Klick und Kontextmenü), oberstes Objekt zuerst. */
   stackAt(pv, clientX, clientY) {
@@ -428,7 +442,7 @@ export class EditMode {
     if (this.pe && this.pe.pv === pv) {
       const [x, y] = pv.clientToPdf(ev.clientX, ev.clientY);
       const pick = this.pe.pick(x, y);
-      this.pe.setHover(pick && pick.seg ? pick.seg : null);
+      this.pe.setHover(pick && pick.seg ? pick.seg : null, pick && pick.node ? pick.node : null);
       if (pick) {
         this.hideHover(pv);
         pv.layer.style.cursor = pick.node ? 'crosshair' : 'move';

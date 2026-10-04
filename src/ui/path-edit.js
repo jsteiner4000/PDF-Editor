@@ -138,7 +138,8 @@ export class PathEditor {
         if (++anchors > 4000) return;
         const [x, y] = map(n);
         const a = document.createElement('div');
-        a.className = 'pa' + (this.nodes.has(spIndex + ':' + k) ? ' on' : '');
+        const hov = this.hoverNode && this.hoverNode.sp === spIndex && this.hoverNode.k === k && !preview;
+        a.className = 'pa' + (this.nodes.has(spIndex + ':' + k) ? ' on' : '') + (hov ? ' hov' : '');
         a.dataset.sp = spIndex;
         a.dataset.k = k;
         a.style.left = x + 'px';
@@ -155,10 +156,11 @@ export class PathEditor {
     frag.appendChild(tag);
     this.el.replaceChildren(frag);
   }
-  setHover(seg) {
-    const same = (a, b) => (!a && !b) || (a && b && a.sp === b.sp && a.k === b.k);
-    if (same(seg, this.hoverSeg)) return;
+  setHover(seg, node = null) {
+    const same = (a, b) => (!a && !b) || (a && b && a.sp === b.sp && (a.k ?? 0) === (b.k ?? 0));
+    if (same(seg, this.hoverSeg) && same(node, this.hoverNode)) return;
     this.hoverSeg = seg;
+    this.hoverNode = node;
     this.draw();
   }
   /**

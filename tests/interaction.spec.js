@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs';
 import { deflateSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { PDFDocument, PDFName } from 'pdf-lib';
+import { PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
 import { launch, openPdf, idle, settled, savedBytes } from './helpers.js';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -1470,4 +1470,47 @@ test.describe('Review: Kleinigkeiten', () => {
       await context.close();
     }
   });
+});
+
+test('Unterstreichung im Textblock ist wählbar; Tabellenlinien durch den Text nehmen dem Text nichts weg', async ({
+  browser,
+}) => {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const p = doc.addPage([595, 842]);
+  p.drawText('Unterstrichen', { x: 100, y: 500, size: 12, font });
+  p.drawText('Tabellenzelle', { x: 300, y: 500, size: 12, font });
+  p.drawLine({ start: { x: 100, y: 498.5 }, end: { x: 180, y: 498.5 }, thickness: 0.5 }); // Unterstrich
+  p.drawLine({ start: { x: 280, y: 504 }, end: { x: 420, y: 504 }, thickness: 0.5 }); // Tabellenlinie durch den Text
+  p.drawLine({ start: { x: 330, y: 480 }, end: { x: 330, y: 530 }, thickness: 0.5 }); // Spaltenlinie
+  const { page, context, errors } = await setup(
+    browser,
+    Buffer.from(await doc.save({ useObjectStreams: false })),
+  );
+  try {
+    const id = uidsByIndex(await state(page));
+    const hitKind = (x, y) =>
+      page.evaluate(
+        ([cx, cy]) => {
+          const h = window.pdfEditor.edit.hit(window.pdfEditor.pvs[0], cx, cy);
+          return h ? (h.block ? 'block' : 'obj ' + h.obj.uid) : null;
+        },
+        [x, y],
+      );
+    expect(await hitKind(...(await pt(page, 140, 498.5)))).toBe('obj ' + id[0]);
+    expect(await hitKind(...(await pt(page, 300, 504)))).toBe('block');
+    expect(await hitKind(...(await pt(page, 330, 508)))).toBe('block');
+    // Klick auf den Unterstrich wählt die Linie, öffnet nicht den Texteditor
+    const s = await clickAt(page, 140, 498.5);
+    expect(s.sel).toEqual([id[0]]);
+    expect(await page.evaluate(() => !!window.pdfEditor.edit.editor)).toBe(false);
+    // Klick in den Text öffnet den Editor
+    await escape(page);
+    await page.waitForTimeout(550);
+    await page.mouse.click(...(await pt(page, 300, 504)));
+    await page.locator('.te').waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });

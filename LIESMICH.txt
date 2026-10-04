@@ -72,7 +72,8 @@ BILDER UND GRAFIKEN
   Endpunkten, Ecken und Kanten anderer Elemente ein (pinke Markierung), mit Alt
   frei. Die Griffe sind bei jeder Zoomstufe gleich groß.
 - Touchbildschirm: Ein Wisch auf freier Fläche scrollt; ausgewählte Elemente
-  und Griffe lassen sich mit dem Finger ziehen.
+  und Griffe lassen sich mit dem Finger ziehen. Ein Wisch, der auf einem noch
+  nicht ausgewählten Element beginnt, scrollt die Seite – erst antippen, dann ziehen.
 - Esc während des Ziehens bricht ab – das Element bleibt, wo es war.
 - Entf-Taste = löschen.
 - Zusammengehörige Teile (z. B. Kreisnummer mit Linie) werden als Gruppe
