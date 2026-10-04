@@ -1,35 +1,57 @@
 PDF-Editor
 ==========
 
-Ein PDF-Editor für den Browser: Texte und Bilder in PDF-Dateien bearbeiten,
-Seiten einfügen, löschen und ordnen. Läuft komplett offline – es werden keine
-Daten ins Internet übertragen.
+Ein PDF-Editor für Windows (Desktop-App) und den Browser: Texte und Bilder in
+PDF-Dateien bearbeiten, Seiten einfügen, löschen und ordnen. Läuft komplett
+offline – es werden keine Daten ins Internet übertragen.
 
 
 STARTEN
 -------
+Desktop-App (empfohlen, Windows 10/11)
+
+Installation: „PDF-Editor-Setup-2.0.0.exe“ ausführen. Der PDF-Editor wird nur
+für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
+Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
+Im Installer lässt sich wählen, dass der PDF-Editor beim Rechtsklick auf eine
+PDF-Datei unter „Öffnen mit“ erscheint (voreingestellt). Als Standardprogramm
+für PDF-Dateien: Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App
+auswählen“ > „PDF-Editor“ > „Immer“. Dann öffnet ein Doppelklick auf eine PDF
+direkt den PDF-Editor.
+
+Ohne Installation: „PDF-Editor-2.0.0-portable.exe“ starten (z. B. vom
+USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
+erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
+
+Falls Windows warnt („Der Computer wurde durch Windows geschützt“): Das
+Programm ist nicht digital signiert. „Weitere Informationen“ > „Trotzdem
+ausführen“.
+
+Neue Version: einfach den neuen Installer ausführen – Einstellungen, eigene
+Schriften und „Zuletzt geöffnet“ bleiben erhalten.
+Deinstallieren: Windows-Einstellungen > Apps > „PDF-Editor“ > Deinstallieren.
+Die persönlichen Einstellungen liegen in %APPDATA%\PDF-Editor und können danach
+von Hand gelöscht werden.
+
+Der PDF-Editor stellt keine Verbindung zum Internet her, sucht nicht nach
+Updates und sendet keine Daten.
+
+Alternative: Browser-Variante
 „PDF-Editor.html“ doppelklicken. Die Datei öffnet sich in Google Chrome oder
-Microsoft Edge (empfohlen). Eine Installation ist nicht nötig.
-
-Tipp: Mit Rechtsklick > „Öffnen mit“ Chrome oder Edge wählen, falls ein anderer
-Browser startet.
-
-Programm-Symbol auf dem Desktop:
-„Desktop-Verknuepfung anlegen.cmd“ doppelklicken. Danach liegt auf dem Desktop
-das Symbol „PDF-Editor“. Es startet den Editor in einem eigenen Fenster wie ein
-normales Programm (mit Chrome oder Edge, ohne Adress- und Tab-Leiste).
-Den Ordner danach nicht mehr verschieben – sonst das Skript noch einmal starten.
-Falls Windows eine Warnung zeigt („Der Computer wurde durch Windows geschützt“):
-„Weitere Informationen“ > „Trotzdem ausführen“. Das Skript legt nur die
-Verknüpfung an.
-Das Symbol gibt es auch als Bild im Ordner „Symbol“ (PNG in mehreren Größen und
-als ICO-Datei), z. B. zum Anheften an die Taskleiste.
+Microsoft Edge (empfohlen). Eine Installation ist nicht nötig. Falls ein
+anderer Browser startet: Rechtsklick > „Öffnen mit“ > Chrome oder Edge.
+In anderen Browsern (z. B. Firefox) speichert „Speichern“ eine Kopie in den
+Download-Ordner, statt die Datei zu überschreiben.
 
 
 PDF ÖFFNEN
 ----------
 „Datei öffnen“ klicken oder die PDF-Datei einfach ins Fenster ziehen.
 Zuletzt geöffnete Dateien erscheinen auf der Startseite.
+Desktop-App: außerdem per Doppelklick bzw. „Öffnen mit“ oder durch Ziehen der
+PDF auf das Programmsymbol. Läuft der PDF-Editor schon, öffnet sich die Datei
+im vorhandenen Fenster. Der Fenstertitel zeigt den Dateinamen, „(Bearbeitet)“
+steht für ungespeicherte Änderungen.
 
 
 TEXT BEARBEITEN
@@ -112,6 +134,8 @@ SPEICHERN
 „Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
 (Strg+Umschalt+S) legt eine neue an. Jede Änderung lässt sich mit Strg+Z
 rückgängig machen und mit Strg+Y wiederholen.
+Beim Schließen mit ungespeicherten Änderungen fragt der PDF-Editor nach
+(„Speichern“, „Nicht speichern“, „Abbrechen“).
 
 
 SCHRIFTEN
@@ -125,18 +149,20 @@ Schriftdatei:
   passende Schriftdatei (.ttf/.otf) laden. Der Editor merkt sich die Schrift.
 - Fehlt eine Schrift, weist der Editor darauf hin; das Zeichen wird dann in
   einer ähnlichen Standardschrift geschrieben.
-Im Ordner „Schriften“ liegen die mitgelieferten Schriften zusätzlich als Dateien
-(z. B. zum Installieren in Windows). Lizenz: SIL Open Font License (siehe dort).
+Die mitgelieferten Schriften gibt es zusätzlich als Dateien (z. B. zum
+Installieren in Windows): in der Desktop-App über Hilfe > „Schriftdateien
+anzeigen“. Lizenz: SIL Open Font License (siehe Hilfe > „Lizenzhinweise“).
 
 
 TASTENKÜRZEL
 ------------
-Strg+O öffnen · Strg+S speichern · Strg+Z / Strg+Y rückgängig / wiederholen
+Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter
+Strg+Z / Strg+Y rückgängig / wiederholen · Strg+P anzeigen und drucken (Desktop-App)
 Strg + Mausrad oder Strg+Plus/Minus zoomen (bis 3200 %) · Strg+0 Seitenbreite
 Strg+1 Zoom 100 % · Strg+2 auf Auswahl zoomen · Leertaste + Ziehen Ansicht verschieben
 Entf löschen · Pfeiltasten verschieben (Umschalt = größere Schritte)
 Esc Bearbeitung beenden und Textblock auswählen · Enter Text wieder bearbeiten
-Alt+Klick Element dahinter auswählen
+Alt+Klick Element dahinter auswählen · F11 Vollbild (Desktop-App)
 
 
 GUT ZU WISSEN

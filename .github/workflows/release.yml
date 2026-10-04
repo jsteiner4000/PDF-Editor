@@ -1,0 +1,147 @@
+# Windows-Release der Desktop-App: Installer (NSIS) und Portable-EXE.
+# Läuft bei Tags v* (z. B. v2.0.0) und manuell („Run workflow“). Bei Tags werden die Dateien
+# als Release-Assets veröffentlicht, sonst nur als Artefakte des Laufs hochgeladen.
+name: Release (Windows)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_regression:
+        description: 'Regressionstests (Browser) überspringen'
+        type: boolean
+        default: false
+
+# Standard: nur lesen. Schreibrecht hat allein der Job „release“ (Release-Assets anlegen).
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    permissions:
+      contents: read
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false' # nicht signieren (kein Zertifikat hinterlegt)
+    steps:
+      # Aktionen sind auf Commit-SHAs festgelegt (Lieferkette); Version im Kommentar
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Tag und package.json-Version vergleichen
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          REF_NAME: ${{ github.ref_name }} # per Umgebung statt Inline-Einsetzen (Skript-Injektion)
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:REF_NAME) { throw "Tag $env:REF_NAME passt nicht zu package.json ($version)" }
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Build (dist/PDF-Editor.html, Lizenzhinweise)
+        run: npm run build:desktop
+
+      - name: Chromium für Playwright installieren
+        run: npx playwright install chromium
+
+      - name: Desktop-Smoke-Test (Electron, Playwright)
+        run: npx playwright test tests/desktop.spec.js
+
+      - name: Regressionstests (Browser)
+        if: ${{ !inputs.skip_regression }}
+        run: npx playwright test tests/regression.spec.js
+
+      - name: Installer und Portable bauen
+        run: npx electron-builder --win nsis portable --x64 --publish never
+
+      - name: Paket prüfen – startet mit PDF als Argument, Fenstertitel = Dateiname
+        run: |
+          $exe = Resolve-Path 'release\win-unpacked\PDF-Editor.exe'
+          $pdf = Join-Path $env:RUNNER_TEMP 'smoke.pdf'
+          Copy-Item 'tests\fixtures\dokument.pdf' $pdf
+          $env:PDF_EDITOR_USER_DATA = Join-Path $env:RUNNER_TEMP 'pdf-editor-smoke'
+          $p = Start-Process -FilePath $exe -ArgumentList "`"$pdf`"" -PassThru
+          $title = ''
+          for ($i = 0; $i -lt 60 -and -not $p.HasExited; $i++) {
+            Start-Sleep -Milliseconds 500
+            $p.Refresh()
+            $title = $p.MainWindowTitle
+            if ($title -like 'smoke.pdf*PDF-Editor') { break }
+          }
+          Write-Host "Fenstertitel: $title"
+          if ($p.HasExited) { throw "PDF-Editor hat sich beendet (Exit-Code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          if ($title -notlike 'smoke.pdf*PDF-Editor') { throw 'Die Datei wurde nicht geöffnet.' }
+
+      - name: Installer prüfen – stille Benutzerinstallation, Dateizuordnung, Deinstallation
+        run: |
+          $setup = Get-ChildItem release -Filter 'PDF-Editor-Setup-*.exe' | Select-Object -First 1
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\PDF-Editor'
+          if (-not (Test-Path (Join-Path $dir 'PDF-Editor.exe'))) { throw "Nicht installiert: $dir" }
+          $progids = Get-ItemProperty 'HKCU:\Software\Classes\.pdf\OpenWithProgids' -ErrorAction SilentlyContinue
+          if (-not $progids -or -not ($progids.PSObject.Properties.Name -contains 'PDFEditor.Dokument')) { throw '.pdf-Zuordnung fehlt' }
+          $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'PDF-Editor.lnk'
+          if (-not (Test-Path $lnk)) { throw "Startmenü-Verknüpfung fehlt: $lnk" }
+          Start-Process -FilePath (Join-Path $dir 'Uninstall PDF-Editor.exe') -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 60 -and (Test-Path (Join-Path $dir 'PDF-Editor.exe')); $i++) { Start-Sleep -Milliseconds 500 }
+          if (Test-Path (Join-Path $dir 'PDF-Editor.exe')) { throw 'Deinstallation unvollständig' }
+          if (Test-Path 'HKCU:\Software\Classes\PDFEditor.Dokument') { throw 'ProgID nach Deinstallation noch vorhanden' }
+          Write-Host 'Installation, Zuordnung und Deinstallation in Ordnung.'
+
+      - name: Ausgabedateien zusammenstellen
+        run: |
+          New-Item -ItemType Directory -Force upload | Out-Null
+          Copy-Item release\PDF-Editor-Setup-*.exe, release\PDF-Editor-*-portable.exe, dist\PDF-Editor.html upload\
+          Get-ChildItem upload | Format-Table Name, Length
+
+      - name: Artefakte hochladen
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: PDF-Editor-Windows
+          path: upload/*
+          if-no-files-found: error
+
+      - name: Testergebnisse bei Fehlern hochladen
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  # Nur bei Tags: Release-Assets anlegen. Eigener Job, damit der Build/Test-Job kein Schreibrecht hat.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: PDF-Editor-Windows
+          path: upload
+
+      - name: Release veröffentlichen
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: upload/*
+          fail_on_unmatched_files: true

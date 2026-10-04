@@ -1,0 +1,20 @@
+# Textdateien: im Repository und im Arbeitsordner LF (Prettier, Skripte, Hashes im Build)
+* text=auto eol=lf
+
+# Der NSIS-Compiler und Windows-Editoren kommen mit CRLF + BOM am besten zurecht
+*.nsh text eol=crlf
+
+# Binärdateien: nie umwandeln, kein Textdiff
+*.pdf binary
+*.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.7z binary
+*.zip binary
+
+# Das Original 1.0 dient als Referenz der Regressionstests und muss byte-genau bleiben
+legacy/*.html binary
