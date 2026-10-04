@@ -13,8 +13,9 @@ on:
         type: boolean
         default: false
 
+# Standard: nur lesen. Schreibrecht hat allein der Job „release“ (Release-Assets anlegen).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,22 +28,28 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    permissions:
+      contents: read
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false' # nicht signieren (kein Zertifikat hinterlegt)
-      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}\.cache\electron-builder
     steps:
-      - uses: actions/checkout@v5
+      # Aktionen sind auf Commit-SHAs festgelegt (Lieferkette); Version im Kommentar
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: npm
 
       - name: Tag und package.json-Version vergleichen
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          REF_NAME: ${{ github.ref_name }} # per Umgebung statt Inline-Einsetzen (Skript-Injektion)
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ("v$version" -ne '${{ github.ref_name }}') { throw "Tag ${{ github.ref_name }} passt nicht zu package.json ($version)" }
+          if ("v$version" -ne $env:REF_NAME) { throw "Tag $env:REF_NAME passt nicht zu package.json ($version)" }
 
       - name: Abhängigkeiten installieren
         run: npm ci
@@ -98,30 +105,43 @@ jobs:
           if (Test-Path 'HKCU:\Software\Classes\PDFEditor.Dokument') { throw 'ProgID nach Deinstallation noch vorhanden' }
           Write-Host 'Installation, Zuordnung und Deinstallation in Ordnung.'
 
+      - name: Ausgabedateien zusammenstellen
+        run: |
+          New-Item -ItemType Directory -Force upload | Out-Null
+          Copy-Item release\PDF-Editor-Setup-*.exe, release\PDF-Editor-*-portable.exe, dist\PDF-Editor.html upload\
+          Get-ChildItem upload | Format-Table Name, Length
+
       - name: Artefakte hochladen
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: PDF-Editor-Windows
-          path: |
-            release/PDF-Editor-Setup-*.exe
-            release/PDF-Editor-*-portable.exe
-            dist/PDF-Editor.html
+          path: upload/*
           if-no-files-found: error
-
-      - name: Release veröffentlichen
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/PDF-Editor-Setup-*.exe
-            release/PDF-Editor-*-portable.exe
-            dist/PDF-Editor.html
-          fail_on_unmatched_files: true
 
       - name: Testergebnisse bei Fehlern hochladen
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results
           path: test-results/
           if-no-files-found: ignore
+
+  # Nur bei Tags: Release-Assets anlegen. Eigener Job, damit der Build/Test-Job kein Schreibrecht hat.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: PDF-Editor-Windows
+          path: upload
+
+      - name: Release veröffentlichen
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: upload/*
+          fail_on_unmatched_files: true
