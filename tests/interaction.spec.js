@@ -1196,3 +1196,164 @@ test.describe('Dichte Zeichnungen (Review)', () => {
     }
   });
 });
+
+test.describe('Review: Bedienung', () => {
+  test('Klick und gleich darauf Ziehen verschiebt, statt zu verformen; Doppelklick öffnet erst beim Loslassen', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser);
+    try {
+      const s0 = await state(page);
+      const rect = uidsByIndex(s0)[0];
+      const k = await scale(page);
+      const [x, y] = await pt(page, 200, 680);
+      await page.mouse.click(x, y);
+      await settled(page);
+      // zweites Drücken nach < 500 ms und Ziehen: normales Verschieben
+      await page.waitForTimeout(100);
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.keyboard.down('Alt'); // ohne Einrasten
+      await page.mouse.move(x + 40, y + 25, { steps: 6 });
+      await page.mouse.up();
+      await page.keyboard.up('Alt');
+      await settled(page);
+      let s = await state(page);
+      expect(s.pe).toBeNull();
+      expect(s.undo).toEqual(['Verschoben']);
+      expect(byUid(s, rect).nodes[0][0][0]).toBeCloseTo(100 + 40 / k, 1);
+      expect(byUid(s, rect).nodes[0][0][1]).toBeCloseTo(560 - 25 / k, 1);
+      expect(await page.evaluate(() => window.pdfEditor.session.model(0).src)).toMatch(/ re\b/);
+      // echter Doppelklick (kein Ziehen) öffnet „Pfad bearbeiten“
+      await escape(page);
+      await page.waitForTimeout(600);
+      await page.mouse.dblclick(...(await pt(page, 200 + 40 / k, 680 - 25 / k)));
+      await settled(page);
+      expect((await state(page)).pe.uid).toBe(rect);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('Kantenmitte: Ziehen am Strich verschiebt, der Mittelgriff liegt außerhalb und ändert die Größe', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser);
+    try {
+      const s0 = await state(page);
+      const rect = uidsByIndex(s0)[0];
+      const k = await scale(page);
+      await clickAt(page, 200, 680);
+      // Mittelgriff n: mindestens 14 px über der Kante, Ecken unverändert auf den Ecken
+      const [ex, ey] = await pt(page, 200, 680);
+      const [hx, hy] = await handleCenter(page, '.sel .h[data-h=n]');
+      expect(ey - hy).toBeGreaterThanOrEqual(14);
+      const corner = await handleCenter(page, '.sel .h[data-h=nw]');
+      expect(Math.abs(corner[1] - ey)).toBeLessThan(3);
+      // Ziehen am Strich in der Kantenmitte (Griffmitte liegt nicht mehr darauf): Verschieben
+      await page.mouse.move(ex, ey);
+      await page.mouse.down();
+      await page.mouse.move(ex + 30, ey + 30, { steps: 5 });
+      await page.mouse.up();
+      await settled(page);
+      let s = await state(page);
+      expect(s.undo).toEqual(['Verschoben']);
+      expect(byUid(s, rect).lw).toBe(1.5);
+      // Mittelgriff ziehen: Größe ändern
+      const [gx, gy] = await handleCenter(page, '.sel .h[data-h=n]');
+      await page.mouse.move(gx, gy);
+      await page.mouse.down();
+      await page.keyboard.down('Alt');
+      await page.mouse.move(gx, gy - 40, { steps: 5 });
+      await page.mouse.up();
+      await page.keyboard.up('Alt');
+      await settled(page);
+      s = await state(page);
+      expect(s.undo).toEqual(['Verschoben', 'Größe geändert']);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('Pfad bearbeiten: Entf löscht nur Kante bzw. Punkt (Undo), Hinweiszeile folgt dem Modus', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser);
+    try {
+      const s0 = await state(page);
+      const ids = uidsByIndex(s0);
+      const hint = () => page.locator('#cHint').textContent();
+      const defaultHint = await hint();
+      await page.mouse.dblclick(...(await pt(page, 200, 680)));
+      await settled(page);
+      expect(await hint()).toContain('Pfad bearbeiten ·');
+      expect(await hint()).toContain('Entf');
+      // Kante löschen: das re-Rechteck wird zum offenen Linienzug ohne obere Kante
+      await page.keyboard.press('Delete');
+      await settled(page);
+      let s = await state(page);
+      expect(s.undo).toEqual(['Kante gelöscht']);
+      expect(s.objs.length).toBe(s0.objs.length);
+      expect(byUid(s, ids[0]).closed).toEqual([false]);
+      expect(byUid(s, ids[0]).nodes[0]).toEqual([
+        [100, 680],
+        [100, 560],
+        [300, 560],
+        [300, 680],
+      ]);
+      expect(await page.evaluate(() => window.pdfEditor.session.model(0).src)).toMatch(
+        /100 680 m\s+100 560 l\s+300 560 l\s+300 680 l\s/,
+      );
+      expect(s.pe).not.toBeNull();
+      await page.keyboard.press('Control+z');
+      await idle(page);
+      s = await state(page);
+      expect(byUid(s, ids[0]).closed).toEqual([true]);
+      expect(await page.evaluate(() => window.pdfEditor.session.model(0).src)).toMatch(/100 560 200 120 re/);
+      // Punkt löschen: Ecke unten links anklicken, Entf – die Nachbarn werden verbunden
+      await escape(page);
+      await page.mouse.dblclick(...(await pt(page, 200, 680)));
+      await settled(page);
+      await clickAt(page, 100, 560);
+      expect((await state(page)).pe.nodes).toEqual(['0:0']);
+      await page.keyboard.press('Delete');
+      await settled(page);
+      s = await state(page);
+      expect(byUid(s, ids[0]).nodes[0]).toEqual([
+        [300, 560],
+        [300, 680],
+        [100, 680],
+      ]);
+      expect(byUid(s, ids[0]).closed).toEqual([true]);
+      expect(s.undo.at(-1)).toBe('Punkt gelöscht');
+      // Einzelne Linie: ihre einzige Kante löschen entfernt das Objekt; Undo bringt es zurück
+      await escape(page);
+      await escape(page);
+      await page.waitForTimeout(550);
+      await clickAt(page, 450, 380);
+      await page.waitForTimeout(550);
+      await clickAt(page, 450, 380); // zweiter Klick auf die gewählte Linie: Pfad bearbeiten
+      expect((await state(page)).pe.uid).toBe(ids[8]);
+      await page.keyboard.press('Delete');
+      await settled(page);
+      s = await state(page);
+      expect(s.objs.some((o) => o.uid === ids[8])).toBe(false);
+      expect(s.pe).toBeNull();
+      expect(await hint()).toBe(defaultHint);
+      await page.keyboard.press('Control+z');
+      await idle(page);
+      expect((await state(page)).objs.some((o) => o.uid === ids[8])).toBe(true);
+      // Esc stellt die Hinweiszeile wieder her
+      await page.mouse.dblclick(...(await pt(page, 450, 400)));
+      await settled(page);
+      expect(await hint()).toContain('Pfad bearbeiten ·');
+      await escape(page);
+      expect(await hint()).toBe(defaultHint);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});

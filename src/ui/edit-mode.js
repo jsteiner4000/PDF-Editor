@@ -12,8 +12,8 @@ import { TextEditor } from './text-editor.js';
 import { boxContains, boxInside, hexToRgb, mmToPt, ptToMm, rgbToHex, unionBoxes } from './geometry.js';
 import { Gesture } from './gesture.js';
 import { blockAt, objectHit, objectHits, pagePaths, pickObject, pxPerPt } from './hit-test.js';
-import { PathEditor, constrainAngle, toUser } from './path-edit.js';
-import { cloneSubpaths, isLineLike, moveNodes, svgPath } from '../pdf/path-geometry.js';
+import { PathEditor, constrainAngle } from './path-edit.js';
+import { cloneSubpaths, fromPage, isLineLike, moveNodes, svgPath } from '../pdf/path-geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -23,6 +23,9 @@ const HANDLE_MID_SIDE = 56;
 
 /** Mindestabstand (px) der Mittelpunkte der beiden Endpunkt-Griffe einer Linie. */
 const HANDLE_SPACING = 30;
+
+/** Versatz (px) der Mittelgriffe nach außen bei Pfadauswahl (28-px-Trefferfläche berührt die Kante). */
+const HANDLE_OUTSET = 15;
 
 const isTranslationMatrix = (m) => m[0] === 1 && m[3] === 1 && m[1] === 0 && m[2] === 0;
 
@@ -547,12 +550,13 @@ export class EditMode {
       !down.shift &&
       !down.pickBehind;
     if (isDouble && !this.pe) {
-      // Doppelklick auf einen Pfad: direkt „Pfad bearbeiten“ (und gleich ziehen können)
+      // Doppelklick auf einen Pfad: „Pfad bearbeiten“ öffnet erst beim Loslassen ohne Bewegung.
+      // Wird das zweite Drücken zum Ziehen, ist es ein normales Verschieben der Auswahl.
       this.lastDown = null;
       const hit = this.hit(pv, down.x, down.y);
       if (hit && hit.obj && hit.obj.type === 'path' && hit.obj.geom && hit.obj.geom.subpaths.length) {
-        this.enterPathEdit(pv, hit.obj, down.pt);
-        if (this.pe && this.pe.onDown(down, gesture)) return;
+        if (!this.isSelected({ obj: hit.obj })) this.select(pv, hit.group, []);
+        return this.dragSelection(down, gesture, null, () => this.enterPathEdit(pv, hit.obj, down.pt));
       }
     }
     if (this.pe) {
@@ -918,6 +922,16 @@ export class EditMode {
         handle.dataset.h = dir;
         handle.style.left = x + '%';
         handle.style.top = y + '%';
+        // Mittelgriffe liegen bei Pfaden außerhalb der Kante, damit sie den Strich nicht verdecken
+        // (Ziehen am Strich verschiebt, Ziehen am Griff ändert die Größe); Eckgriffe bleiben.
+        if (dir.length === 1 && sel.objs.some((o) => o.type === 'path')) {
+          handle.classList.add('out');
+          const out = HANDLE_OUTSET;
+          if (dir === 'n') handle.style.marginTop = -14 - out + 'px';
+          if (dir === 's') handle.style.marginTop = -14 + out + 'px';
+          if (dir === 'w') handle.style.marginLeft = -14 - out + 'px';
+          if (dir === 'e') handle.style.marginLeft = -14 + out + 'px';
+        }
         el.appendChild(handle);
       }
     const tag = document.createElement('div');
@@ -1286,10 +1300,24 @@ export class EditMode {
       const items = edits
         .map((e) => {
           const obj = byUid.get(e.uid);
-          return obj && { obj, subpaths: toUser(e.paths, obj.ctm) };
+          return obj && { obj, subpaths: fromPage(e.paths, obj.ctm) };
         })
         .filter(Boolean);
-      if (items.length) this.session.editPaths(p.index, items, label);
+      // Bleibt von einem Pfad nichts übrig, wird das Objekt gelöscht
+      const empty = items.filter((i) => !i.subpaths.length).map((i) => i.obj);
+      const rest = items.filter((i) => i.subpaths.length);
+      await this.session.batch(label, async () => {
+        if (rest.length) this.session.editPaths(p.index, rest, label);
+        if (empty.length)
+          this.session.deleteObjects(
+            p.index,
+            this.resolveUids(
+              p.index,
+              empty.map((o) => o.uid),
+            ),
+            label,
+          );
+      });
       this.afterChange();
     });
   }
@@ -1364,6 +1392,8 @@ export class EditMode {
     return this.applyTransform(matrix, 'Gedreht');
   }
   deleteSelection() {
+    // „Pfad bearbeiten“ mit gewählter Kante/gewählten Punkten: nur diese löschen, nicht das Objekt
+    if (this.pe && this.pe.deleteSelected()) return Promise.resolve();
     if (this.pe) {
       const obj = this.pe.obj;
       const pv = this.pe.pv;
@@ -1457,6 +1487,7 @@ export class EditMode {
     this.pe = pe;
     pe.draw();
     this.hideHover(pv);
+    this.updateHint();
     this.updatePanel();
     this.hintOnce(
       'pathedit',
@@ -1469,6 +1500,7 @@ export class EditMode {
     pe.flushNudge();
     pe.destroy();
     this.pe = null;
+    this.updateHint();
     this.updatePanel();
   }
   onKey(ev) {
@@ -1749,16 +1781,22 @@ export class EditMode {
     if (addTextBtn) addTextBtn.classList.toggle('on', mode === 'text');
     const addImageBtn = $('#cAddImg');
     if (addImageBtn) addImageBtn.classList.toggle('on', mode === 'image');
-    const hint = $('#cHint');
-    if (hint)
-      hint.textContent =
-        mode === 'text'
-          ? 'Klicken Sie auf die Stelle, an der der Text beginnen soll.'
-          : mode === 'image'
-            ? 'Klicken Sie auf die Stelle, an der das Bild eingefügt werden soll.'
-            : 'Klick in Text: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter';
     if (mode) this.clearSelection();
+    this.updateHint();
     this.updatePanel();
+  }
+  /** Hinweiszeile in der Kopfleiste passend zum Zustand (Hinzufügen, Pfad bearbeiten, Standard). */
+  updateHint() {
+    const hint = $('#cHint');
+    if (!hint) return;
+    hint.textContent =
+      this.armed === 'text'
+        ? 'Klicken Sie auf die Stelle, an der der Text beginnen soll.'
+        : this.armed === 'image'
+          ? 'Klicken Sie auf die Stelle, an der das Bild eingefügt werden soll.'
+          : this.pe
+            ? 'Pfad bearbeiten · Punkt oder Kante ziehen · Alt = lösen · Entf = Kante löschen · Esc = fertig'
+            : 'Klick in Text: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter';
   }
   sameFamilyVariants(fam) {
     const family = parseFontName(fam.key).family;

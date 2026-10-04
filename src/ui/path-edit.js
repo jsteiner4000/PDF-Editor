@@ -3,8 +3,9 @@
  */
 import {
   cloneSubpaths,
+  deleteNodes,
+  deleteSegment,
   detachSegment,
-  fromPage,
   moveNodes,
   segEnds,
   svgPath,
@@ -338,6 +339,23 @@ export class PathEditor {
       },
     });
   }
+  /**
+   * Entf: gewählte Kante bzw. gewählte Ankerpunkte löschen (nicht das ganze Objekt). Eine Kante
+   * eines Rechtecks macht daraus einen offenen Linienzug; beim Löschen eines Ankerpunkts werden
+   * die Nachbarn verbunden. Bleibt nichts übrig, verschwindet das Objekt. Liefert false, wenn
+   * nichts gewählt ist.
+   */
+  deleteSelected() {
+    const obj = this.obj;
+    if (!obj || (!this.seg && !this.nodes.size)) return false;
+    const paths = cloneSubpaths(pagePaths(obj));
+    const label = this.seg ? 'Kante gelöscht' : 'Punkt gelöscht';
+    const result = this.seg ? deleteSegment(paths, this.seg.sp, this.seg.k) : deleteNodes(paths, this.nodes);
+    this.nodes = new Set();
+    this.seg = null;
+    this.mode.commitPaths(this.pv, [{ uid: obj.uid, ctm: obj.ctm, paths: result }], label);
+    return true;
+  }
   /** Pfeiltasten: ausgewählte Ankerpunkte (mit verbundenen) um (dx, dy) pt verschieben. */
   nudge(dx, dy) {
     if (!this.nodes.size) return false;
@@ -369,6 +387,3 @@ export class PathEditor {
     );
   }
 }
-
-/** Teilpfade in Seitenkoordinaten → Benutzerraum des Objekts (für PdfSession.editPaths). */
-export const toUser = (paths, ctm) => fromPage(paths, ctm);

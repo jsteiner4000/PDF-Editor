@@ -26,7 +26,7 @@ export class PathRecorder {
   get empty() {
     return !this.subpaths.length;
   }
-  ensureCurrent(opIndex) {
+  ensureCurrent() {
     if (this.cur) return this.cur;
     const start = this.lastClosedStart || [0, 0];
     this.cur = { nodes: [start.slice()], segs: [], closed: false, re: false, ops: [], implicit: true };
@@ -42,13 +42,13 @@ export class PathRecorder {
     this.subpaths.push(this.cur);
   }
   lineTo(opIndex, x, y) {
-    const cur = this.ensureCurrent(opIndex);
+    const cur = this.ensureCurrent();
     cur.nodes.push([x, y]);
     cur.segs.push(null);
     cur.ops.push(opIndex);
   }
   curveTo(opIndex, c1, c2, end) {
-    const cur = this.ensureCurrent(opIndex);
+    const cur = this.ensureCurrent();
     cur.nodes.push(end);
     cur.segs.push({ c1, c2 });
     cur.ops.push(opIndex);
@@ -410,4 +410,85 @@ export function moveNodes(subpaths, keys, dx, dy) {
     });
     return { ...sp, nodes, segs, changed };
   });
+}
+
+const piece = (nodes, segs, closed = false) => ({
+  nodes,
+  segs,
+  closed,
+  re: false,
+  ops: [],
+  implicit: false,
+  changed: true,
+});
+
+/**
+ * Entfernt Segment `k` aus Teilpfad `spIndex`: ein geschlossener Pfad (auch ein `re`-Rechteck) wird
+ * zum offenen Linienzug ohne diese Kante, ein offener zerfällt in die Teile davor und danach.
+ * Teile mit nur einem Punkt entfallen; der Rest bleibt unverändert. Kann leer werden.
+ */
+export function deleteSegment(subpaths, spIndex, k) {
+  const out = [];
+  subpaths.forEach((sp, i) => {
+    if (i !== spIndex) return out.push(sp);
+    const n = sp.nodes.length;
+    const copyNodes = (list) => list.map((p) => p.slice());
+    const copySegs = (list) => list.map((g) => (g ? { c1: g.c1.slice(), c2: g.c2.slice() } : null));
+    if (sp.closed) {
+      const nodes = [];
+      const segs = [];
+      for (let j = 1; j <= n; j++) {
+        nodes.push(sp.nodes[(k + j) % n]);
+        if (j < n) segs.push(sp.segs[(k + j) % n]);
+      }
+      if (nodes.length >= 2) out.push(piece(copyNodes(nodes), copySegs(segs)));
+    } else {
+      const a = piece(copyNodes(sp.nodes.slice(0, k + 1)), copySegs(sp.segs.slice(0, k)));
+      const b = piece(copyNodes(sp.nodes.slice(k + 1)), copySegs(sp.segs.slice(k + 1)));
+      for (const part of [a, b]) if (part.nodes.length >= 2) out.push(part);
+    }
+  });
+  return out;
+}
+
+/**
+ * Entfernt Ankerpunkte (`keys` = Menge von 'teilpfad:knoten'): die Nachbarn werden mit einer
+ * Geraden verbunden (ein Endpunkt fällt einfach weg). Bleiben weniger als zwei Punkte übrig,
+ * entfällt der Teilpfad. Kann leer werden.
+ */
+export function deleteNodes(subpaths, keys) {
+  const out = [];
+  subpaths.forEach((sp, spIndex) => {
+    const remove = sp.nodes.map((_, k) => keys.has(spIndex + ':' + k));
+    if (!remove.some(Boolean)) return out.push(sp);
+    const n = sp.nodes.length;
+    if (sp.closed) {
+      const keep = [];
+      sp.nodes.forEach((_, k) => remove[k] || keep.push(k));
+      if (keep.length < 2) return;
+      const nodes = keep.map((k) => sp.nodes[k].slice());
+      // Segment von jedem behaltenen Knoten zum nächsten: bleibt erhalten, wenn direkt benachbart
+      const segs = keep.map((k, j) => {
+        const next = keep[(j + 1) % keep.length];
+        const direct = (k + 1) % n === next;
+        const g = sp.segs[k];
+        return direct && g ? { c1: g.c1.slice(), c2: g.c2.slice() } : null;
+      });
+      // zwei Punkte bleiben als einfache Linie (ein geschlossener Pfad mit zwei Punkten wäre hin und zurück)
+      if (keep.length === 2) out.push(piece(nodes, segs.slice(0, 1)));
+      else out.push(piece(nodes, segs, true));
+      return;
+    }
+    // offener Pfad: zusammenhängende Reste behalten, entfernte Knoten überbrücken
+    const keep = [];
+    sp.nodes.forEach((_, k) => remove[k] || keep.push(k));
+    if (keep.length < 2) return;
+    const nodes = keep.map((k) => sp.nodes[k].slice());
+    const segs = keep.slice(0, -1).map((k, j) => {
+      const g = sp.segs[k];
+      return keep[j + 1] === k + 1 && g ? { c1: g.c1.slice(), c2: g.c2.slice() } : null;
+    });
+    out.push(piece(nodes, segs));
+  });
+  return out;
 }
