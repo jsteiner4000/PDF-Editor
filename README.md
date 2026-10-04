@@ -156,24 +156,35 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   `npm ci`, Build, Desktop-Smoke-Test, Regressionstests, `electron-builder`, Prüfung des
   gepackten Programms (Start mit PDF, Fenstertitel) und des Installers (stille Installation,
   Zuordnung, Startmenü, Deinstallation). Installer, Portable-EXE und `PDF-Editor.html` werden als
-  Artefakte bzw. Release-Assets hochgeladen. Der Tag muss zur Version in `package.json` passen.
+  Artefakte hochgeladen; bei Tags legt der getrennte Job `release` (als einziger mit
+  Schreibrecht) daraus die Release-Assets an. Der Tag muss zur Version in `package.json` passen.
+  Aktionen sind auf Commit-SHAs festgelegt (Version im Kommentar); beim Aktualisieren SHA und
+  Kommentar gemeinsam ändern.
+- **Fehlerfälle**: Dateifehler (schreibgeschützt, gesperrt, Datenträger voll, Ordner fehlt …)
+  erreichen die Seite als deutsche Meldung ohne Pfad. Geschrieben wird atomar mit `fsync`;
+  Symlinks werden aufgelöst, der Dateimodus bleibt, unter Windows gibt es Wiederholungen bei
+  `EPERM`/`EBUSY`/`EACCES`. Stürzt der Renderer ab, erscheint ein Hinweis mit „Neu laden“, und
+  das Fenster lässt sich ohne Speichern-Rückfrage schließen.
+- **Alt-Taste**: Alt+Klick/Alt-Ziehen im Editor lässt beim Loslassen von Alt die Menüleiste
+  nicht aufklappen (`before-input-event`); Alt allein bedient das Menü weiterhin.
 - Lokal unter Linux: `npm run dist:linux` baut `release/linux-unpacked/`. Windows-Pakete lassen
   sich hier nur mit Wine bauen (`rcedit` für Symbol/Versionsinfo, Uninstaller-Erzeugung).
 
 ### Sicherheits-Checkliste (Electron Security Guidelines)
 
-| Punkt                     | Umsetzung                                                                        |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| Nur lokale Inhalte        | eigenes Schema `app://`; http(s), ws(s), ftp und file werden blockiert           |
-| Kein Node im Renderer     | `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`              |
-| Content-Security-Policy   | `default-src 'none'`, Skript nur per SHA-256-Hash, Worker nur `blob:`            |
-| `webSecurity`             | an (Standard), keine `allowRunningInsecureContent`, keine Experimente            |
-| Berechtigungen            | alle Anfragen und Prüfungen abgelehnt (auch Geräte)                              |
-| Navigation / neue Fenster | gesperrt; Ausnahme: eigenes PDF-Vorschaufenster (`blob:app://…`, ohne Preload)   |
-| `<webview>`               | wird verhindert (`will-attach-webview`)                                          |
-| IPC                       | wenige feste Kanäle, Absender wird geprüft, keine Pfade vom Renderer             |
-| Dateizugriff              | nur vom Nutzer gewählte Dateien, Schreiben nur in `.pdf`                         |
-| Electron-Fuses            | RunAsNode, NODE_OPTIONS, `--inspect` aus; nur aus `app.asar`, Integrität geprüft |
-| Entwicklerwerkzeuge       | im Paket deaktiviert                                                             |
-| Updates / Telemetrie      | keine (kein Auto-Updater, `publish: null`)                                       |
-| Aktuelle Electron-Version | exakt gepinnt (`electron` in `package.json`)                                     |
+| Punkt                     | Umsetzung                                                                                                       |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Nur lokale Inhalte        | eigenes Schema `app://`; http(s), ws(s), ftp und file werden blockiert                                          |
+| Kein Node im Renderer     | `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`                                             |
+| Content-Security-Policy   | `default-src 'none'`, Skript nur per SHA-256-Hash, Worker nur `blob:`                                           |
+| `webSecurity`             | an (Standard), keine `allowRunningInsecureContent`, keine Experimente                                           |
+| Berechtigungen            | alle Anfragen und Prüfungen abgelehnt (auch Geräte)                                                             |
+| Navigation / neue Fenster | gesperrt; Ausnahme: PDF-Vorschau aus dem Hauptfenster (`blob:app://…`, ohne Preload, ohne Menü, nur PDF-Inhalt) |
+| `<webview>`               | wird verhindert (`will-attach-webview`)                                                                         |
+| IPC                       | wenige feste Kanäle, nur vom Hauptframe des Hauptfensters, keine Pfade vom Renderer, Fehler ohne Pfad           |
+| Debug-Schalter            | `--inspect*`/`--remote-debugging-*` beenden das ausgelieferte Programm                                          |
+| Dateizugriff              | nur vom Nutzer gewählte Dateien, Schreiben nur in `.pdf`                                                        |
+| Electron-Fuses            | RunAsNode, NODE_OPTIONS, `--inspect` aus; nur aus `app.asar`, Integrität geprüft                                |
+| Entwicklerwerkzeuge       | im Paket deaktiviert                                                                                            |
+| Updates / Telemetrie      | keine (kein Auto-Updater, `publish: null`)                                                                      |
+| Aktuelle Electron-Version | exakt gepinnt (`electron` in `package.json`)                                                                    |

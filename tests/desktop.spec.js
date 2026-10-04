@@ -2,14 +2,23 @@
  * Smoke-Test der Desktop-App (Electron, Playwright `_electron`):
  * Start mit PDF als Kommandozeilenargument, Text bearbeiten, Speichern überschreibt die Datei,
  * Fenstertitel mit „Bearbeitet“, Rückfrage beim Schließen, zweite Instanz öffnet im laufenden
- * Fenster, „Zuletzt geöffnet“, Sicherheitsgrenzen des Renderers.
+ * Fenster, „Zuletzt geöffnet“, Sicherheitsgrenzen des Renderers. Zweiter Test: Fehlerfälle
+ * (schreibgeschützt, Symlink), Absturz des Renderers, Alt-Taste und Menübefehle.
  *
  * Unter Linux ohne Anzeige wird der Test übersprungen, außer er läuft unter xvfb
  * (z. B. `xvfb-run -a npx playwright test tests/desktop.spec.js`).
  */
 import { test, expect, _electron as electron } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { copyFileSync, mkdtempSync, readFileSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdtempSync,
+  readFileSync,
+  existsSync,
+  lstatSync,
+  symlinkSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -51,7 +60,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
 
   const app = await electron.launch({
     executablePath: ELECTRON,
-    args: [ROOT, ...extraArgs, pdf],
+    args: [ROOT, ...extraArgs, second, pdf], // mehrere Dateien: die letzte wird geöffnet
     env,
     cwd: ROOT,
   });
@@ -196,6 +205,161 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     // erwartet: nur die beiden CSP-Meldungen des absichtlich blockierten fetch() aus Schritt 2
     expect(errors.filter((e) => !e.includes('https://example.com/'))).toEqual([]);
   } finally {
+    // bei Fehlschlag keine native Rückfrage offen lassen („Nicht speichern“)
+    await app
+      .evaluate(({ dialog }) => (dialog.showMessageBox = async () => ({ response: 1 })))
+      .catch(() => {});
+    await app.close().catch(() => {});
+  }
+});
+
+/** Startet die App mit eigenem Datenordner; liefert App, Fenster und Arbeitsordner. */
+async function launchWith(files) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pdf-editor-desktop-'));
+  const paths = files.map((name) => {
+    const target = path.join(dir, name);
+    copyFileSync(path.join(ROOT, 'tests', 'fixtures', 'dokument.pdf'), target);
+    return target;
+  });
+  const app = await electron.launch({
+    executablePath: ELECTRON,
+    args: [ROOT, ...extraArgs, ...paths],
+    env: { ...process.env, PDF_EDITOR_USER_DATA: path.join(dir, 'userdata') },
+    cwd: ROOT,
+  });
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10, null, {
+    timeout: 30_000,
+  });
+  await page.evaluate(() => {
+    window.__toastLog = [];
+    new MutationObserver((records) => {
+      for (const r of records)
+        for (const n of r.addedNodes)
+          if (n.classList && n.classList.contains('toast')) window.__toastLog.push(n.textContent);
+    }).observe(document.getElementById('toasts'), { childList: true });
+  });
+  return { app, page, dir, paths };
+}
+
+const makeDirty = (page) =>
+  page.evaluate(() => {
+    window.pdfEditor.session.version++;
+    window.pdfEditor.updateHist();
+  });
+
+test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
+  const { app, page, dir, paths } = await launchWith(['schreibgeschuetzt.pdf']);
+  const [readonly] = paths;
+  try {
+    await waitForDocument(page, 'schreibgeschuetzt.pdf');
+
+    // In-App-Menü „Datei“ ist in der Desktop-App ausgeblendet (natives Menü)
+    await expect(page.locator('#bFile')).toBeHidden();
+
+    // Schreibgeschützte Datei: klare Meldung ohne Pfad, Datei unverändert
+    chmodSync(readonly, 0o444);
+    const before = readFileSync(readonly);
+    await makeDirty(page);
+    expect(await page.evaluate(() => window.pdfEditor.save())).toBe(false);
+    const toastLog = await page.evaluate(() => window.__toastLog);
+    expect(toastLog.join('\n')).toContain('Die Datei ist schreibgeschützt.');
+    expect(toastLog.join('\n')).not.toContain(dir);
+    expect(readFileSync(readonly).equals(before)).toBe(true);
+    chmodSync(readonly, 0o644);
+
+    // Symbolischer Link: Ziel wird geschrieben, der Link bleibt erhalten (nicht unter Windows)
+    if (process.platform !== 'win32') {
+      const link = path.join(dir, 'verknuepfung.pdf');
+      symlinkSync(readonly, link);
+      await app.evaluate(({ dialog, Menu }, file) => {
+        dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+        Menu.getApplicationMenu().getMenuItemById('open').click();
+      }, link);
+      // ungespeicherte Änderung → In-App-Rückfrage; „Nicht speichern“
+      // (die App fragt beim Öffnen zweimal: vor dem Dialog und vor dem Laden)
+      for (let i = 0; i < 2; i++)
+        await page.locator('.backdrop .btn', { hasText: 'Nicht speichern' }).click({ timeout: 5000 });
+      await waitForDocument(page, 'verknuepfung.pdf');
+      await makeDirty(page);
+      expect(await page.evaluate(() => window.pdfEditor.save())).toBe(true);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(readFileSync(readonly).equals(before)).toBe(false);
+    }
+
+    // Menübefehle werden bei offenem App-Dialog ignoriert; Strg+1 / Strg+2 im Menü
+    await page.evaluate(() => window.pdfEditor.setZoom(2));
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('zoomActual').click());
+    await expect.poll(() => page.evaluate(() => window.pdfEditor.zoom)).toBe(1);
+    expect(
+      await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('zoomSelection').enabled),
+    ).toBe(true);
+    await page.evaluate(() => window.pdfEditor.props());
+    await page.locator('.backdrop').waitFor();
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('zoomIn').click());
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.pdfEditor.zoom)).toBe(1);
+    await page.keyboard.press('Escape');
+    await page.locator('.backdrop').waitFor({ state: 'detached' });
+
+    // Alt-Taste: Loslassen nach Alt+Klick erreicht das Menü nicht; Alt allein schon
+    const alt = await app.evaluate(async ({ BrowserWindow }) => {
+      const wc = BrowserWindow.getAllWindows()[0].webContents;
+      const seen = [];
+      wc.on(
+        'before-input-event',
+        (e, i) => i.key === 'Alt' && i.type === 'keyUp' && seen.push(e.defaultPrevented),
+      );
+      const wait = () => new Promise((r) => setTimeout(r, 100));
+      const send = async (ev) => (wc.sendInputEvent(ev), wait());
+      await send({ type: 'keyDown', keyCode: 'Alt' });
+      await send({ type: 'keyUp', keyCode: 'Alt' });
+      await send({ type: 'keyDown', keyCode: 'Alt', modifiers: ['alt'] });
+      await send({ type: 'mouseDown', x: 600, y: 400, button: 'left', clickCount: 1, modifiers: ['alt'] });
+      await send({ type: 'mouseUp', x: 600, y: 400, button: 'left', clickCount: 1, modifiers: ['alt'] });
+      await send({ type: 'keyUp', keyCode: 'Alt' });
+      return seen;
+    });
+    if (process.platform !== 'darwin') expect(alt).toEqual([false, true]);
+
+    // Vorschaufenster nur für PDFs: ein blob: mit HTML wird sofort geschlossen
+    await page.evaluate(() =>
+      window.open(URL.createObjectURL(new Blob(['<p>kein PDF</p>'], { type: 'text/html' })), '_blank'),
+    );
+    await page.waitForTimeout(1500);
+    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+
+    // Renderer-Absturz: Hinweis mit „Neu laden“, danach schließt das Fenster ohne Speichern-Rückfrage
+    await makeDirty(page);
+    await app.evaluate(({ dialog, BrowserWindow }) => {
+      globalThis.__asked = [];
+      dialog.showMessageBox = async (_win, options) => (
+        globalThis.__asked.push(options.message),
+        { response: 0 }
+      );
+      BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer();
+    });
+    await expect
+      .poll(() => app.evaluate(() => globalThis.__asked))
+      .toEqual(['Der PDF-Editor ist unerwartet abgestürzt.']);
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => {
+          const wc = BrowserWindow.getAllWindows()[0].webContents;
+          return !wc.isCrashed() && !wc.isLoading() && wc.getURL();
+        }),
+      )
+      .toBe('app://pdf-editor/');
+    await expect.poll(() => mainWindowTitle(app)).toBe('PDF-Editor');
+    const closed = app.waitForEvent('close');
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await closed;
+    expect(await app.evaluate(() => globalThis.__asked).catch(() => 'beendet')).toBe('beendet');
+  } finally {
+    // bei Fehlschlag keine native Rückfrage offen lassen („Nicht speichern“)
+    await app
+      .evaluate(({ dialog }) => (dialog.showMessageBox = async () => ({ response: 1 })))
+      .catch(() => {});
     await app.close().catch(() => {});
   }
 });
