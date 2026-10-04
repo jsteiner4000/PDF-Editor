@@ -65,6 +65,12 @@ const ICON_PATHS = {
   toback:
     '<rect x="3" y="3" width="9.5" height="9.5" rx="1.2" fill="currentColor" fill-opacity=".22"/><rect x="7.5" y="7.5" width="9.5" height="9.5" rx="1.2" fill="var(--panel, #fff)"/>',
   layers: '<path d="M10 3.5 17 7l-7 3.5L3 7z"/><path d="M3 10.5 10 14l7-3.5M3 14l7 3.5 7-3.5"/>',
+  signature:
+    '<path d="M3 16.5h14"/><path d="M3.5 13.2c1.6-3.2 3.1-8.1 4.6-7.7 1.6.4-.9 7.5.6 7.7 1.1.1 2.1-3 3.2-2.8 1 .2.3 2.4 1.3 2.5.8.1 1.6-.9 2.8-1.6"/>',
+  sigcapture:
+    '<rect x="2.5" y="4" width="15" height="12" rx="1.5" stroke-dasharray="2.2 2"/><path d="M5.5 12.6c1.2-2 2-4.6 3-4.3 1 .3-.6 4 .4 4.2.8.1 1.4-1.8 2.2-1.7.7.1.3 1.4 1 1.5.6.1 1.2-.5 2-1"/>',
+  pen: '<path d="M4 16l.8-3.2L13 4.6a1.6 1.6 0 0 1 2.3 0l.1.1a1.6 1.6 0 0 1 0 2.3l-8.2 8.2z"/><path d="M11.6 6l2.4 2.4"/>',
+  list: '<path d="M8 6h8M8 10h8M8 14h8"/><circle cx="4.5" cy="6" r=".6"/><circle cx="4.5" cy="10" r=".6"/><circle cx="4.5" cy="14" r=".6"/>',
   eye: '<path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z"/><circle cx="10" cy="10" r="2.2"/>',
 };
 

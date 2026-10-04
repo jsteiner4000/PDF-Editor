@@ -4,3 +4,4 @@ test-results
 legacy
 assets
 tests/fixtures/*.pdf
+release

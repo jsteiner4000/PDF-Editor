@@ -1514,3 +1514,104 @@ test('Unterstreichung im Textblock ist wählbar; Tabellenlinien durch den Text n
     await context.close();
   }
 });
+
+test('Unterschrift: Platzieren per Klick wird nicht von Treffern/Gesten abgefangen, danach wie ein Bild verschiebbar, Leertaste-Pan beim Platzieren', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await setup(browser);
+  try {
+    // Standard-Unterschrift direkt in IndexedDB anlegen
+    await page.evaluate(
+      () =>
+        new Promise(async (resolve, reject) => {
+          const c = document.createElement('canvas');
+          c.width = 400;
+          c.height = 100;
+          const ctx = c.getContext('2d');
+          ctx.strokeStyle = '#123';
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.moveTo(10, 70);
+          ctx.bezierCurveTo(80, 0, 160, 120, 380, 30);
+          ctx.stroke();
+          const png = await (await new Promise((r) => c.toBlob(r, 'image/png'))).arrayBuffer();
+          const req = indexedDB.open('pdf-editor', 2);
+          req.onsuccess = () => {
+            const tx = req.result.transaction('signatures', 'readwrite');
+            tx.objectStore('signatures').put(
+              {
+                id: 'sig-test',
+                name: 'Test',
+                kind: 'signature',
+                source: 'drawn',
+                created: Date.now(),
+                png,
+                width: 400,
+                height: 100,
+                aspect: 4,
+                widthMm: 50,
+                heightMm: 12.5,
+                isDefault: true,
+              },
+              'sig-test',
+            );
+            tx.oncomplete = () => (req.result.close(), resolve());
+            tx.onerror = () => reject(tx.error);
+          };
+          req.onerror = () => reject(req.error);
+        }),
+    );
+    const s0 = await state(page);
+    await page
+      .locator('body')
+      .click({ position: { x: 5, y: 5 } })
+      .catch(() => {});
+    await page.keyboard.press('u');
+    await page.waitForFunction(() => !!document.querySelector('#pages.sig-placing'));
+    // Leertaste + Ziehen beim Platzieren: nur Hand-Werkzeug, es wird nichts eingesetzt
+    const [x, y] = await pt(page, 200, 680); // genau auf der Kante des Rechtecks
+    const top0 = await page.evaluate(() => document.getElementById('scroller').scrollTop);
+    await page.mouse.move(x, y);
+    await page.keyboard.down(' ');
+    await page.mouse.down();
+    await page.mouse.move(x, y - 60, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up(' ');
+    await settled(page);
+    expect(await page.evaluate(() => document.getElementById('scroller').scrollTop)).toBeGreaterThan(
+      top0 + 30,
+    );
+    expect((await state(page)).undo).toEqual([]);
+    expect(await page.evaluate(() => !!document.querySelector('#pages.sig-placing'))).toBe(true);
+    // Klick auf die Kante des Rechtecks platziert die Unterschrift und wählt nicht das Rechteck
+    const [px, py] = await pt(page, 200, 680);
+    await page.mouse.click(px, py);
+    await page.waitForFunction(() => window.pdfEditor.session.hist.undo.length === 1);
+    await idle(page);
+    let s = await state(page);
+    expect(s.undo).toEqual(['Unterschrift eingefügt']);
+    expect(s.objs.length).toBe(s0.objs.length + 1);
+    const sig = s.objs[s.objs.length - 1];
+    expect(sig.type).toBe('image');
+    expect(s.sel).toEqual([sig.uid]);
+    expect(await page.evaluate(() => !!document.querySelector('#pages.sig-placing'))).toBe(false);
+    // wie ein Bild verschiebbar
+    const [cx, cy] = await pt(page, (sig.vis[0] + sig.vis[2]) / 2, (sig.vis[1] + sig.vis[3]) / 2);
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.keyboard.down('Alt');
+    await page.mouse.move(cx + 30, cy + 20, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
+    await settled(page);
+    s = await state(page);
+    expect(s.undo).toEqual(['Unterschrift eingefügt', 'Verschoben']);
+    const moved = byUid(s, sig.uid);
+    const k = await scale(page);
+    expect(moved.vis[0] - sig.vis[0]).toBeCloseTo(30 / k, 1);
+    expect(s.sel).toEqual([sig.uid]);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
