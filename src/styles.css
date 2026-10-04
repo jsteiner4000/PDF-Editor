@@ -112,7 +112,10 @@ select.fld{padding-right:4px;cursor:pointer}
 .mode-edit .bx.o{outline:1px dashed rgba(33,63,191,.28);outline-offset:0}
 .bx.hov{outline:1.5px solid var(--acc)!important;outline-offset:1px;background:rgba(33,63,191,.04)}
 .bx.hovo{outline:1.5px solid var(--acc)!important;outline-offset:0}
-.mode-edit .layer{touch-action:none}
+/* Touch: auf freier Fläche scrollt ein Wisch (kein Auswahlrahmen); ausgewählte Objekte (.pad), Griffe,
+   „Pfad bearbeiten“ und Stift-Eingabe nehmen die Zeigerbewegung selbst entgegen */
+.pen-input .layer,.pe-active .layer{touch-action:none}
+.sel .pad{position:absolute;inset:0;pointer-events:auto;touch-action:none;cursor:inherit}
 .sel{position:absolute;outline:1.5px solid var(--acc);z-index:5;pointer-events:none}
 .sel.line{outline:0}
 .sel svg,.hl,.pe-svg{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}

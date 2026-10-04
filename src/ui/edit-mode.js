@@ -13,7 +13,14 @@ import { boxContains, boxInside, hexToRgb, mmToPt, ptToMm, rgbToHex, unionBoxes 
 import { Gesture } from './gesture.js';
 import { blockAt, objectHit, objectHits, pagePaths, pickObject, pxPerPt } from './hit-test.js';
 import { PathEditor, constrainAngle } from './path-edit.js';
-import { cloneSubpaths, fromPage, isLineLike, moveNodes, svgPath } from '../pdf/path-geometry.js';
+import {
+  cloneSubpaths,
+  fromPage,
+  isLineLike,
+  moveNodes,
+  subpathsBox,
+  svgPath,
+} from '../pdf/path-geometry.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -72,7 +79,10 @@ export class EditMode {
   get session() {
     return this.app.session;
   }
-  /** Läuft noch etwas (Änderung, gesammelte Pfeiltasten, Textübernahme)? */
+  /**
+   * Läuft noch etwas (Änderung, gesammelte Pfeiltasten, Textübernahme)? Wird von den Tests
+   * (tests/helpers.js: `settled()`/`idle()`) abgefragt, um auf das Ende von Änderungen zu warten.
+   */
   get busy() {
     return !!(this.pendingOps || this.nudge || (this.pe && this.pe.nudgeDelta) || this._finishing);
   }
@@ -225,6 +235,8 @@ export class EditMode {
       if (this.active) this.onDown(ev);
     });
     pages.addEventListener('pointermove', (ev) => {
+      // Stift schwebt vor dem Aufsetzen: dann gilt touch-action: none (kein Scrollen statt Rahmen)
+      pages.classList.toggle('pen-input', ev.pointerType === 'pen');
       if (this.active && !this.drag && !this.gesture) this.onHover(ev);
     });
     pages.addEventListener('pointerleave', () => {
@@ -491,6 +503,7 @@ export class EditMode {
       shift: ev.shiftKey,
       alt: ev.altKey,
       handle: handleEl ? handleEl.dataset.h : null,
+      pointerType: ev.pointerType,
     };
     down.pickBehind = (ev.altKey || ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !this.armed && !down.handle;
     if (this.armed === 'text') {
@@ -599,7 +612,10 @@ export class EditMode {
     }
     if (this.inSelection(pv, down.x, down.y)) return this.dragSelection(down, gesture, null, null);
     this.clearSelection();
-    if (gesture) this.startMarquee(down, gesture);
+    if (!gesture) return;
+    // Touch auf freier Fläche scrollt (der Browser sendet pointercancel); Auswahlrahmen nur mit Maus/Stift
+    if (down.pointerType === 'touch') gesture.cancel();
+    else this.startMarquee(down, gesture);
   }
   onContext(ev) {
     const pv = this.pvAt(ev);
@@ -819,6 +835,22 @@ export class EditMode {
   hasSelection() {
     return !!(this.pe || (this.sel && (this.sel.objs.length || this.sel.blocks.length)));
   }
+  /**
+   * Rahmen für die Maßfelder links: Pfade ohne Strichstärke (nur die Geometrie, wie sie ein
+   * Entwurfsprogramm anzeigt), alles andere wie `selBox()`. Eine 20 pt dicke, 200 pt lange Linie
+   * ist also 200 pt breit und 0 pt hoch; Skalieren ändert die Strichstärke nicht.
+   */
+  fieldBox(sel = this.sel) {
+    const boxes = [
+      ...sel.objs.map((o) =>
+        o.type === 'path' && o.geom && o.geom.subpaths.length && !o.clipRect && !o.clip
+          ? subpathsBox(pagePaths(o))
+          : o.vis,
+      ),
+      ...sel.blocks.map((b) => b.bbox),
+    ];
+    return unionBoxes(boxes);
+  }
   /** Seitenansicht der Auswahl (auch bei „Pfad bearbeiten“). */
   selectionView() {
     return this.sel ? this.sel.pv : this.pe ? this.pe.pv : null;
@@ -938,6 +970,10 @@ export class EditMode {
     tag.className = 'tag';
     tag.textContent = this.selLabel();
     el.appendChild(tag);
+    // Fläche zum Verschieben per Touch (touch-action: none nur über der Auswahl, nicht auf der ganzen Seite)
+    const pad = document.createElement('div');
+    pad.className = 'pad';
+    el.insertBefore(pad, el.firstChild);
     pv.layer.appendChild(el);
   }
   selLabel() {
@@ -1485,6 +1521,7 @@ export class EditMode {
     const h = pt && objectHit(obj, pt[0], pt[1], pxPerPt(pv));
     if (h && h.sp != null) pe.selectSegment(h.sp, h.seg);
     this.pe = pe;
+    $('#pages').classList.add('pe-active');
     pe.draw();
     this.hideHover(pv);
     this.updateHint();
@@ -1500,6 +1537,7 @@ export class EditMode {
     pe.flushNudge();
     pe.destroy();
     this.pe = null;
+    $('#pages').classList.remove('pe-active');
     this.updateHint();
     this.updatePanel();
   }
@@ -2143,7 +2181,7 @@ export class EditMode {
       );
     if (this.sel) {
       const sel = this.sel;
-      const selBox = this.selBox();
+      const selBox = this.fieldBox();
       const infoRaw = sel.pv.infoRaw;
       const selSection = htmlToElement(
         `<div class="sec"><h4>Auswahl – ${escapeHtml(this.selLabel())}</h4></div>`,
@@ -2166,7 +2204,9 @@ export class EditMode {
           `<input class="fld" style="width:100%;text-align:right" title="${{ X: 'Abstand von links', Y: 'Abstand von oben', B: 'Breite', H: 'Höhe' }[key]} in mm">`,
         );
         input.value = fmt(value);
-        input.disabled = (key === 'B' || key === 'H') && sel.blocks.length > 0;
+        input.disabled =
+          (key === 'B' || key === 'H') &&
+          (sel.blocks.length > 0 || (key === 'B' ? selBox[2] - selBox[0] : selBox[3] - selBox[1]) < 1e-6);
         input.addEventListener('keydown', (ev) => {
           ev.stopPropagation();
           if (ev.key === 'Enter') input.blur();
@@ -2235,21 +2275,24 @@ export class EditMode {
       clearTimeout(this.nudgeT);
       this.nudge = null;
     }
-    const selBox = this.selBox();
+    const selBox = this.fieldBox();
     const infoRaw = sel.pv.infoRaw;
     const read = (input) => parseFloat(String(input.value).replace(',', '.'));
     const x = mmToPt(read(inputs.X)) + infoRaw.x;
     const top = infoRaw.y + infoRaw.h - mmToPt(read(inputs.Y));
     const width = mmToPt(read(inputs.B));
     const height = mmToPt(read(inputs.H));
-    if (![x, top, width, height].every(isFinite) || width <= 0 || height <= 0) {
+    // Ohne Ausdehnung (waagerechte bzw. senkrechte Linie) gibt es nichts zu skalieren
+    const flatX = selBox[2] - selBox[0] < 1e-6;
+    const flatY = selBox[3] - selBox[1] < 1e-6;
+    if (![x, top].every(isFinite) || (!flatX && !(width > 0)) || (!flatY && !(height > 0))) {
       this.updatePanel();
       return;
     }
-    const scaleX = sel.blocks.length ? 1 : width / (selBox[2] - selBox[0]);
-    const scaleY = sel.blocks.length ? 1 : height / (selBox[3] - selBox[1]);
+    const scaleX = sel.blocks.length || flatX ? 1 : width / (selBox[2] - selBox[0]);
+    const scaleY = sel.blocks.length || flatY ? 1 : height / (selBox[3] - selBox[1]);
     const left = x;
-    const bottom = top - (sel.blocks.length ? selBox[3] - selBox[1] : height);
+    const bottom = top - (sel.blocks.length || flatY ? selBox[3] - selBox[1] : height);
     const matrix = [scaleX, 0, 0, scaleY, left - scaleX * selBox[0], bottom - scaleY * selBox[1]];
     if (!(
       Math.abs(matrix[4]) < 0.001 &&

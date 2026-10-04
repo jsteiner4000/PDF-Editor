@@ -1357,3 +1357,117 @@ test.describe('Review: Bedienung', () => {
     }
   });
 });
+
+test.describe('Review: Kleinigkeiten', () => {
+  test('Maßfelder rechnen ohne Strichstärke; Breite ändern lässt die Strichstärke unverändert', async ({
+    browser,
+  }) => {
+    const doc = await PDFDocument.create({ updateMetadata: false });
+    doc
+      .addPage([595, 842])
+      .node.addContentStream(
+        doc.context.register(doc.context.stream('0.4 0.4 0.4 RG 20 w 300 440 m 500 440 l S\n')),
+      );
+    const { page, context, errors } = await setup(
+      browser,
+      Buffer.from(await doc.save({ useObjectStreams: false })),
+    );
+    try {
+      const uid = uidsByIndex(await state(page))[0];
+      await clickAt(page, 400, 440);
+      const values = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll('#lpBody div[style*="grid"] input')].map((i) => i.value),
+        );
+      const mm = (pt) => (Math.round((pt / 72) * 25.4 * 10) / 10).toString().replace('.', ',');
+      const v = await values();
+      expect(v[2]).toBe(mm(200)); // B ohne Strichstärke (nicht 220 pt)
+      expect(v[3]).toBe('0'); // H: Linie hat keine Höhe (nicht 20 pt)
+      expect(
+        await page.evaluate(() => document.querySelectorAll('#lpBody div[style*="grid"] input')[3].disabled),
+      ).toBe(true);
+      await page.evaluate(() => {
+        const b = document.querySelectorAll('#lpBody div[style*="grid"] input')[2];
+        b.value = '100';
+        b.dispatchEvent(new Event('change'));
+      });
+      await settled(page);
+      const s = await state(page);
+      expect(byUid(s, uid).lw).toBe(20);
+      const [[ax, ay], [bx, by]] = byUid(s, uid).nodes[0];
+      expect(bx - ax).toBeCloseTo((100 / 25.4) * 72, 1);
+      // die Felder zeigen 0,1 mm genau: Anfangspunkt höchstens 0,15 pt verschoben
+      expect(Math.abs(ax - 300)).toBeLessThan(0.15);
+      expect(Math.abs(ay - 440)).toBeLessThan(0.15);
+      expect(by).toBe(ay);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('Endpunkt rastet in einem dichten Raster nicht an irgendeiner Linie ein (mehrdeutig)', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser, await densePdf());
+    try {
+      const id = uidsByIndex(await state(page));
+      await clickAt(page, 401, 500);
+      const h1 = await handleCenter(page, '.sel .h[data-h=p1]');
+      // Ziel (131, 686,5) liegt zwischen den Tabellenlinien y = 685 und 688 und neben x = 130
+      const [tx, ty] = await pt(page, 131, 686.5);
+      const k = await scale(page);
+      await page.mouse.move(...h1);
+      await page.mouse.down();
+      // die Griffe sind versetzt: relativ zum Endpunkt (402, 500) ziehen
+      const [ex, ey] = await pt(page, 402, 500);
+      for (let i = 1; i <= 10; i++)
+        await page.mouse.move(h1[0] + ((tx - ex) * i) / 10, h1[1] + ((ty - ey) * i) / 10);
+      await page.mouse.up();
+      await settled(page);
+      const end = byUid(await state(page), id[71]).nodes[0][1];
+      expect(Math.abs(end[0] - 131)).toBeLessThan(0.5 / k);
+      expect(Math.abs(end[1] - 686.5)).toBeLessThan(0.5 / k);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('Touch: Wischen auf freier Fläche scrollt (kein Auswahlrahmen), auf Griffen bleibt es ein Ziehen', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser);
+    try {
+      const cdp = await context.newCDPSession(page);
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 2 });
+      const scrollTop = () => page.evaluate(() => document.getElementById('scroller').scrollTop);
+      const [x, y] = await pt(page, 550, 250);
+      const touch = (x, y) => [{ x, y, id: 1, radiusX: 2, radiusY: 2, force: 1 }];
+      const t0 = await scrollTop();
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: touch(x, y) });
+      let marquee = false;
+      for (let i = 1; i <= 10; i++) {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: touch(x, y - i * 20) });
+        await page.waitForTimeout(16);
+        marquee = marquee || (await page.evaluate(() => !!document.querySelector('.marq')));
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await page.waitForTimeout(300);
+      expect(marquee).toBe(false);
+      expect(await scrollTop()).toBeGreaterThan(t0 + 50);
+      expect((await state(page)).sel).toEqual([]);
+      // Maus-Auswahlrahmen funktioniert weiter
+      const [a, b] = [await pt(page, 330, 700), await pt(page, 570, 540)];
+      await page.mouse.move(...a);
+      await page.mouse.down();
+      await page.mouse.move(...b, { steps: 6 });
+      await page.mouse.up();
+      await settled(page);
+      expect((await state(page)).sel.length).toBe(4);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});

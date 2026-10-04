@@ -71,13 +71,16 @@ BILDER UND GRAFIKEN
   Schritten von 45° (waagerecht, senkrecht, diagonal). Der Endpunkt rastet an
   Endpunkten, Ecken und Kanten anderer Elemente ein (pinke Markierung), mit Alt
   frei. Die Griffe sind bei jeder Zoomstufe gleich groß.
+- Touchbildschirm: Ein Wisch auf freier Fläche scrollt; ausgewählte Elemente
+  und Griffe lassen sich mit dem Finger ziehen.
 - Esc während des Ziehens bricht ab – das Element bleibt, wo es war.
 - Entf-Taste = löschen.
 - Zusammengehörige Teile (z. B. Kreisnummer mit Linie) werden als Gruppe
   ausgewählt. Ein weiterer Klick in die ausgewählte Gruppe wählt nur das
   Element unter dem Mauszeiger. Gruppen bleiben, wie sie beim Öffnen erkannt
   wurden: Wer ein Element an ein anderes heranschiebt, gruppiert es dadurch
-  nicht mit diesem.
+  nicht mit diesem. Tabellen und Raster aus vielen einzelnen Linien (mehr als
+  acht) bilden keine Gruppe – jede Linie ist einzeln wählbar.
 - Pfad bearbeiten (einzelne Kanten und Punkte, z. B. nur eine Seite eines
   Rechtecks): Doppelklick auf die Grafik oder ein weiterer Klick auf die
   ausgewählte Grafik. Die Ankerpunkte erscheinen als kleine Quadrate (gefüllt =
@@ -89,6 +92,8 @@ BILDER UND GRAFIKEN
     Verbindung gelöst; eine Kante mit gedrückter Alt-Taste ziehen löst sie als
     eigene Linie heraus.
   - Pfeiltasten verschieben die ausgewählten Punkte (Umschalt 10, Alt 0,1 Punkt).
+  - Entf löscht nur die gewählte Kante bzw. die gewählten Punkte (ein Rechteck
+    wird dabei zum offenen Linienzug); ohne Auswahl das ganze Element.
   - Esc oder ein Klick daneben beendet die Pfadbearbeitung. Jeder Schritt lässt
     sich mit Strg+Z rückgängig machen.
 - Verdeckte Elemente (z. B. etwas hinter einem Bild): Alt+Klick (oder Strg+Klick)

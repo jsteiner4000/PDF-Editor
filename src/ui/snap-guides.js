@@ -172,22 +172,39 @@ export class SnapGuides {
    * Fangpunkt für einen Punkt (Ebenen-Pixel): Punkte innerhalb von 8, Segmente innerhalb von
    * 6 Bildschirmpixeln; `extra` = zusätzliche feste Punkte (z. B. andere Knoten desselben Pfads).
    * Ergebnis `{ x, y, kind: 'point' | 'segment' }` oder null.
+   *
+   * Eindeutigkeit: Liegt ein zweites, anderes Ziel fast so nah (der Abstand des nächsten beträgt
+   * mehr als 60 % des zweitnächsten), rastet nichts ein. In dichten Zeichnungen (Raster mit
+   * 8 px Abstand) würde der Endpunkt sonst bei jeder Bewegung an irgendeine Linie springen.
+   * Deckungsgleiche Ziele (gemeinsame Ecke, doppelte Kante) zählen als ein Ziel.
    */
   snapPoint(x, y, extra = []) {
     const { points, segments } = this.pointTargets();
-    let best = null;
+    const clearWinner = (cands) => {
+      cands.sort((a, b) => a.d - b.d);
+      const [first] = cands;
+      if (!first) return null;
+      const second = cands.find(
+        (c) => Math.abs(c.d - first.d) > 0.25 && Math.hypot(c.x - first.x, c.y - first.y) > 0.5,
+      );
+      return !second || first.d <= 0.6 * second.d ? first : null;
+    };
     const pointRadius = 8 * this.k;
+    const pointCands = [];
     for (const p of [...points, ...extra]) {
       const d = Math.hypot(p[0] - x, p[1] - y);
-      if (d <= pointRadius && (!best || d < best.d)) best = { x: p[0], y: p[1], d, kind: 'point' };
+      if (d <= pointRadius) pointCands.push({ x: p[0], y: p[1], d, kind: 'point' });
     }
-    if (best) return best;
+    const point = clearWinner(pointCands);
+    if (point) return point;
+    if (pointCands.length) return null; // mehrdeutig: lieber nicht einrasten
     const segRadius = 6 * this.k;
+    const segCands = [];
     for (const [a, b] of segments) {
       const r = pointSegment(x, y, a, b);
-      if (r.d <= segRadius && (!best || r.d < best.d)) best = { x: r.x, y: r.y, d: r.d, kind: 'segment' };
+      if (r.d <= segRadius) segCands.push({ x: r.x, y: r.y, d: r.d, kind: 'segment' });
     }
-    return best;
+    return clearWinner(segCands);
   }
   /** Markiert einen Fangpunkt (Kreis für Punkte, Raute für Segmente). */
   showPoint(snap) {
