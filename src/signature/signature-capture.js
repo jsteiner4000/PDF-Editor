@@ -138,7 +138,7 @@ export function pickPageRegion(app, { onStart } = {}) {
     });
   };
   const onDown = (ev) => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || (app.gestures && app.gestures.spaceDown)) return; // Leertaste = Hand (Pan)
     const pv = pvOf(ev.target);
     if (!pv) return;
     ev.preventDefault();
