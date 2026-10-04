@@ -834,6 +834,7 @@ for (const zoom of [8, 32]) {
     }
     // ohne Leertaste funktionieren beide Modi weiterhin
     await page.keyboard.press('u');
+    await page.waitForFunction(() => !!document.querySelector('#pages.sig-placing')); // Platzieren ist aktiv
     await page.mouse.move(700, 500);
     await page.mouse.click(700, 500);
     await expect

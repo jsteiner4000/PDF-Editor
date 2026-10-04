@@ -5,6 +5,7 @@ import { PDFArray, PDFDict, PDFName, PDFNumber, PDFRef, PDFStream } from 'pdf-li
 import { NameToken, StringToken } from './content-stream.js';
 import { nameText, pdfName } from './pdf-objects.js';
 import { IDENTITY_MATRIX, multiplyMatrix, toNumber, transformPoint } from './matrix.js';
+import { PathRecorder } from './path-geometry.js';
 
 function toRgb(colorSpace, components) {
   const values = components.map(toNumber);
@@ -60,7 +61,8 @@ function resolveColorSpace(ctx, resources, name) {
  *     Operator-Indizes vom ersten Pfadoperator bis zum Malbefehl; Linien, Rechtecke und `re` sind
  *     also zunächst einzelne Objekte), Bilder (`image`, auch Inline-Bilder), Formulare (`form`)
  *     und Verläufe (`shading`); mit `bbox` (inkl. halber Linienbreite), `vis` (beschnitten),
- *     `clip`, `fill`/`stroke`, `color`, `ctm`, `depth`
+ *     `clip`, `fill`/`stroke`, `color`, `ctm`, `depth`; Pfade zusätzlich mit `geom` (Teilpfade
+ *     im Benutzerraum, siehe path-geometry.js), `lw` (Linienbreite in Seitenpunkten) und `evenOdd`
  *   - `fonts`, `qctm`: Schriftobjekte und die CTM bei jedem `q`.
  */
 export function interpretContent(ctx, ops, resources, fontCache) {
@@ -111,6 +113,7 @@ export function interpretContent(ctx, ops, resources, fontCache) {
   let tlm = IDENTITY_MATRIX.slice();
   let pathBox = null;
   let pathStart = -1;
+  const recorder = new PathRecorder();
   let clipPending = false;
   let inText = false;
   let qSeq = 0;
@@ -268,22 +271,34 @@ export function interpretContent(ctx, ops, resources, fontCache) {
         );
         break;
       case 'm':
-      case 'l':
+      case 'l': {
         if (pathStart < 0) pathStart = k;
-        addPoint(toNumber(args[0]), toNumber(args[1]));
+        const x = toNumber(args[0]);
+        const y = toNumber(args[1]);
+        addPoint(x, y);
+        if (operator === 'm') recorder.moveTo(k, x, y);
+        else recorder.lineTo(k, x, y);
         break;
-      case 'c':
+      }
+      case 'c': {
         if (pathStart < 0) pathStart = k;
-        addPoint(toNumber(args[0]), toNumber(args[1]));
-        addPoint(toNumber(args[2]), toNumber(args[3]));
-        addPoint(toNumber(args[4]), toNumber(args[5]));
+        const [x1, y1, x2, y2, x3, y3] = [0, 1, 2, 3, 4, 5].map((i) => toNumber(args[i]));
+        addPoint(x1, y1);
+        addPoint(x2, y2);
+        addPoint(x3, y3);
+        recorder.curveTo(k, [x1, y1], [x2, y2], [x3, y3]);
         break;
+      }
       case 'v':
-      case 'y':
+      case 'y': {
         if (pathStart < 0) pathStart = k;
-        addPoint(toNumber(args[0]), toNumber(args[1]));
-        addPoint(toNumber(args[2]), toNumber(args[3]));
+        const [x1, y1, x2, y2] = [0, 1, 2, 3].map((i) => toNumber(args[i]));
+        addPoint(x1, y1);
+        addPoint(x2, y2);
+        if (operator === 'v') recorder.curveTo(k, recorder.currentPoint().slice(), [x1, y1], [x2, y2]);
+        else recorder.curveTo(k, [x1, y1], [x2, y2], [x2, y2]);
         break;
+      }
       case 're': {
         if (pathStart < 0) pathStart = k;
         const [x, y, w, h] = args.map(toNumber);
@@ -291,9 +306,11 @@ export function interpretContent(ctx, ops, resources, fontCache) {
         addPoint(x + w, y);
         addPoint(x, y + h);
         addPoint(x + w, y + h);
+        recorder.rect(k, x, y, w, h);
         break;
       }
       case 'h':
+        recorder.close(k);
         break;
       case 'W':
       case 'W*':
@@ -331,8 +348,12 @@ export function interpretContent(ctx, ops, resources, fontCache) {
             color: fill ? gs.fill.slice() : gs.stroke.slice(),
             ctm: gs.ctm.slice(),
             depth: gsStack.length,
+            geom: recorder.take(),
+            lw: stroke ? gs.lw * scale : 0,
+            evenOdd: operator.endsWith('*'),
           });
         }
+        recorder.reset();
         pathBox = null;
         pathStart = -1;
         clipPending = false;

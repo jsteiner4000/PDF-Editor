@@ -646,21 +646,25 @@ export class SignatureTool {
   /** Setzt die Unterschrift als Bild ein (Mittelpunkt bei `point`, PDF-Koordinaten). */
   async place(pv, point, record) {
     const [x, y, width, height] = this.rectAt(pv, point, this.sizeFor(record));
-    await withBusy(async () => {
-      await this.app.session.insertImage(
-        pv.index,
-        new Uint8Array(record.png),
-        'image/png',
-        [x, y, width, height],
-        'Unterschrift eingefügt',
-      );
-      this.edit.pendingReselect = {
-        key: pv.key,
-        objs: [{ type: 'image', vis: [x, y, x + width, y + height] }],
-        blocks: [],
-      };
-      await this.app.sync();
-    });
+    // über die Änderungswarteschlange des Bearbeiten-Modus (serielle Änderungen, feste Auswahl)
+    await withBusy(() =>
+      this.edit.enqueue(async () => {
+        const target = this.app.pvByKey.get(pv.key) || pv;
+        await this.app.session.insertImage(
+          target.index,
+          new Uint8Array(record.png),
+          'image/png',
+          [x, y, width, height],
+          'Unterschrift eingefügt',
+        );
+        this.edit.reselect({
+          key: pv.key,
+          objs: [{ type: 'image', vis: [x, y, x + width, y + height] }],
+          blocks: [],
+        });
+        this.app.sync();
+      }),
+    );
   }
 
   /* ---------- Erfassen ---------- */

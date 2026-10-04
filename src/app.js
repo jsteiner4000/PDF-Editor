@@ -499,7 +499,10 @@ export class App {
   }
   async bytesForSave() {
     return this.session
-      ? (await this.edit.finishEdit(), this._syncP && (await this._syncP), this.session.save({ clean: true }))
+      ? (await this.edit.finishEdit(),
+        await this.edit.idle(),
+        this._syncP && (await this._syncP),
+        this.session.save({ clean: true }))
       : null;
   }
   async save() {
@@ -612,6 +615,7 @@ export class App {
       document.execCommand('undo');
       return;
     }
+    await this.edit.idle();
     const entry = this.session && this.session.undo();
     if (entry) {
       this.edit.clearSelection();
@@ -624,6 +628,7 @@ export class App {
       document.execCommand('redo');
       return;
     }
+    await this.edit.idle();
     const entry = this.session && this.session.redo();
     if (entry) {
       this.edit.clearSelection();
@@ -1004,7 +1009,7 @@ export class App {
   selectionAnchor() {
     const edit = this.edit;
     if (!edit.active || !edit.hasSelection()) return null;
-    const pv = edit.sel.pv;
+    const pv = edit.selectionView();
     const box = edit.selBox();
     const pdf = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2];
     const scroller = $('#scroller');

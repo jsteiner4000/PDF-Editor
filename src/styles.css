@@ -112,10 +112,39 @@ select.fld{padding-right:4px;cursor:pointer}
 .mode-edit .bx.o{outline:1px dashed rgba(33,63,191,.28);outline-offset:0}
 .bx.hov{outline:1.5px solid var(--acc)!important;outline-offset:1px;background:rgba(33,63,191,.04)}
 .bx.hovo{outline:1.5px solid var(--acc)!important;outline-offset:0}
-.sel{position:absolute;outline:1.5px solid var(--acc);cursor:move;z-index:5}
-.sel .h{position:absolute;width:9px;height:9px;background:#fff;border:1.5px solid var(--acc);border-radius:2px;margin:-5px 0 0 -5px}
+/* Touch: auf freier Fläche scrollt ein Wisch (kein Auswahlrahmen); ausgewählte Objekte (.pad), Griffe,
+   „Pfad bearbeiten“ und Stift-Eingabe nehmen die Zeigerbewegung selbst entgegen */
+.pen-input .layer,.pe-active .layer{touch-action:none}
+.sel .pad{position:absolute;inset:0;pointer-events:auto;touch-action:none;cursor:inherit}
+.sel{position:absolute;outline:1.5px solid var(--acc);z-index:5;pointer-events:none}
+.sel.line{outline:0}
+.sel svg,.hl,.pe-svg{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.sel-geom path{fill:none;stroke:var(--acc);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;opacity:.9}
+.sel.line .sel-geom path{stroke-width:2}
+/* Griffe: sichtbar 10 px, Trefferfläche 28 px; weißer Rand + Schatten für hellen und dunklen Grund */
+.sel .h{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;pointer-events:auto;touch-action:none;z-index:1}
+.sel .h::after{content:"";position:absolute;left:9px;top:9px;width:10px;height:10px;box-sizing:border-box;background:#fff;border:1.5px solid var(--acc);border-radius:2px;box-shadow:0 0 0 1px rgba(255,255,255,.85),0 1px 3px rgba(16,24,40,.35);transition:transform .08s}
+.sel .h.ep{cursor:crosshair}
+.sel .h.ep::after{border-radius:50%;width:12px;height:12px;left:8px;top:8px;border-width:2px}
+.sel .h:hover::after,.sel .h.active::after{background:var(--acc);transform:scale(1.2)}
 .sel .h[data-h=nw],.sel .h[data-h=se]{cursor:nwse-resize}.sel .h[data-h=ne],.sel .h[data-h=sw]{cursor:nesw-resize}
 .sel .h[data-h=n],.sel .h[data-h=s]{cursor:ns-resize}.sel .h[data-h=e],.sel .h[data-h=w]{cursor:ew-resize}
+.hl path{fill:none;stroke:var(--acc);stroke-width:2;stroke-linejoin:round;stroke-linecap:round;opacity:.75}
+.hl path.area{fill:rgba(33,63,191,.06)}
+/* Pfad bearbeiten: hohle Quadrate = Ankerpunkt, gefüllt = ausgewählt; ausgewähltes Segment kräftig */
+.pe{position:absolute;left:0;top:0;width:0;height:0;z-index:5}
+.pe-svg path{fill:none;stroke-linejoin:round;stroke-linecap:round}
+.pe-svg .outline{stroke:var(--acc);stroke-width:1}
+.pe-svg .outline.other{stroke-dasharray:3 3;opacity:.7}
+.pe-svg .seg{stroke:var(--acc);stroke-width:3.5}
+.pe-svg .seg.hov{opacity:.35}
+.pe .pa{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;pointer-events:none}
+.pe .pa::after{content:"";position:absolute;left:10px;top:10px;width:8px;height:8px;box-sizing:border-box;background:#fff;border:1.5px solid var(--acc);box-shadow:0 0 0 1px rgba(255,255,255,.85),0 1px 2px rgba(16,24,40,.3)}
+.pe .pa.hov::after{transform:scale(1.35)}
+.pe .pa.on::after{background:var(--acc)}
+.pe-tag{position:absolute;margin-top:-26px;background:var(--acc);color:#fff;font-size:11px;padding:2px 7px;border-radius:5px;white-space:nowrap;pointer-events:none}
+.guide.pt{width:12px;height:12px;margin:-6px 0 0 -6px;border:1.5px solid #e5157f;border-radius:50%;background:rgba(229,21,127,.12)}
+.guide.pt.segment{border-radius:2px;transform:rotate(45deg);width:10px;height:10px;margin:-5px 0 0 -5px}
 .sel .tag{position:absolute;left:-1px;bottom:100%;margin-bottom:6px;background:var(--acc);color:#fff;font-size:11px;padding:2px 7px;border-radius:5px;white-space:nowrap;pointer-events:none}
 .ghost{position:absolute;pointer-events:none;opacity:.85;z-index:6;outline:1px dashed var(--acc)}
 .guide{position:absolute;z-index:9;pointer-events:none}
@@ -131,9 +160,9 @@ select.fld{padding-right:4px;cursor:pointer}
 .te{position:relative;display:flow-root;outline:none;white-space:pre-wrap;font-kerning:none;font-variant-ligatures:none;font-feature-settings:"liga" 0,"kern" 0;text-rendering:geometricPrecision;cursor:text;caret-color:#111;min-width:4px;hyphens:manual;overflow-wrap:normal;word-break:normal;line-break:auto}
 .te.nowrap{white-space:pre}
 .te p{margin:0;min-height:1px}
-.te-frame .mvg{position:absolute;left:-24px;top:-3px;width:18px;height:20px;border-radius:5px;background:var(--acc);color:#fff;display:grid;place-items:center;cursor:move;box-shadow:var(--sh1)}
+.te-frame .mvg{touch-action:none;position:absolute;left:-24px;top:-3px;width:18px;height:20px;border-radius:5px;background:var(--acc);color:#fff;display:grid;place-items:center;cursor:move;box-shadow:var(--sh1)}
 .te-frame .mvg svg{pointer-events:none}
-.te-frame .wh{position:absolute;right:-9px;top:50%;width:8px;height:22px;margin-top:-11px;border-radius:3px;background:#fff;border:1.5px solid var(--acc);cursor:ew-resize}
+.te-frame .wh{touch-action:none;position:absolute;right:-9px;top:50%;width:8px;height:22px;margin-top:-11px;border-radius:3px;background:#fff;border:1.5px solid var(--acc);cursor:ew-resize}
 .te-warn{position:absolute;z-index:9;background:#fff;border:1px solid #f0c77a;color:#6b4000;border-radius:8px;box-shadow:var(--sh2);padding:7px 10px;font-size:12px;max-width:320px;line-height:1.45}
 .te-warn .btn{height:26px;margin-top:5px;border:1px solid var(--line2);background:#fff}
 

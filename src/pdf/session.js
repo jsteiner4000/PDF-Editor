@@ -19,6 +19,7 @@ import { nameText, pdfName, readStreamBytes } from './pdf-objects.js';
 import { PdfFontCache } from './pdf-font.js';
 import { IDENTITY_MATRIX, invertMatrix, multiplyMatrix } from './matrix.js';
 import { interpretContent } from './content-interpreter.js';
+import { subpathOps, transformSubpaths, userMatrix } from './path-geometry.js';
 import { buildTextBlocks, buildTextLines } from './text-layout.js';
 import { FontManager } from '../fonts/font-manager.js';
 
@@ -64,6 +65,11 @@ function repairStreamLengths(doc, fileBytes) {
  * Rechtecke (`vis`) sich mit 1 pt Toleranz berühren, gehören zusammen. Ausgenommen sind Bilder und
  * der Fall, dass ein Objekt ein mindestens 6-mal kleineres vollständig umschließt (Rahmen um
  * Inhalt). Ergebnis: `obj.cluster = { members, bbox }` – ein Klick wählt die ganze Gruppe.
+ * Ausnahme: Strichgitter aus mehr als 8 ungefüllten Pfaden werden nicht gruppiert.
+ *
+ * Die Gruppierung wird nur einmal je Seite für den ursprünglichen Inhalt berechnet und danach über
+ * die Objekt-Identität (`uid`) weitergeführt (siehe PdfSession.objectIdentity): Verschieben oder
+ * Einrasten an ein Nachbarobjekt erzeugt nie neue Gruppen.
  */
 function clusterObjects(objects) {
   const count = objects.length;
@@ -111,7 +117,21 @@ function clusterObjects(objects) {
     if (!clusters.has(root)) clusters.set(root, []);
     clusters.get(root).push(obj);
   });
+  // Reine Strichgitter (Tabellen, Raster: mehr als 8 Teile, alles ungefüllte Pfade) sind keine
+  // sinnvolle Einheit – jede Linie bleibt einzeln wählbar. Kleine Gruppen (Rechteck aus vier Linien,
+  // Kreisnummer mit Linie) und alles mit Flächen, Bildern oder Formularen bleiben Gruppen.
+  const groups = [];
   for (const members of clusters.values()) {
+    if (members.length > 8 && members.every((m) => m.type === 'path' && !m.fill))
+      groups.push(...members.map((m) => [m]));
+    else groups.push(members);
+  }
+  attachClusters(groups);
+}
+
+/** Setzt `obj.cluster = { members, bbox }` für jede Gruppe (Liste von Objektlisten). */
+function attachClusters(groups) {
+  for (const members of groups) {
     const bbox = [Infinity, Infinity, -Infinity, -Infinity];
     members.forEach((h) => {
       bbox[0] = Math.min(bbox[0], h.vis[0]);
@@ -124,6 +144,17 @@ function clusterObjects(objects) {
       h.cluster = cluster;
     });
   }
+}
+
+/** Gruppen aus einer gespeicherten Zuordnung uid → Gruppenkennung (neue Objekte: einzeln). */
+function applyClusters(objects, clusterOf) {
+  const groups = new Map();
+  for (const obj of objects) {
+    const cid = clusterOf.has(obj.uid) ? clusterOf.get(obj.uid) : 'u' + obj.uid;
+    if (!groups.has(cid)) groups.set(cid, []);
+    groups.get(cid).push(obj);
+  }
+  attachClusters(groups.values());
 }
 
 /**
@@ -174,8 +205,14 @@ export function blockToEditLines(block, dx = 0, dy = 0) {
  *   { page, key, src, ops, glyphs, lines, blocks, objects, fonts, qctm }
  *   - `ops`: geparster Content-Stream (ContentOp[]), Änderungen werden als neuer Stream geschrieben
  *   - `blocks`: Textblöcke (siehe text-layout.js)
- *   - `objects`: Grafikobjekte aus interpretContent() mit zusätzlich `id`, `area`, `background`,
- *     `selectable` und `cluster` (siehe clusterObjects)
+ *   - `objects`: Grafikobjekte aus interpretContent() mit zusätzlich `uid`, `id`, `area`,
+ *     `background`, `selectable` und `cluster` (siehe clusterObjects)
+ *
+ * Objekt-Identität: `uid` bleibt für ein Grafikobjekt über alle Änderungen gleich (Verschieben,
+ * Größe, Pfad bearbeiten, Text bearbeiten, Rückgängig). Grundlage ist die Reihenfolge der
+ * Malbefehle (n-tes S/f/B/Do/BI/sh); jede Änderung am Content-Stream gibt an, wie sich diese
+ * Reihenfolge ändert (Löschen, Ebenen). Gespeichert wird die Zuordnung je Contents-Objekt, daher
+ * stellt Rückgängig/Wiederholen sie automatisch mit wieder her.
  *
  * Rückgängig/Wiederholen: `hist.undo`/`hist.redo` (max. 200 Einträge). Einträge:
  *   - `{ kind: 'content', label, before: [snap], after: [snap], page }` – Seiteninhalt
@@ -208,6 +245,9 @@ export class PdfSession {
     this.savedVersion = 0;
     this.pending = null;
     this.nameSeq = 0;
+    this.idents = new WeakMap();
+    this.uidSeq = 0;
+    this.modelSeq = 0;
     for (const [ref, obj] of this.ctx.enumerateIndirectObjects())
       if (
         obj instanceof PDFDict &&
@@ -254,10 +294,58 @@ export class PdfSession {
       })
       .join('\n');
   }
-  setContentSrc(page, src) {
+  /**
+   * Schreibt einen neuen Content-Stream. `derive(base)` beschreibt, wie sich die Objekt-Identität
+   * ändert (`{ uids, types, clusters }` → neue Fassung); ohne Angabe bleibt die Reihenfolge der
+   * Malbefehle erhalten und neu hinzugekommene Objekte am Ende bekommen neue Kennungen.
+   */
+  setContentSrc(page, src, derive = null) {
+    const parent = this.idents.get(this.contentsKey(page)) || null;
     const ref = this.ctx.register(this.ctx.flateStream(latin1ToBytes(src)));
     page.node.set(pdfName('Contents'), ref);
+    this.idents.set(ref, { parent, derive });
     this.models.delete(page.ref.toString());
+  }
+  contentsKey(page) {
+    return page.node.get(pdfName('Contents')) || page.node;
+  }
+  identityChain(ident) {
+    if (!ident) return null;
+    if (ident.uids) return ident;
+    const base = this.identityChain(ident.parent);
+    if (!base) return null;
+    return ident.derive ? ident.derive(base) : base;
+  }
+  /**
+   * Objekt-Identität für den aktuellen Content-Stream einer Seite: vergibt `uid` an alle Objekte
+   * (Reihenfolge der Malbefehle) und liefert die Gruppenzuordnung (`clusters`, null = neu berechnen).
+   */
+  objectIdentity(page, objects) {
+    const key = this.contentsKey(page);
+    let ident = this.idents.get(key);
+    if (!ident) {
+      ident = { parent: null, derive: null };
+      this.idents.set(key, ident);
+    }
+    if (!ident.uids) {
+      const base = this.identityChain(ident.parent ? ident : null);
+      const uids = [];
+      const types = [];
+      objects.forEach((obj, k) => {
+        const reuse = base && k < base.uids.length && base.types[k] === obj.type;
+        uids.push(reuse ? base.uids[k] : ++this.uidSeq);
+        types.push(obj.type);
+      });
+      ident.uids = uids;
+      ident.types = types;
+      ident.clusters = base ? base.clusters : null;
+      ident.parent = null;
+      ident.derive = null;
+    }
+    objects.forEach((obj, k) => {
+      obj.uid = ident.uids[k];
+    });
+    return ident;
   }
   /**
    * Seitenmodell: Content-Stream parsen und interpretieren, Text in Zeilen/Blöcke gliedern,
@@ -283,15 +371,16 @@ export class PdfSession {
     });
     const info = this.pageInfo(index);
     const pageArea = info.w * info.h;
+    const ident = this.objectIdentity(page, content.objects);
     const objects = content.objects
       .filter((obj) => obj.vis && isFinite(obj.vis[0]))
-      .map((obj, k) => {
+      .map((obj) => {
         const vis = obj.vis;
         const area = Math.max(0, vis[2] - vis[0]) * Math.max(0, vis[3] - vis[1]);
         const isBackground = (obj.type === 'path' || obj.type === 'shading') && area > pageArea * 0.8;
         return {
           ...obj,
-          id: key + '@' + k,
+          id: key + '@' + obj.uid,
           area,
           background: isBackground,
           selectable:
@@ -301,12 +390,19 @@ export class PdfSession {
             vis[3] - vis[1] > 0.05,
         };
       });
-    clusterObjects(objects.filter((d) => d.selectable));
+    const selectable = objects.filter((d) => d.selectable);
+    if (ident.clusters) applyClusters(selectable, ident.clusters);
+    else {
+      clusterObjects(selectable);
+      ident.clusters = new Map(selectable.map((obj) => [obj.uid, obj.cluster.members[0].uid]));
+    }
     const model = {
       page,
       key,
       src,
       ops,
+      version: ++this.modelSeq,
+      allObjects: content.objects,
       glyphs: content.glyphs,
       lines,
       blocks,
@@ -692,7 +788,15 @@ export class PdfSession {
           new ContentOp(ops[obj.start].op, ops[obj.start].args, ops[obj.start].s, ops[obj.start].e),
           { deleted: true },
         );
-    this.setContentSrc(page, this.finalSrc(ops, model.src, null));
+    const gone = new Set(objects.map((obj) => obj.uid));
+    this.setContentSrc(page, this.finalSrc(ops, model.src, null), (base) => {
+      const keep = base.uids.map((uid) => !gone.has(uid));
+      return {
+        uids: base.uids.filter((_, k) => keep[k]),
+        types: base.types.filter((_, k) => keep[k]),
+        clusters: base.clusters,
+      };
+    });
     this.push({ kind: 'content', label, before: [before], after: [this.snap(page)], page: index });
   }
   /**
@@ -862,7 +966,19 @@ export class PdfSession {
       .map((B) => (isIdentity ? B : [B[0], newOp('cm', ...invertMatrix(ctm)), ...B.slice(1)]))
       .flat();
     const newOps = [...ops.slice(0, insertAt), ...inserted, ...ops.slice(insertAt)];
-    this.setContentSrc(page, this.finalSrc(newOps, model.src, null));
+    const moved = new Set(targets.map((obj) => obj.uid));
+    const startOf = new Map(model.allObjects.map((obj) => [obj.uid, obj.start]));
+    this.setContentSrc(page, this.finalSrc(newOps, model.src, null), (base) => {
+      const entries = base.uids.map((uid, k) => ({ uid, type: base.types[k] }));
+      const movedEntries = entries.filter((e) => moved.has(e.uid));
+      const rest = entries.filter((e) => !moved.has(e.uid));
+      const cut =
+        direction === 'back'
+          ? rest.filter((e) => (startOf.get(e.uid) ?? Infinity) < insertAt).length
+          : rest.length;
+      const order = [...rest.slice(0, cut), ...movedEntries, ...rest.slice(cut)];
+      return { uids: order.map((e) => e.uid), types: order.map((e) => e.type), clusters: base.clusters };
+    });
     this.push({
       kind: 'content',
       label: label || (direction === 'back' ? 'In den Hintergrund' : 'In den Vordergrund'),
@@ -1031,8 +1147,63 @@ export class PdfSession {
     for (const frameOps of frames) out.push(newOp('q'), ...frameOps);
     return out;
   }
+  /**
+   * Ändert die Geometrie von Pfadobjekten: `edits` = [{ obj, subpaths }] mit Teilpfaden im
+   * Benutzerraum (wie `obj.geom.subpaths`, geänderte mit `changed: true`). Die Pfadoperatoren des
+   * Objekts werden ersetzt; unveränderte Teilpfade behalten ihre Originaloperatoren, Operatoren wie
+   * W/W* bleiben vor dem Malbefehl erhalten. Linienbreite und Grafikzustand bleiben unberührt.
+   */
+  editPaths(index, edits, label = 'Pfad bearbeitet') {
+    const page = this.page(index);
+    const model = this.model(index);
+    const before = this.snap(page);
+    const ops = model.ops.slice();
+    const pathOps = new Set(['m', 'l', 'c', 'v', 'y', 're', 'h']);
+    const sorted = edits
+      .filter((e) => e.obj.type === 'path' && e.obj.geom)
+      .sort((a, b) => b.obj.start - a.obj.start);
+    if (!sorted.length) return false;
+    for (const { obj, subpaths } of sorted) {
+      const replacement = [];
+      let anyChanged = false;
+      subpaths.forEach((sp) => {
+        const regenerate = sp.changed || (anyChanged && sp.implicit) || !sp.ops.length;
+        if (regenerate) {
+          anyChanged = true;
+          replacement.push(...subpathOps(sp));
+        } else replacement.push(...sp.ops.map((k) => model.ops[k]));
+      });
+      const others = [];
+      for (let k = obj.start; k < obj.end; k++) if (!pathOps.has(ops[k].op)) others.push(ops[k]);
+      ops.splice(obj.start, obj.end - obj.start, ...replacement, ...others);
+    }
+    this.setContentSrc(page, this.finalSrc(ops, model.src, null));
+    this.push({ kind: 'content', label, before: [before], after: [this.snap(page)], page: index });
+    return true;
+  }
+  /**
+   * Skaliert/dreht Pfade über ihre Geometrie (Punkte transformieren statt `cm`): die
+   * Strichstärke bleibt dabei erhalten. `matrix` in Seitenkoordinaten.
+   */
+  transformPaths(index, objects, matrix, label = 'Größe geändert') {
+    return this.editPaths(
+      index,
+      objects.map((obj) => ({
+        obj,
+        subpaths: transformSubpaths(obj.geom.subpaths, userMatrix(obj.ctm, matrix)).map((sp) => ({
+          ...sp,
+          ops: sp.ops.slice(),
+        })),
+      })),
+      label,
+    );
+  }
   async embedImage(bytes, mime) {
-    return /png/.test(mime) ? this.doc.embedPng(bytes) : this.doc.embedJpg(bytes);
+    const image = /png/.test(mime) ? await this.doc.embedPng(bytes) : await this.doc.embedJpg(bytes);
+    // pdf-lib schreibt das Bildobjekt sonst erst beim Speichern; ein vorher berechnetes Seitenmodell
+    // würde das neue Bild nicht kennen und (zwischengespeichert) nie erkennen
+    await image.embed();
+    return image;
   }
   /**
    * Wie `embedImage`, aber gleiche Bilddaten werden nur einmal eingebettet: Wird dasselbe Bild
@@ -1235,12 +1406,19 @@ Q`,
     return seen;
   }
   /**
-   * Speichert seriell (Sperre gegen parallele Aufrufe). `clean: true` entfernt vorher
+   * Speichert seriell (Sperre gegen parallele Aufrufe und Änderungen, siehe `exclusive`). `clean: true` entfernt vorher
    * unerreichbare Objekte und nutzt Objekt-Streams (für die Datei), `clean: false` dient der
    * internen Neudarstellung.
    */
   save(opts) {
-    const run = () => this._save(opts);
+    return this.exclusive(() => this._save(opts));
+  }
+  /**
+   * Führt `fn` exklusiv aus: nacheinander mit allen Speichervorgängen und anderen exklusiven
+   * Änderungen, damit pdf-lib nie ein Dokument serialisiert, das sich währenddessen ändert.
+   */
+  exclusive(fn) {
+    const run = () => fn();
     const result = (this._saveLock || Promise.resolve()).then(run, run);
     this._saveLock = result.catch(() => {});
     return result;

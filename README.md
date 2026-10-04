@@ -44,6 +44,7 @@ src/
     pdf-font.js           Analyse von PDF-Schriften (Codierung, Breiten, ToUnicode)
     pdf-objects.js        Hilfen für pdf-lib-Objekte
     matrix.js             2D-Matrizen
+    path-geometry.js      Geometrie von Pfaden: Teilpfade, Abstände, Bearbeiten, Serialisieren
     session.js            PdfSession: Seitenmodelle, Änderungen, Rückgängig/Wiederholen, Speichern
     page-numbers.js       Seitenzahlen und Kopf-/Fußzeilen erkennen und anpassen
   fonts/
@@ -66,7 +67,10 @@ src/
     zoom-gestures.js      Strg+Mausrad, Touchpad-Pinch, Hand-Werkzeug (Leertaste/mittlere Maustaste)
     edit-mode.js          Modus „PDF bearbeiten“ (Auswahl, Ziehen, Griffe, Text, Bilder)
     text-editor.js        Inline-Texteditor
-    snap-guides.js        Hilfslinien/Einrasten
+    snap-guides.js        Hilfslinien/Einrasten (auch an Punkten und Kanten)
+    gesture.js            Zeigergesten (Pointer-Capture, Abbruch, verpasstes Loslassen)
+    hit-test.js           Treffertests über die Geometrie (Toleranzen in Bildschirmpixeln)
+    path-edit.js          Modus „Pfad bearbeiten“ (Ankerpunkte und Kanten)
     organize-mode.js      Modus „Seiten organisieren“
     fonts-panel.js        Seitenleiste „Schriften“
     signature-panel.js    Werkzeug „Unterschrift“ (Popover, Sheets, Einsetzen)
@@ -111,6 +115,11 @@ Rückgängig/Wiederholen, Zoom und Speichern. Zeit und Zufallszahlen sind in den
 
 Sobald das Verhalten absichtlich vom Original abweicht, muss der betroffene Vergleich durch
 eine fachliche Prüfung ersetzt werden.
+
+`tests/interaction.spec.js` prüft nur den Neubau: Ziehen ohne „Mitnehmen“ des nächsten Objekts
+(auch mit CPU-Drosselung und großem Dokument), Treffertests über die Geometrie, „Pfad
+bearbeiten“, Linien-Endpunkte, Skalieren mit erhaltener Strichstärke, Feinverschiebung sowie
+Speichern und erneutes Laden. Grundlage ist `tests/fixtures/grafik.pdf`.
 
 Die Desktop-App testet `tests/desktop.spec.js` (Playwright `_electron`): Start mit PDF als
 Kommandozeilenargument, Text bearbeiten, Strg+S überschreibt die Datei, „Speichern unter“ und
