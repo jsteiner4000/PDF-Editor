@@ -10,11 +10,18 @@ let commandHandler = null;
 let openHandler = null;
 const pendingOpens = [];
 
-ipcRenderer.on('app:command', async (_event, { command, replyId }) => {
+/** Antworten des Hauptprozesses kommen als { value } oder { error } (deutscher Text ohne Pfad). */
+async function call(channel, ...args) {
+  const reply = await ipcRenderer.invoke(channel, ...args);
+  if (reply && typeof reply.error === 'string') throw new Error(reply.error);
+  return reply ? reply.value : undefined;
+}
+
+ipcRenderer.on('app:command', async (_event, { command, replyId, fromMenu }) => {
   let result = null;
   let error = null;
   try {
-    result = commandHandler ? await commandHandler(command) : null;
+    result = commandHandler ? await commandHandler(command, !!fromMenu) : null;
   } catch (err) {
     error = String((err && err.message) || err);
   }
@@ -28,17 +35,20 @@ ipcRenderer.on('app:open-file', (_event, entry) => {
 
 contextBridge.exposeInMainWorld('pdfEditorDesktop', {
   platform: process.platform,
-  showOpenDialog: () => ipcRenderer.invoke('file:open-dialog'),
-  showSaveDialog: (suggestedName) => ipcRenderer.invoke('file:save-dialog', String(suggestedName || '')),
-  readFile: (id) => ipcRenderer.invoke('file:read', String(id)),
+  showOpenDialog: () => call('file:open-dialog'),
+  showSaveDialog: (suggestedName) => call('file:save-dialog', String(suggestedName || '')),
+  readFile: (id) => call('file:read', String(id)),
   writeFile: (id, data) => {
-    if (!(data instanceof Uint8Array)) throw new TypeError('Uint8Array erwartet');
-    return ipcRenderer.invoke('file:write', String(id), data);
+    if (!(data instanceof Uint8Array)) return Promise.reject(new TypeError('Uint8Array erwartet'));
+    return call('file:write', String(id), data);
   },
   /** Gewährt Zugriff auf eine per Drag & Drop abgelegte Datei (nur echte File-Objekte). */
   grantDroppedFile: (file) => {
-    const filePath = webUtils.getPathForFile(file);
-    return filePath ? ipcRenderer.invoke('file:grant-dropped', filePath) : Promise.resolve(null);
+    let filePath = '';
+    try {
+      filePath = webUtils.getPathForFile(file);
+    } catch {}
+    return filePath ? call('file:grant-dropped', filePath) : Promise.resolve(null);
   },
   setState: (state) =>
     ipcRenderer.send('app:state', {

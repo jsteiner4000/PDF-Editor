@@ -17,7 +17,7 @@ import { EditMode } from './ui/edit-mode.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
-import { notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
+import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
 
 /**
  * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
@@ -333,8 +333,8 @@ export class App {
         return;
       const file = await handle.getFile();
       await this.openFile(file, handle);
-    } catch {
-      toast('Die Datei konnte nicht geöffnet werden.', 'err');
+    } catch (err) {
+      toast(fileErrorReason(err) || 'Die Datei konnte nicht geöffnet werden.', 'err', 5000);
     }
   }
   async openFile(file, handle) {
@@ -523,7 +523,14 @@ export class App {
     } catch (err) {
       return err && err.message === 'perm'
         ? this.saveAs()
-        : (toast('Speichern nicht möglich – bitte „Speichern unter“ verwenden.', 'err', 4000), false);
+        : (toast(
+            fileErrorReason(err)
+              ? 'Speichern nicht möglich: ' + fileErrorReason(err)
+              : 'Speichern nicht möglich – bitte „Speichern unter“ verwenden.',
+            'err',
+            fileErrorReason(err) ? 6000 : 4000,
+          ),
+          false);
     }
   }
   async saveAs() {
@@ -553,7 +560,14 @@ export class App {
           toast('Gespeichert als ' + handle.name);
           idbPut('recent', handle.name, { name: handle.name, handle, time: Date.now() });
           return true;
-        }, 100);
+        }, 100).catch((err) => {
+          toast(
+            'Speichern nicht möglich' + (fileErrorReason(err) ? ': ' + fileErrorReason(err) : '.'),
+            'err',
+            6000,
+          );
+          return false;
+        });
     }
     const bytes = await withBusy(() => this.bytesForSave());
     downloadBytes(bytes, filename);

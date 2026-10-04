@@ -19,6 +19,70 @@ const MAX_READ_BYTES = 1024 * 1024 * 1024; // 1 GB
 
 const isPdfPath = (p) => /\.pdf$/i.test(p);
 
+/** Verständliche Meldungen (ohne Pfade) für Dateifehler; Schlüssel = Node-Fehlercode. */
+const MESSAGES = {
+  read: {
+    ENOENT: 'Die Datei wurde nicht gefunden – sie wurde verschoben, umbenannt oder gelöscht.',
+    EACCES: 'Keine Berechtigung, die Datei zu lesen.',
+    EPERM: 'Keine Berechtigung, die Datei zu lesen.',
+    EBUSY: 'Die Datei wird gerade von einem anderen Programm verwendet.',
+    EISDIR: 'Das ist keine Datei.',
+    TOOLARGE: 'Die Datei ist zu groß (höchstens 1 GB).',
+  },
+  write: {
+    READONLY: 'Die Datei ist schreibgeschützt. Bitte „Speichern unter“ verwenden.',
+    EACCES:
+      'Keine Berechtigung, in diesen Ordner oder diese Datei zu schreiben. Bitte „Speichern unter“ verwenden.',
+    EPERM: 'Die Datei ist schreibgeschützt oder gesperrt. Bitte „Speichern unter“ verwenden.',
+    EBUSY:
+      'Die Datei wird gerade von einem anderen Programm verwendet. Bitte dort schließen und erneut speichern.',
+    ENOSPC: 'Auf dem Datenträger ist nicht genug Speicherplatz frei.',
+    EDQUOT: 'Auf dem Datenträger ist nicht genug Speicherplatz frei.',
+    ENOENT: 'Der Ordner der Datei existiert nicht mehr. Bitte „Speichern unter“ verwenden.',
+    EROFS: 'Der Datenträger ist schreibgeschützt. Bitte „Speichern unter“ verwenden.',
+    EISDIR: 'Das Ziel ist keine Datei.',
+    NOTPDF: 'Es können nur PDF-Dateien gespeichert werden.',
+    BADDATA: 'Ungültige Daten.',
+  },
+  any: { NOGRANT: 'Kein Zugriff auf diese Datei. Bitte die Datei erneut öffnen.' },
+};
+
+/** Fehler mit deutscher Meldung ohne Pfad (geht so an den Renderer). */
+export class FileAccessError extends Error {
+  constructor(code, op = 'write') {
+    super(
+      MESSAGES.any[code] ||
+        MESSAGES[op][code] ||
+        (op === 'read'
+          ? 'Die Datei konnte nicht gelesen werden.'
+          : 'Die Datei konnte nicht gespeichert werden.') + (code ? ` (${code})` : ''),
+    );
+    this.code = code;
+  }
+  static from(err, op) {
+    if (err instanceof FileAccessError) return new FileAccessError(err.code, op);
+    return new FileAccessError(err && typeof err.code === 'string' ? err.code : '', op);
+  }
+}
+
+const RETRY_CODES = new Set(['EPERM', 'EBUSY', 'EACCES']);
+
+/**
+ * Umbenennen; unter Windows mit Wiederholungen, weil Virenscanner, Suchindex oder OneDrive
+ * die Datei kurzzeitig sperren (EPERM/EBUSY/EACCES).
+ */
+async function renameWithRetry(from, to) {
+  const delays = process.platform === 'win32' ? [50, 100, 200, 400, 800] : [];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fs.rename(from, to);
+    } catch (err) {
+      if (attempt >= delays.length || !RETRY_CODES.has(err.code)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+    }
+  }
+}
+
 export class FileAccess {
   constructor(storeFile = path.join(app.getPath('userData'), 'file-grants.json')) {
     this.storeFile = storeFile;
@@ -53,35 +117,65 @@ export class FileAccess {
   }
 
   pathOf(id) {
-    const p = typeof id === 'string' ? this.grants.get(id) : undefined;
-    if (!p) throw new Error('Kein Zugriff auf diese Datei.');
+    const p = typeof id === 'string' && this.grants.has(id) ? this.grants.get(id) : undefined;
+    if (!p) throw new FileAccessError('NOGRANT');
     return p;
   }
 
   async read(id) {
     const p = this.pathOf(id);
-    const stat = await fs.stat(p);
-    if (!stat.isFile()) throw new Error('Keine Datei.');
-    if (stat.size > MAX_READ_BYTES) throw new Error('Die Datei ist zu groß.');
-    const data = await fs.readFile(p);
-    return {
-      name: path.basename(p),
-      data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-      lastModified: stat.mtimeMs,
-    };
+    try {
+      const stat = await fs.stat(p);
+      if (!stat.isFile()) throw new FileAccessError('EISDIR');
+      if (stat.size > MAX_READ_BYTES) throw new FileAccessError('TOOLARGE');
+      const data = await fs.readFile(p);
+      return {
+        name: path.basename(p),
+        data: new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
+        lastModified: stat.mtimeMs,
+      };
+    } catch (err) {
+      throw FileAccessError.from(err, 'read');
+    }
   }
 
+  /**
+   * Schreibt atomar: temporäre Datei im Zielordner (gleiche Rechte, fsync), dann umbenennen.
+   * Symbolische Links werden aufgelöst (geschrieben wird das Ziel, der Link bleibt).
+   * Schreibgeschützte Dateien werden abgelehnt statt per Umbenennen ersetzt.
+   */
   async write(id, data) {
     const p = this.pathOf(id);
-    if (!isPdfPath(p)) throw new Error('Nur PDF-Dateien können gespeichert werden.');
-    if (!(data instanceof Uint8Array)) throw new Error('Ungültige Daten.');
-    const tmp = path.join(path.dirname(p), `.${path.basename(p)}.${process.pid}.${Date.now()}.tmp`);
+    if (!isPdfPath(p)) throw new FileAccessError('NOTPDF');
+    if (!(data instanceof Uint8Array)) throw new FileAccessError('BADDATA');
+    let tmp = null;
     try {
-      await fs.writeFile(tmp, data, { flag: 'wx' });
-      await fs.rename(tmp, p);
+      let target = p;
+      let mode;
+      try {
+        target = await fs.realpath(p);
+        const stat = await fs.stat(target);
+        if (!stat.isFile()) throw new FileAccessError('EISDIR');
+        if (!(stat.mode & 0o200)) throw new FileAccessError('READONLY');
+        mode = stat.mode & 0o7777;
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err; // gelöschte Datei: neu anlegen, falls der Ordner existiert
+      }
+      tmp = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${Date.now()}.tmp`);
+      const fh = await fs.open(tmp, 'wx', mode ?? 0o666);
+      try {
+        await fh.writeFile(data);
+        await fh.sync();
+      } finally {
+        await fh.close();
+      }
+      if (mode !== undefined) await fs.chmod(tmp, mode).catch(() => {}); // umask ausgleichen
+      await renameWithRetry(tmp, target);
+      tmp = null;
     } catch (err) {
-      await fs.rm(tmp, { force: true }).catch(() => {});
-      throw err;
+      throw FileAccessError.from(err, 'write');
+    } finally {
+      if (tmp) await fs.rm(tmp, { force: true }).catch(() => {});
     }
   }
 
