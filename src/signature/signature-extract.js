@@ -85,8 +85,10 @@ function rankFilter(grid, cols, rows, r, max) {
  * dunkle Flächen wie Schatten, Farbverläufe oder graues Scan-Papier bleiben als „Papier“ erhalten
  * und werden damit nicht zu Tinte. Zum Schluss leicht geglättet und bilinear hochgerechnet.
  * @param {number} [pxPerMm]  Auflösung der Quelle (Pixel je mm), Standard 600 dpi
+ * @param {number} [minRadius]  Mindestradius des Closings in Pixeln (größenabhängig, damit auch
+ *   dicke Filzstiftstriche in Nahaufnahmen – bei unbekannter Auflösung – verschwinden)
  */
-export function estimateBackground(lum, width, height, pxPerMm = 600 / 25.4) {
+export function estimateBackground(lum, width, height, pxPerMm = 600 / 25.4, minRadius = 0) {
   const cell = Math.max(2, Math.round(pxPerMm * 0.5));
   const cols = Math.max(1, Math.ceil(width / cell));
   const rows = Math.max(1, Math.ceil(height / cell));
@@ -102,7 +104,7 @@ export function estimateBackground(lum, width, height, pxPerMm = 600 / 25.4) {
       if (l > grid[g]) grid[g] = l;
     }
   }
-  const r = Math.max(1, Math.round((pxPerMm * 1.5) / cell));
+  const r = Math.max(1, Math.round(Math.max(pxPerMm * 1.5, minRadius) / cell));
   let closed = rankFilter(rankFilter(grid, cols, rows, r, true), cols, rows, r, false);
   // leichte Glättung (Mittelwert 3×3)
   const smooth = new Float32Array(closed.length);
@@ -240,50 +242,51 @@ export function removeLines(core, width, height, { horizontal = true, minRun, ma
  * sind dagegen schmal. Rückgabe: Anzahl verbliebener Komponenten.
  */
 export function removeSpecks(mask, width, height, minArea, maxThickness = Infinity) {
-  const label = new Int32Array(width * height);
-  const stack = new Int32Array(width * height);
+  const n = width * height;
+  const seen = new Uint8Array(n);
+  // Warteschlange = Reihenfolge der besuchten Pixel; jede Komponente belegt [base, tail)
+  const queue = new Int32Array(n);
+  let base = 0;
   let kept = 0;
-  let next = 0;
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || label[start]) continue;
-    next++;
-    let sp = 0;
-    let count = 0;
-    stack[sp++] = start;
-    label[start] = next;
-    const members = [];
-    while (sp) {
-      const p = stack[--sp];
-      members.push(p);
-      count++;
+  const checkThickness = Number.isFinite(maxThickness);
+  for (let start = 0; start < n; start++) {
+    if (!mask[start] || seen[start]) continue;
+    let head = base;
+    let tail = base;
+    queue[tail++] = start;
+    seen[start] = 1;
+    while (head < tail) {
+      const p = queue[head++];
       const x = p % width;
       const y = (p - x) / width;
-      for (let dy = -1; dy <= 1; dy++) {
-        const ny = y + dy;
-        if (ny < 0 || ny >= height) continue;
-        for (let dx = -1; dx <= 1; dx++) {
-          const nx = x + dx;
-          if (nx < 0 || nx >= width || (!dx && !dy)) continue;
-          const q = ny * width + nx;
-          if (mask[q] && !label[q]) {
-            label[q] = next;
-            stack[sp++] = q;
+      const x0 = x > 0 ? -1 : 0;
+      const x1 = x < width - 1 ? 1 : 0;
+      const y0 = y > 0 ? -width : 0;
+      const y1 = y < height - 1 ? width : 0;
+      for (let dy = y0; dy <= y1; dy += width)
+        for (let dx = x0; dx <= x1; dx++) {
+          const q = p + dy + dx;
+          if (mask[q] && !seen[q]) {
+            seen[q] = 1;
+            queue[tail++] = q;
           }
         }
-      }
     }
+    const count = tail - base;
     let remove = count < minArea;
-    if (!remove && Number.isFinite(maxThickness) && count > maxThickness * maxThickness) {
+    if (!remove && checkThickness && count > maxThickness * maxThickness) {
       let perimeter = 0;
-      for (const p of members) {
+      for (let k = base; k < tail; k++) {
+        const p = queue[k];
         const x = p % width;
-        if (x === 0 || x === width - 1 || p < width || p >= mask.length - width) perimeter++;
+        if (x === 0 || x === width - 1 || p < width || p >= n - width) perimeter++;
         else if (!mask[p - 1] || !mask[p + 1] || !mask[p - width] || !mask[p + width]) perimeter++;
       }
       remove = (2 * count) / Math.max(1, perimeter) > maxThickness;
     }
-    if (remove) for (const p of members) mask[p] = 0;
+    if (remove) for (let k = base; k < tail; k++) mask[queue[k]] = 0;
     else kept++;
+    base = tail;
   }
   return kept;
 }
@@ -320,6 +323,7 @@ function dilate(mask, width, height, radius) {
  * @param {boolean} [opts.removeLines=true]  Formularlinien entfernen
  * @param {number} [opts.dpi=600]  Auflösung der Quelle (für Größen von Flecken/Linien/Rand)
  * @param {boolean} [opts.crop=true]  auf die Tinte zuschneiden
+ * @param {object} [opts.cache]  wiederverwendbarer Zwischenspeicher für dieselbe Quelle (siehe oben)
  * @returns {null | { image, bbox:[x0,y0,x1,y1], threshold:number, inkPixels:number }}
  *   `image` ist das freigestellte RGBA-Bild, `bbox` der Ausschnitt in Pixeln der Quelle
  *   (x1/y1 exklusiv). `null`, wenn keine Tinte gefunden wurde.
@@ -331,13 +335,23 @@ export function extractSignature(img, opts = {}) {
   const color = opts.color || 'original';
   const n = width * height;
   if (!n) return null;
-  const lum = luminanceOf(img);
-  const bg = estimateBackground(lum, width, height, dpi / 25.4);
-  const dark = new Float32Array(n);
-  for (let i = 0; i < n; i++) dark[i] = clamp01((bg[i] - lum[i]) / Math.max(bg[i], 40));
+  // Helligkeit, Papierhelligkeit und Dunkelheit hängen nur vom Bild und der Auflösung ab – nicht
+  // von Empfindlichkeit, Farbe oder Linien. Wer dieselbe Quelle mehrfach freistellt (Regler in
+  // der Vorschau), übergibt dasselbe `opts.cache`-Objekt und spart diesen Teil.
+  const cache = opts.cache || {};
+  if (cache.img !== img || cache.dpi !== dpi) {
+    const lum = luminanceOf(img);
+    // Strichbreiten hängen von der Aufnahme ab (Nahaufnahme mit Filzstift ≈ 2 % der Bildbreite):
+    // Closing-Radius und größte Strichdicke wachsen daher mit der Bildgröße mit.
+    const bg = estimateBackground(lum, width, height, dpi / 25.4, Math.min(width, height) * 0.04);
+    const dark = new Float32Array(n);
+    for (let i = 0; i < n; i++) dark[i] = clamp01((bg[i] - lum[i]) / Math.max(bg[i], 40));
+    Object.assign(cache, { img, dpi, bg, dark, otsu: otsuThreshold(dark) });
+  }
+  const { bg, dark, otsu } = cache;
+  const minDim = Math.min(width, height);
 
   // Schwelle: Otsu, nicht unter dem Rauschpegel des Papiers, verschoben durch die Empfindlichkeit.
-  const otsu = otsuThreshold(dark);
   let noiseSum = 0;
   let noiseCount = 0;
   for (let i = 0; i < n; i++)
@@ -374,7 +388,7 @@ export function extractSignature(img, opts = {}) {
     });
   }
   const minArea = Math.max(4, Math.round(px * px * 0.05)); // ≈ 0,05 mm² – i-Punkte bleiben
-  removeSpecks(core, width, height, minArea, px * 2.5); // Striche sind höchstens ≈ 2,5 mm dick
+  removeSpecks(core, width, height, minArea, Math.max(px * 5, minDim * 0.1)); // Strichdicke ≤ 5 mm bzw. 10 % der kürzeren Seite
 
   // Typische Dunkelheit voller Tinte (Median der Kernpixel) für das Abdeckungsmodell.
   const hist = new Uint32Array(256);

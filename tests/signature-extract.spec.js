@@ -232,12 +232,9 @@ test('Leeres Papier ergibt keine Unterschrift', () => {
   expect(extractSignature({ width, height, data }, { dpi: DPI })).toBeNull();
 });
 
-test('Handyfoto mit weichem Schattenwurf und Farbverlauf: Schatten wird nicht zu Tinte', async ({ page }) => {
-  // 3000 × 1300 px, ca. 400 dpi; Schatten von rechts oben über einen Teil der Unterschrift
-  // (Unterschrift reicht bis x ≈ 2310, rechts davon nur Papier im Schatten).
-  const b64 = readFileSync(new URL('./fixtures/signature-shadow-photo.jpg', import.meta.url)).toString(
-    'base64',
-  );
+/** Lädt ein JPG aus tests/fixtures als RGBA-Bild (Dekodierung im Browser). */
+async function loadFixture(page, name) {
+  const b64 = readFileSync(new URL('./fixtures/' + name, import.meta.url)).toString('base64');
   await page.setContent('<body></body>');
   const raw = await page.evaluate(async (b64) => {
     const blob = await (await fetch('data:image/jpeg;base64,' + b64)).blob();
@@ -251,11 +248,21 @@ test('Handyfoto mit weichem Schattenwurf und Farbverlauf: Schatten wird nicht zu
       s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     return { width: bitmap.width, height: bitmap.height, data: btoa(s) };
   }, b64);
-  const img = {
+  return {
     width: raw.width,
     height: raw.height,
     data: new Uint8ClampedArray(Buffer.from(raw.data, 'base64')),
   };
+}
+
+test('Handyfoto mit weichem Schattenwurf und Farbverlauf: Schatten wird nicht zu Tinte', async ({ page }) => {
+  // 3000 × 1300 px, ca. 400 dpi; Schatten von rechts oben über einen Teil der Unterschrift
+  // (Unterschrift reicht bis x ≈ 2310, rechts davon nur Papier im Schatten).
+  const img = await loadFixture(page, 'signature-shadow-photo.jpg');
+  // bei Fotodateien ist die Auflösung unbekannt (App nimmt 15 cm Bildbreite an ≈ 508 dpi)
+  const guess = extractSignature(img, { dpi: 508 });
+  expect(guess.bbox[2]).toBeLessThan(2420);
+  expect(guess.inkPixels).toBeLessThan(200000);
   const result = extractSignature(img, { dpi: 400 });
   expect(result).not.toBeNull();
   const [x0, , x1] = result.bbox;
@@ -287,4 +294,38 @@ test('rotateImage dreht im Uhrzeigersinn', () => {
   expect([...r180.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]); // blau links
   const r270 = rotateImage(img, 270);
   expect([...r270.data.subarray(0, 4)]).toEqual([0, 0, 255, 255]); // blau oben
+});
+
+test('Dicke Filzstift-Unterschriften (Strich 55–75 px bei 3000 px Breite) werden vollständig übernommen', async ({
+  page,
+}) => {
+  for (const name of [
+    'signature-felt-pen-g55.jpg',
+    'signature-felt-pen-g65.jpg',
+    'signature-felt-pen-f.jpg',
+  ]) {
+    const img = await loadFixture(page, name);
+    // Wahrheit: dunkle Pixel der Quelle (Tinte ist fast schwarz, Papier hell)
+    let dark = 0;
+    let minX = img.width;
+    let maxX = -1;
+    for (let i = 0; i < img.width * img.height; i++)
+      if (img.data[i * 4] < 90) {
+        dark++;
+        const x = i % img.width;
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+      }
+    // Auflösung ist bei Fotodateien unbekannt: bei unterschiedlichen Annahmen müssen alle gehen
+    for (const dpi of [254, 508, 762]) {
+      const result = extractSignature(img, { dpi });
+      expect(result, `${name} @ ${dpi} dpi`).not.toBeNull();
+      const d = result.image.data;
+      let opaque = 0;
+      for (let p = 3; p < d.length; p += 4) if (d[p] > 128) opaque++;
+      expect(opaque / dark, `${name} @ ${dpi} dpi: Anteil übernommener Tinte`).toBeGreaterThan(0.93);
+      expect(opaque / dark).toBeLessThan(1.1);
+      expect(result.bbox[2] - result.bbox[0]).toBeGreaterThan((maxX - minX) * 0.98);
+    }
+  }
 });
