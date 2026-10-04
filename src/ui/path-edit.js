@@ -160,17 +160,24 @@ export class PathEditor {
     this.hoverSeg = seg;
     this.draw();
   }
-  /** Was liegt unter dem Punkt (PDF)? { node } | { seg } | null */
-  pick(x, y, anchorEl = null) {
+  /**
+   * Was liegt unter dem Punkt (PDF)? { node } | { seg } | null – immer über die Geometrie: der
+   * nächste Knoten (Radius höchstens 14 px und höchstens der halbe Abstand zum Nachbarknoten),
+   * es sei denn, ein nicht angrenzendes Segment liegt dem Zeiger näher als dieser Knoten.
+   */
+  pick(x, y) {
     const obj = this.obj;
     if (!obj) return null;
-    if (anchorEl) return { node: { sp: +anchorEl.dataset.sp, k: +anchorEl.dataset.k } };
     const ppt = pxPerPt(this.pv);
     const n = nodeAt(obj, x, y, ppt, 14);
-    if (n) return { node: { sp: n.sp, k: n.node } };
     const h = objectHit(obj, x, y, ppt);
-    if (h && h.sp != null) return { seg: { sp: h.sp, k: h.seg } };
-    return null;
+    const seg = h && h.sp != null ? { sp: h.sp, k: h.seg } : null;
+    if (n) {
+      const s = pagePaths(obj)[seg ? seg.sp : 0];
+      const adjacent = !!seg && seg.sp === n.sp && s && segEnds(s, seg.k).includes(n.node);
+      if (!seg || adjacent || h.d * ppt >= n.d * ppt) return { node: { sp: n.sp, k: n.node } };
+    }
+    return seg ? { seg } : null;
   }
   /**
    * Zeiger gedrückt (bereits aufgelöst): wählt Ankerpunkt/Segment und beginnt das Ziehen.
@@ -178,7 +185,7 @@ export class PathEditor {
    */
   onDown(down, gesture) {
     const [x, y] = down.pt;
-    const target = this.pick(x, y, down.anchorEl);
+    const target = this.pick(x, y);
     if (!target) return false;
     let primary;
     let detach = null;

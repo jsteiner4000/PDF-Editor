@@ -21,6 +21,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const HANDLE_MIN_SIDE = 24;
 const HANDLE_MID_SIDE = 56;
 
+/** Mindestabstand (px) der Mittelpunkte der beiden Endpunkt-Griffe einer Linie. */
+const HANDLE_SPACING = 30;
+
 const isTranslationMatrix = (m) => m[0] === 1 && m[3] === 1 && m[1] === 0 && m[2] === 0;
 
 /**
@@ -262,6 +265,11 @@ export class EditMode {
     const [x, y] = pv.clientToPdf(clientX, clientY);
     const ppt = pxPerPt(pv);
     const best = pickObject(objectHits(model, x, y, ppt));
+    // Text hat Vorrang, wenn der Zeiger im Textblock selbst liegt (auch auf Tabellenlinien durch den
+    // Text); in der schmalen Toleranz um den Block gewinnt dagegen ein Strich (z. B. eine
+    // Unterstreichung).
+    const inside = blockAt(model, x, y, ppt, 0);
+    if (inside) return { block: inside };
     const block = blockAt(model, x, y, ppt);
     if (block && !(best && best.ink && best.stroke)) return { block };
     if (!best) return null;
@@ -404,7 +412,7 @@ export class EditMode {
     }
     if (this.pe && this.pe.pv === pv) {
       const [x, y] = pv.clientToPdf(ev.clientX, ev.clientY);
-      const pick = this.pe.pick(x, y, target.closest('.pa'));
+      const pick = this.pe.pick(x, y);
       this.pe.setHover(pick && pick.seg ? pick.seg : null);
       if (pick) {
         this.hideHover(pv);
@@ -480,7 +488,6 @@ export class EditMode {
       shift: ev.shiftKey,
       alt: ev.altKey,
       handle: handleEl ? handleEl.dataset.h : null,
-      anchorEl: ev.target.closest('.pa'),
     };
     down.pickBehind = (ev.altKey || ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !this.armed && !down.handle;
     if (this.armed === 'text') {
@@ -884,13 +891,24 @@ export class EditMode {
       sel.geomPath = path;
     }
     if (line) {
-      pagePaths(line)[0].nodes.forEach((n, k) => {
-        const [x, y] = local(n);
+      // Sehr kurze Linien: Die beiden Griffe (28 px Trefferfläche) werden entlang der Linie nach
+      // außen versetzt, damit sie sich nie überlappen und beide Enden immer greifbar bleiben.
+      const ends = pagePaths(line)[0].nodes.map(local);
+      const vx = ends[1][0] - ends[0][0];
+      const vy = ends[1][1] - ends[0][1];
+      const len = Math.hypot(vx, vy);
+      const dir = len > 1e-6 ? [vx / len, vy / len] : [1, 0];
+      const shift = Math.max(0, (HANDLE_SPACING - len) / 2);
+      ends.forEach(([x, y], k) => {
+        const sign = k === 0 ? -1 : 1;
+        const [ox, oy] = [dir[0] * shift * sign, dir[1] * shift * sign];
         const handle = document.createElement('div');
-        handle.className = 'h ep';
+        handle.className = 'h ep' + (shift ? ' off' : '');
         handle.dataset.h = 'p' + k;
-        handle.style.left = x + 'px';
-        handle.style.top = y + 'px';
+        handle.dataset.ox = ox;
+        handle.dataset.oy = oy;
+        handle.style.left = x + ox + 'px';
+        handle.style.top = y + oy + 'px';
         el.appendChild(handle);
       });
     } else if (sel.objs.length && !sel.blocks.length)
@@ -1231,8 +1249,8 @@ export class EditMode {
         if (guides) guides.showPoint(snap);
         const [hx, hy] = local(target);
         if (handleEl) {
-          handleEl.style.left = hx + 'px';
-          handleEl.style.top = hy + 'px';
+          handleEl.style.left = hx + +handleEl.dataset.ox + 'px';
+          handleEl.style.top = hy + +handleEl.dataset.oy + 'px';
         }
         if (sel.geomPath) {
           const [ox, oy] = local(other);

@@ -33,8 +33,8 @@ export function pagePaths(obj) {
 /**
  * Trifft der Punkt (PDF-Koordinaten) das Objekt? Ergebnis:
  *   null – kein Treffer
- *   { ink: true, d }  – direkt auf dem Strich, in der gefüllten Fläche oder im Bild
- *   { ink: false, d } – innerhalb der Toleranz neben einem Strich/einer Kante
+ *   { ink, px, … } – `px` = Abstand zur sichtbaren Tinte in Bildschirmpixeln (0 in einer gefüllten
+ *     Fläche, im Bild und auf dem Strich; sonst Abstand zur Strichkante); `ink` = höchstens 1 px
  * Ungefüllte Pfade sind nur auf ihren Strichen treffbar, nicht im leeren Inneren.
  */
 export function objectHit(obj, x, y, ppt) {
@@ -43,15 +43,14 @@ export function objectHit(obj, x, y, ppt) {
   if (!boxContains(obj.vis, x, y, tol + half)) return null;
   if (obj.clipRect && !boxContains(obj.clipRect, x, y, 1 / ppt)) return null;
   if (obj.type !== 'path' || !obj.geom || !obj.geom.subpaths.length)
-    return boxContains(obj.vis, x, y, 1 / ppt) ? { ink: true, d: 0 } : null;
+    return boxContains(obj.vis, x, y, 1 / ppt) ? { ink: true, d: 0, px: 0 } : null;
   const paths = pagePaths(obj);
-  if (obj.fill && insideFill(paths, x, y, obj.evenOdd)) return { ink: true, d: 0, fill: true };
+  if (obj.fill && insideFill(paths, x, y, obj.evenOdd)) return { ink: true, d: 0, px: 0, fill: true };
   const near = nearestSegment(paths, x, y);
   if (!near) return null;
-  if (obj.stroke && near.d <= half + 1 / ppt)
-    return { ink: true, d: near.d, sp: near.sp, seg: near.seg, stroke: true };
-  if (near.d <= half + tol) return { ink: false, d: near.d, sp: near.sp, seg: near.seg };
-  return null;
+  const px = Math.max(0, near.d - half) * ppt;
+  if (px > STROKE_TOLERANCE_PX) return null;
+  return { ink: px <= 1, d: near.d, px, sp: near.sp, seg: near.seg, stroke: obj.stroke && px <= 1 };
 }
 
 /**
@@ -69,24 +68,25 @@ export function objectHits(model, x, y, ppt, filter = null) {
   return out;
 }
 
+/** Zwei Abstände gelten als gleich, wenn sie weniger als 0,75 Bildschirmpixel trennt. */
+const TIE_PX = 0.75;
+
 /**
- * Bestes Objekt unter dem Zeiger: Das oberste Objekt, das direkt getroffen ist, gewinnt – außer
- * darüber liegt ein Strich knapp neben dem Zeiger (innerhalb der Toleranz); unter mehreren
- * knappen Treffern gewinnt der nächstgelegene. So ist eine dünne Linie auf einer Fläche
- * treffbar, ohne genau zielen zu müssen.
+ * Bestes Objekt unter dem Zeiger: Es gewinnt das Objekt mit dem kleinsten Abstand zur sichtbaren
+ * Tinte (in einer Fläche oder auf dem Strich 0, sonst der Abstand zur Strichkante); bei Gleichstand
+ * (Abstände innerhalb von 0,75 px, auch mehrere Treffer mit 0) das oberste. So wählt ein Klick genau
+ * auf eine Tabellenlinie diese und nicht die 2 pt entfernte Nachbarlinie, und eine dünne Linie auf
+ * einer Fläche bleibt treffbar. `hits` ist nach Malreihenfolge sortiert, oberstes zuerst.
  */
 export function pickObject(hits) {
-  let near = null;
-  for (const h of hits) {
-    if (h.ink) return near || h;
-    if (!near || h.d < near.d) near = h;
-  }
-  return near;
+  if (!hits.length) return null;
+  const min = Math.min(...hits.map((h) => h.px));
+  return hits.find((h) => h.px <= min + TIE_PX) || null;
 }
 
 /** Textblock unter dem Zeiger (kleinster zuerst). */
-export function blockAt(model, x, y, ppt) {
-  const tol = TEXT_TOLERANCE_PX / ppt;
+export function blockAt(model, x, y, ppt, tolPx = TEXT_TOLERANCE_PX) {
+  const tol = tolPx / ppt;
   const area = (b) => (b[2] - b[0]) * (b[3] - b[1]);
   return (
     model.blocks
@@ -95,8 +95,24 @@ export function blockAt(model, x, y, ppt) {
   );
 }
 
-/** Nächster Knoten eines Pfadobjekts innerhalb von `radiusPx`: { sp, node, d } oder null. */
+/**
+ * Nächster Knoten eines Pfadobjekts: { sp, node, d } oder null. Der Fangradius beträgt höchstens
+ * `radiusPx`, aber nie mehr als der halbe Abstand dieses Knotens zu seinem nächsten Nachbarn –
+ * in dichten Zeichnungen gewinnt so immer der Knoten, auf den man zielt.
+ */
 export function nodeAt(obj, x, y, ppt, radiusPx) {
-  const n = nearestNode(pagePaths(obj), x, y);
-  return n && n.d * ppt <= radiusPx ? n : null;
+  const paths = pagePaths(obj);
+  const n = nearestNode(paths, x, y);
+  if (!n) return null;
+  const c = paths[n.sp].nodes[n.node];
+  let neighbor = Infinity;
+  paths.forEach((sp, i) =>
+    sp.nodes.forEach((p, k) => {
+      if (i === n.sp && k === n.node) return;
+      const d = Math.hypot(p[0] - c[0], p[1] - c[1]);
+      if (d > 1e-9 && d < neighbor) neighbor = d;
+    }),
+  );
+  const radius = Math.min(radiusPx, (neighbor * ppt) / 2);
+  return n.d * ppt <= radius ? n : null;
 }

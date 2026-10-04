@@ -65,6 +65,7 @@ function repairStreamLengths(doc, fileBytes) {
  * Rechtecke (`vis`) sich mit 1 pt Toleranz berühren, gehören zusammen. Ausgenommen sind Bilder und
  * der Fall, dass ein Objekt ein mindestens 6-mal kleineres vollständig umschließt (Rahmen um
  * Inhalt). Ergebnis: `obj.cluster = { members, bbox }` – ein Klick wählt die ganze Gruppe.
+ * Ausnahme: Strichgitter aus mehr als 8 ungefüllten Pfaden werden nicht gruppiert.
  *
  * Die Gruppierung wird nur einmal je Seite für den ursprünglichen Inhalt berechnet und danach über
  * die Objekt-Identität (`uid`) weitergeführt (siehe PdfSession.objectIdentity): Verschieben oder
@@ -116,7 +117,16 @@ function clusterObjects(objects) {
     if (!clusters.has(root)) clusters.set(root, []);
     clusters.get(root).push(obj);
   });
-  attachClusters(clusters.values());
+  // Reine Strichgitter (Tabellen, Raster: mehr als 8 Teile, alles ungefüllte Pfade) sind keine
+  // sinnvolle Einheit – jede Linie bleibt einzeln wählbar. Kleine Gruppen (Rechteck aus vier Linien,
+  // Kreisnummer mit Linie) und alles mit Flächen, Bildern oder Formularen bleiben Gruppen.
+  const groups = [];
+  for (const members of clusters.values()) {
+    if (members.length > 8 && members.every((m) => m.type === 'path' && !m.fill))
+      groups.push(...members.map((m) => [m]));
+    else groups.push(members);
+  }
+  attachClusters(groups);
 }
 
 /** Setzt `obj.cluster = { members, bbox }` für jede Gruppe (Liste von Objektlisten). */

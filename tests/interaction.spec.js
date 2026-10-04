@@ -1067,3 +1067,132 @@ test('Hand-Werkzeug (Leertaste, mittlere Maustaste) wählt und zieht nichts', as
     await context.close();
   }
 });
+
+/**
+ * Dichte Zeichnung (Szenarien aus dem unabhängigen Review): Tabelle aus Einzellinien (20 waagerechte
+ * im Abstand 3 pt, 40 senkrechte im Abstand 4 pt), Gitter aus einem einzigen Pfad (5 pt),
+ * zehn Formularkästchen (8 × 8 pt, Abstand 2 pt), gedrehte Linien (CTM), eine nur 2 pt lange Linie.
+ * Objekte: 0–19 waagerechte, 20–59 senkrechte, 60 Gitter, 61–70 Kästchen, 71 kurze Linie, 72–73 gedreht.
+ */
+async function densePdf() {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  const page = doc.addPage([595, 842]);
+  let s = '0 0 0 RG\n0.25 w\n';
+  for (let i = 0; i < 20; i++) s += `50 ${700 - i * 3} m 210 ${700 - i * 3} l S\n`;
+  s += '0.5 w\n';
+  for (let j = 0; j < 40; j++) s += `${50 + j * 4} 643 m ${50 + j * 4} 700 l S\n`;
+  s += '0 0 0.6 RG 0.3 w\n';
+  for (let i = 0; i < 15; i++) s += `250 ${700 - i * 5} m 320 ${700 - i * 5} l\n`;
+  for (let j = 0; j < 15; j++) s += `${250 + j * 5} 630 m ${250 + j * 5} 700 l\n`;
+  s += 'S\n0 0 0 RG 0.5 w\n';
+  for (let j = 0; j < 10; j++) s += `${350 + j * 10} 690 8 8 re S\n`;
+  s += '0.5 w 400 500 m 402 500 l S\n';
+  s += 'q 0.866 0.5 -0.5 0.866 380 400 cm 0 0 1 RG 1 w 0 0 m 80 0 l S 0 4 m 80 4 l S Q\n';
+  page.node.addContentStream(doc.context.register(doc.context.stream(s)));
+  return Buffer.from(await doc.save({ useObjectStreams: false }));
+}
+
+test.describe('Dichte Zeichnungen (Review)', () => {
+  test('B1: nächster Strich gewinnt – Tabelle, Kästchen, gedrehte Linien; Gitter bleibt einzeln wählbar', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser, await densePdf());
+    try {
+      const s0 = await state(page);
+      const id = uidsByIndex(s0);
+      const pick = async (x, y) => {
+        await page.waitForTimeout(550); // kein Doppelklick
+        const s = await clickAt(page, x, y);
+        await escape(page);
+        return s.sel;
+      };
+      // waagerechte Tabellenlinie y = 685 (i = 5) zwischen den senkrechten Linien (2 pt daneben)
+      expect(await pick(52, 685)).toEqual([id[5]]);
+      expect(await pick(52.5, 685)).toEqual([id[5]]);
+      // senkrechte Linie x = 54 (j = 1), zwischen den waagerechten (1,5 pt)
+      expect(await pick(54, 686.5)).toEqual([id[21]]);
+      // Kästchenkanten: rechte Kante von Kästchen 1 (x = 358), linke von Kästchen 2 (x = 360)
+      expect(await pick(358, 694)).toEqual([id[61]]);
+      expect(await pick(360, 694)).toEqual([id[62]]);
+      // gedrehte Linien (CTM 30°, Abstand 4 pt): das Objekt unter dem Zeiger ist die jeweils nähere Linie
+      const hitUid = (x, y) =>
+        page.evaluate(
+          ([cx, cy]) => {
+            const e = window.pdfEditor.edit;
+            const h = e.hit(window.pdfEditor.pvs[0], cx, cy);
+            return h && h.obj && h.obj.uid;
+          },
+          [x, y],
+        );
+      const c = 0.866;
+      expect(await hitUid(...(await pt(page, 380 + 40 * c - 4 * 0.5, 400 + 40 * 0.5 + 4 * c)))).toBe(id[73]);
+      expect(await hitUid(...(await pt(page, 380 + 40 * c, 400 + 40 * 0.5)))).toBe(id[72]);
+      // Strichgitter (> 8 ungefüllte Pfade) wird nicht gruppiert
+      expect(s0.objs.slice(0, 60).every((o) => o.group.length === 1)).toBe(true);
+      // Doppelklick öffnet „Pfad bearbeiten“ am getroffenen Kästchen, nicht am Nachbarn
+      await page.mouse.dblclick(...(await pt(page, 358, 694)));
+      await settled(page);
+      expect((await state(page)).pe.uid).toBe(id[61]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('B2: dichte Ankerpunkte – Klick auf einen Knoten wählt genau diesen; kurze Linie: beide Enden greifbar', async ({
+    browser,
+  }) => {
+    const { page, context, errors } = await setup(browser, await densePdf());
+    try {
+      const s0 = await state(page);
+      const id = uidsByIndex(s0);
+      // Gitter (ein Pfad, Knoten alle 5 pt): Doppelklick auf eine Linie, dann genau auf Knoten klicken
+      await page.mouse.dblclick(...(await pt(page, 285, 700 - 3 * 5)));
+      await settled(page);
+      expect((await state(page)).pe.uid).toBe(id[60]);
+      for (const [x, y] of [
+        [250, 695],
+        [255, 700],
+        [320, 665],
+      ]) {
+        await page.mouse.click(...(await pt(page, x, y)));
+        await settled(page);
+        const nodes = await page.evaluate(() => {
+          const pe = window.pdfEditor.edit.pe;
+          return [...pe.nodes].map((key) => {
+            const [sp, k] = key.split(':').map(Number);
+            return pe.obj.geom.subpaths[sp].nodes[k];
+          });
+        });
+        expect(nodes).toEqual([[x, y]]);
+      }
+      await escape(page);
+      await escape(page);
+      // 2 pt lange Linie (3,3 px bei 125 %): die Griffe liegen ≥ 28 px auseinander, jedes Ende ist greifbar
+      await page.waitForTimeout(550);
+      let s = await clickAt(page, 401, 500);
+      expect(s.sel).toEqual([id[71]]);
+      const [h0, h1] = [
+        await handleCenter(page, '.sel .h[data-h=p0]'),
+        await handleCenter(page, '.sel .h[data-h=p1]'),
+      ];
+      expect(Math.hypot(h1[0] - h0[0], h1[1] - h0[1])).toBeGreaterThanOrEqual(28);
+      expect(h0[0]).toBeLessThan(h1[0]);
+      // linken Griff ziehen: nur der linke Endpunkt bewegt sich
+      const k = await scale(page);
+      await page.mouse.move(...h0);
+      await page.mouse.down();
+      await page.keyboard.down('Alt');
+      for (let i = 1; i <= 5; i++) await page.mouse.move(h0[0] - 4 * i, h0[1]);
+      await page.mouse.up();
+      await page.keyboard.up('Alt');
+      await settled(page);
+      s = await state(page);
+      expect(byUid(s, id[71]).nodes[0][0][0]).toBeCloseTo(400 - 20 / k, 1);
+      expect(byUid(s, id[71]).nodes[0][1]).toEqual([402, 500]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+});
