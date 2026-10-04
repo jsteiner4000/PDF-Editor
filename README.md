@@ -54,7 +54,13 @@ src/
   render/pdf-renderer.js  Darstellung mit pdf.js (Worker als Blob-URL), ganze Seite oder Ausschnitt
   render/detail-renderer.js  scharfer Detail-Canvas für den sichtbaren Ausschnitt bei hohem Zoom
   platform/desktop-bridge.js  Anbindung an die Desktop-App (im Browser wirkungslos)
-  storage/idb.js          IndexedDB „pdf-editor“ (eigene Schriften, zuletzt geöffnet)
+  storage/idb.js          IndexedDB „pdf-editor“ v2 (eigene Schriften, zuletzt geöffnet, Unterschriften)
+  signature/
+    signature-extract.js  Freistellen (Hintergrund → transparent, Formularlinien, Zuschnitt) – ohne DOM
+    signature-capture.js  Seitenbereich aufziehen und mit pdf.js in 600 dpi rendern, PNG kodieren
+    signature-draw.js     Zeichenfläche (Maus/Stift/Touch)
+    signature-store.js    gespeicherte Unterschriften (IndexedDB-Store „signatures“)
+    signature.css         Stile des Werkzeugs (als Text importiert, zur Laufzeit eingefügt)
   ui/
     page-view.js          Seitenansicht (Vorschau- und Detail-Canvas) und Koordinatenumrechnung
     zoom-gestures.js      Strg+Mausrad, Touchpad-Pinch, Hand-Werkzeug (Leertaste/mittlere Maustaste)
@@ -63,6 +69,7 @@ src/
     snap-guides.js        Hilfslinien/Einrasten
     organize-mode.js      Modus „Seiten organisieren“
     fonts-panel.js        Seitenleiste „Schriften“
+    signature-panel.js    Werkzeug „Unterschrift“ (Popover, Sheets, Einsetzen)
     dialogs.js, menu.js, dom.js, icons.js, geometry.js   Oberflächen-Bausteine
 desktop/                  Desktop-App (Electron-Hauptprozess)
   main.js                 Fenster, Schema app://, CSP, Sicherheit, IPC, Schließen-Rückfrage

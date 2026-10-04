@@ -90,6 +90,8 @@ export async function build() {
     write: false,
     logLevel: 'warning',
     legalComments: 'none',
+    // Stylesheets einzelner Module (z. B. src/signature/signature.css) als Text importieren
+    loader: { '.css': 'text' },
     plugins: [
       virtualModules({
         'virtual:pdfjs-worker': 'export default ' + JSON.stringify(workerSource) + ';',

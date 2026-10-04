@@ -1035,16 +1035,50 @@ export class PdfSession {
     return /png/.test(mime) ? this.doc.embedPng(bytes) : this.doc.embedJpg(bytes);
   }
   /**
-   * Bettet PNG/JPG ein und hängt `q <cm> /Name Do Q` an den Content-Stream an; `rect` = [x, y, b, h] in pt.
+   * Wie `embedImage`, aber gleiche Bilddaten werden nur einmal eingebettet: Wird dasselbe Bild
+   * (z. B. eine Unterschrift) mehrfach eingefügt, verweisen alle Stellen auf dasselbe XObject.
+   * Der Zwischenspeicher bleibt über Rückgängig hinweg gültig – unerreichbare Objekte werden beim
+   * Speichern nur vorübergehend entfernt (`_save`).
+   */
+  async embedImageOnce(bytes, mime) {
+    let hash = 2166136261;
+    for (let i = 0; i < bytes.length; i++) hash = Math.imul(hash ^ bytes[i], 16777619);
+    const key = mime + ':' + bytes.length + ':' + (hash >>> 0).toString(16);
+    this._imageCache = this._imageCache || new Map();
+    const cached = this._imageCache.get(key);
+    if (cached && cached.bytes.length === bytes.length && cached.bytes.every((b, i) => b === bytes[i]))
+      return cached.image;
+    const image = await this.embedImage(bytes, mime);
+    this._imageCache.set(key, { bytes: Uint8Array.from(bytes), image });
+    return image;
+  }
+  /**
+   * Matrix, die das Einheitsquadrat eines Bildes so auf das PDF-Rechteck `rect` = [x, y, b, h]
+   * abbildet, dass es in der Anzeige aufrecht steht – auch auf gedrehten Seiten (/Rotate 90, 180,
+   * 270): Das Bild wird um die Seitendrehung zurückgedreht. Bei 90/270 ist `rect` im PDF also so
+   * breit, wie das Bild in der Anzeige hoch ist.
+   */
+  uprightMatrix(index, rect) {
+    const [x, y, w, h] = rect;
+    const rotate = ((this.pageInfo(index).rotate % 360) + 360) % 360;
+    if (rotate === 90) return [0, h, -w, 0, x + w, y];
+    if (rotate === 180) return [-w, 0, 0, -h, x + w, y + h];
+    if (rotate === 270) return [0, -h, w, 0, x, y + h];
+    return [w, 0, 0, h, x, y];
+  }
+  /**
+   * Bettet PNG/JPG ein und hängt `q <cm> /Name Do Q` an den Content-Stream an; `rect` = [x, y, b, h]
+   * in pt ist das Rechteck im PDF (auf gedrehten Seiten mit vertauschten Seitenlängen, siehe
+   * `uprightMatrix`). Gleiche Bilddaten werden nur einmal eingebettet.
    */
   async insertImage(index, bytes, mime, rect, label = 'Bild eingefügt', matrix = null) {
     const page = this.page(index);
     const before = this.snap(page);
-    const image = await this.embedImage(bytes, mime);
+    const image = await this.embedImageOnce(bytes, mime);
     const resName = this.addResource(page, 'XObject', image.ref, 'PEI');
     const src = this.contentSrc(page);
     const ops = parseContentStream(src);
-    const cm = matrix || [rect[2], 0, 0, rect[3], rect[0], rect[1]];
+    const cm = matrix || this.uprightMatrix(index, rect);
     this.setContentSrc(
       page,
       this.finalSrc(

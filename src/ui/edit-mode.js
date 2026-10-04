@@ -9,6 +9,7 @@ import { pickFiles, showDialog, toast, withBusy } from './dialogs.js';
 import { idbPut } from '../storage/idb.js';
 import { SnapGuides } from './snap-guides.js';
 import { TextEditor } from './text-editor.js';
+import { SignatureTool } from './signature-panel.js';
 import { boxContains, boxInside, hexToRgb, mmToPt, ptToMm, rgbToHex, unionBoxes } from './geometry.js';
 
 /**
@@ -62,6 +63,7 @@ export class EditMode {
       <button class="btn outline" id="cDone">${icon('check', 's')}Fertig</button>`;
     $('#cAddText').addEventListener('click', () => this.arm(this.armed === 'text' ? null : 'text'));
     $('#cAddImg').addEventListener('click', () => this.pickImage());
+    (this.signature ||= new SignatureTool(this)).mountToolbar($('#cAddImg'));
     $('#cDone').addEventListener('click', () => this.app.setTool(null));
     if (!this.wired) this.wire();
     this.updatePanel();
@@ -69,6 +71,7 @@ export class EditMode {
   }
   leave() {
     this.active = false;
+    if (this.signature) this.signature.cancel();
     this.arm(null);
     this.clearSelection();
     $('#pages').classList.remove('mode-edit');
@@ -1335,6 +1338,7 @@ export class EditMode {
     const infoRaw = pv.infoRaw;
     let width = pendingImage.w * 0.75;
     let height = pendingImage.h * 0.75;
+    if (infoRaw.rotate % 180) [width, height] = [height, width]; // gedrehte Seite: Maße im PDF vertauscht
     const maxWidth = infoRaw.w * 0.5;
     const maxHeight = infoRaw.h * 0.5;
     const fit = Math.min(1, maxWidth / width, maxHeight / height);
@@ -1416,6 +1420,7 @@ export class EditMode {
     );
     addImageBtn.addEventListener('click', () => this.pickImage());
     addSection.append(addTextBtn, addImageBtn);
+    if (this.signature) this.signature.mountPanel(addSection);
     const style = editor ? editor.currentStyle() : null;
     const formatSection = htmlToElement('<div class="sec"><h4>Format</h4></div>');
     body.appendChild(formatSection);

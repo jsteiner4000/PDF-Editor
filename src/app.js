@@ -16,6 +16,7 @@ import { idbDelete, idbList, idbPut } from './storage/idb.js';
 import { EditMode } from './ui/edit-mode.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
+import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
 
@@ -227,10 +228,12 @@ export class App {
     <div class="feat"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></div>
     <div class="feat"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></div>
     <div class="feat"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></div>
+    <button class="feat" id="hSig"><div class="ti c4">${icon('signature')}</div><b>Unterschrift</b><span>Einmal aus einem Dokument übernehmen und in jedes PDF einsetzen.</span></button>
   </div>
   <div class="recent hidden" id="recent"><h4>Zuletzt geöffnet</h4><div class="rl" id="recentList"></div></div>
 </div>`;
     $('#hOpen').addEventListener('click', () => this.openDialog());
+    $('#hSig').addEventListener('click', (ev) => SignatureTool.of(this.edit).openPop(ev.currentTarget));
     const dropZone = $('#dropZone');
     dropZone.addEventListener('dragenter', () => dropZone.classList.add('over'));
     dropZone.addEventListener('dragleave', (ev) => {
@@ -1191,12 +1194,13 @@ export class App {
       ['organize', 'c2', 'pages', 'Seiten organisieren', 'Einfügen, löschen, drehen, ordnen'],
       ['addtext', 'c4', 'textbox', 'Text hinzufügen', 'Neues Textfeld auf der Seite'],
       ['addimage', 'c3', 'image', 'Bild hinzufügen', 'PNG oder JPG einfügen'],
+      ['signature', 'c4', 'signature', 'Unterschrift', 'Hinterlegen und einsetzen'],
       ['insert', 'c6', 'pageadd', 'Seiten einfügen', 'Leere Seite oder aus Datei'],
       ['fonts', 'c5', 'fonts', 'Schriften', 'Im Dokument verwendete Schriften'],
     ];
     for (const [id, color, iconName, title, desc] of tools) {
       const btn = htmlToElement(
-        `<button class="tool"><span class="ti ${color}">${icon(iconName)}</span><span><div class="tt">${escapeHtml(title)}</div><div class="td">${escapeHtml(desc)}</div></span></button>`,
+        `<button class="tool" data-tool="${id}"><span class="ti ${color}">${icon(iconName)}</span><span><div class="tt">${escapeHtml(title)}</div><div class="td">${escapeHtml(desc)}</div></span></button>`,
       );
       btn.addEventListener('click', async () => {
         if (id === 'addtext') {
@@ -1205,6 +1209,9 @@ export class App {
         } else if (id === 'addimage') {
           await this.setTool('edit');
           this.edit.pickImage();
+        } else if (id === 'signature') {
+          await this.setTool('edit');
+          SignatureTool.of(this.edit).openPop(document.getElementById('cAddSig'));
         } else if (id === 'insert') {
           await this.setTool('organize');
           this.org.insertMenu(null);
