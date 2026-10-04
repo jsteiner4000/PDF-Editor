@@ -5,7 +5,8 @@
 ; benutzerbezogen (HKCU, keine Adminrechte): ProgID, OpenWithProgids, Applications-Eintrag und
 ; RegisteredApplications/Capabilities, damit die App auch unter „Standard-Apps“ erscheint.
 ; Windows erlaubt Programmen nicht, sich selbst zum Standard zu machen – das entscheidet der
-; Nutzer („Öffnen mit“ > „Immer“). Der Uninstaller entfernt alle Einträge wieder.
+; Nutzer („Öffnen mit“ > „Immer“). Der Uninstaller entfernt alle Einträge wieder; bei einem
+; Update bleibt die frühere Wahl erhalten.
 
 !define PDFE_PROGID "PDFEditor.Dokument"
 !define PDFE_CAPS "Software\PDF-Editor\Capabilities"
@@ -17,8 +18,18 @@
   Var PdfeAssocCheckbox
   Var PdfeAssocState
 
+  ; Voreinstellung der Auswahl: neue Installation = angeboten; bei einem Update die frühere
+  ; Wahl beibehalten (war die Zuordnung abgewählt, bleibt sie es). Gelesen wird vor dem
+  ; Entfernen der alten Version, deren Uninstaller die Einträge löscht.
   !macro customInit
     StrCpy $PdfeAssocState ${BST_CHECKED}
+    ReadRegStr $0 HKCU "${UNINSTALL_REGISTRY_KEY}" "UninstallString"
+    ${If} $0 != ""
+      ReadRegStr $1 HKCU "Software\Classes\${PDFE_PROGID}\shell\open\command" ""
+      ${If} $1 == ""
+        StrCpy $PdfeAssocState ${BST_UNCHECKED}
+      ${EndIf}
+    ${EndIf}
   !macroend
 
   ; Seite nach der Ordnerwahl (assistierter Installer; MUI2 ist hier bereits geladen)
