@@ -1,10 +1,11 @@
 /**
  * Natives Menü (Deutsch, schlank).
  *
- * Tastenkürzel: Die Web-App wertet ihre Kürzel (Strg+O/S/Z/Y, Zoom, Strg+A im Organisieren-
- * Modus, Strg+B/I/U im Texteditor …) selbst aus – wie im Browser. Damit nichts doppelt
- * ausgelöst wird, zeigt das Menü diese Kürzel nur an (`registerAccelerator: false`). Echt
- * registriert werden nur Kürzel, die die Web-App nicht kennt (Drucken, Vollbild, Beenden …).
+ * Tastenkürzel: Die Web-App wertet ihre Kürzel (Strg+O/S/Z/Y, Zoom inkl. Strg+1/Strg+2,
+ * Strg+A im Organisieren-Modus, Strg+B/I/U im Texteditor …) selbst aus – wie im Browser;
+ * Strg+P übernimmt src/platform/desktop-bridge.js. Damit nichts doppelt ausgelöst wird, zeigt
+ * das Menü diese Kürzel nur an (`registerAccelerator: false`). Echt registriert sind nur
+ * Kürzel, die die Seite nicht kennt (Vollbild, Fenster schließen …).
  */
 import { Menu } from 'electron';
 
@@ -39,7 +40,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         docItem('save', 'Speichern', shown('CmdOrCtrl+S')),
         docItem('saveAs', 'Speichern unter …', shown('CmdOrCtrl+Shift+S')),
         { type: 'separator' },
-        docItem('print', 'Anzeigen und drucken …', { accelerator: 'CmdOrCtrl+P' }),
+        docItem('print', 'Anzeigen und drucken …', shown('CmdOrCtrl+P')),
         docItem('properties', 'Dokumenteigenschaften'),
         { type: 'separator' },
         docItem('closeDocument', 'Dokument schließen'),
@@ -70,6 +71,8 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
       submenu: [
         docItem('zoomIn', 'Vergrößern', shown('CmdOrCtrl+Plus')),
         docItem('zoomOut', 'Verkleinern', shown('CmdOrCtrl+-')),
+        docItem('zoomActual', 'Originalgröße (100 %)', shown('CmdOrCtrl+1')),
+        docItem('zoomSelection', 'Auf Auswahl zoomen', shown('CmdOrCtrl+2')),
         docItem('zoomWidth', 'Seitenbreite', shown('CmdOrCtrl+0')),
         docItem('zoomPage', 'Ganze Seite'),
         { type: 'separator' },
@@ -112,6 +115,8 @@ export const DOCUMENT_ITEMS = [
   'redo',
   'zoomIn',
   'zoomOut',
+  'zoomActual',
+  'zoomSelection',
   'zoomWidth',
   'zoomPage',
 ];

@@ -16,7 +16,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FileAccess, pdfPathsFromArgv } from './file-access.js';
+import { FileAccess, FileAccessError, pdfPathsFromArgv } from './file-access.js';
 import { buildMenu, DOCUMENT_ITEMS } from './menu.js';
 import { loadWindowState, trackWindowState, MIN_SIZE } from './window-state.js';
 
@@ -33,6 +33,13 @@ const LICENSE_FILE = app.isPackaged
 const FONT_DIR = app.isPackaged
   ? path.join(process.resourcesPath, 'Schriften')
   : path.join(ROOT, 'assets', 'fonts', 'full');
+
+// Im ausgelieferten Programm keine Fernsteuerung: Debug-Schalter führen zum Beenden (die Fuses
+// sperren --inspect bereits; --remote-debugging-* würde sonst den DevTools-Server öffnen).
+if (app.isPackaged && process.argv.some((a) => /^--(remote-debugging-|inspect|debug)/i.test(a))) {
+  console.error('PDF-Editor: Debug-Schalter sind im ausgelieferten Programm nicht erlaubt.');
+  app.exit(1);
+}
 
 // Tests/Entwicklung: eigener Datenordner (Einstellungen, IndexedDB, Freigaben)
 if (process.env.PDF_EDITOR_USER_DATA) app.setPath('userData', path.resolve(process.env.PDF_EDITOR_USER_DATA));
@@ -60,14 +67,23 @@ function start() {
   let docState = { hasDocument: false, name: '', dirty: false };
   let allowClose = false;
   let closing = false;
+  let rendererGone = false;
+  // Alt-Taste (Windows/Linux): Menüleiste nicht fokussieren, wenn Alt mit der Maus benutzt wurde
+  let altDown = false;
+  let altUsedWithMouse = false;
   let menu = null;
   const replies = new Map();
 
-  /** Befehl an die Web-App; mit `wait` wird auf die Antwort gewartet (mit Zeitlimit). */
-  function command(name, { wait = false, timeout = 0 } = {}) {
-    if (!win || win.isDestroyed()) return Promise.resolve(null);
+  /**
+   * Befehl an die Web-App; mit `wait` wird auf die Antwort gewartet (optional mit Zeitlimit).
+   * Menübefehle (`fromMenu`) ignoriert die Web-App, solange einer ihrer Dialoge offen ist.
+   */
+  function command(name, { wait = false, timeout = 0, fromMenu = false } = {}) {
+    if (!win || win.isDestroyed() || rendererGone) {
+      return wait ? Promise.reject(new Error('renderer-gone')) : Promise.resolve(null);
+    }
     if (!wait) {
-      win.webContents.send('app:command', { command: name });
+      win.webContents.send('app:command', { command: name, fromMenu });
       return Promise.resolve(null);
     }
     const replyId = randomUUID();
@@ -80,6 +96,7 @@ function start() {
         if (msg.error) reject(new Error(msg.error));
         else resolve(msg.result);
       });
+      replies.get(replyId).timer = timer;
       win.webContents.send('app:command', { command: name, replyId });
     });
   }
@@ -150,6 +167,8 @@ function start() {
 
   /** Rückfrage bei ungespeicherten Änderungen; true = Fenster darf schließen. */
   async function confirmClose() {
+    // Renderer abgestürzt: Der Dokumentzustand ist verloren, Speichern ist nicht mehr möglich.
+    if (rendererGone) return true;
     let dirty = docState.dirty;
     try {
       dirty = !!(await command('queryDirty', { wait: true, timeout: 5000 }));
@@ -218,22 +237,116 @@ function start() {
     // Die beforeunload-Sperre der Web-App nie wirken lassen – die Rückfrage stellt
     // confirmClose() nativ und auf Deutsch (im 'close'-Ereignis oben).
     win.webContents.on('will-prevent-unload', (e) => e.preventDefault());
-    win.on('closed', () => (win = null));
+    win.on('closed', () => {
+      win = null;
+      // Vorschaufenster gehören zum Hauptfenster
+      for (const other of BrowserWindow.getAllWindows()) other.destroy();
+    });
+
+    win.webContents.on('render-process-gone', (_e, details) => {
+      if (allowClose || details.reason === 'clean-exit') return;
+      onRendererGone();
+    });
+    win.on('unresponsive', async () => {
+      if (!win || rendererGone) return;
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: APP_NAME,
+        message: 'Der PDF-Editor reagiert nicht.',
+        detail:
+          'Sie können warten, bis er wieder reagiert, oder das Fenster schließen. Ungespeicherte Änderungen gehen beim Schließen verloren.',
+        buttons: ['Warten', 'Fenster schließen'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (response === 1 && win && !win.isDestroyed()) {
+        allowClose = true;
+        win.destroy();
+      }
+    });
+
+    if (process.platform !== 'darwin') {
+      // Unter Windows fokussiert das Loslassen von Alt die Menüleiste. Im Editor ist Alt aber ein
+      // Maus-Modifikator (Alt+Klick = Element dahinter, Alt-Ziehen = ohne Einrasten). Wurde die
+      // Maus bei gedrückter Alt-Taste benutzt, wird das Loslassen deshalb nicht an das Menü
+      // weitergegeben. Alt allein (Tastaturbedienung des Menüs) funktioniert weiter; die Web-App
+      // wertet das keyup von Alt nicht aus.
+      win.webContents.on('before-input-event', (event, input) => {
+        if (input.key !== 'Alt') return;
+        if (input.type === 'keyDown') {
+          if (!input.isAutoRepeat) altUsedWithMouse = false;
+          altDown = true;
+        } else if (input.type === 'keyUp') {
+          altDown = false;
+          if (altUsedWithMouse) event.preventDefault();
+          altUsedWithMouse = false;
+        }
+      });
+      win.webContents.on('input-event', (_event, input) => {
+        if (altDown && /^(mouseDown|mouseWheel|gesture)/.test(input.type)) altUsedWithMouse = true;
+      });
+    }
 
     win.webContents.setVisualZoomLevelLimits(1, 1);
     win.loadURL(START_URL);
   }
 
-  /** IPC nur vom eigenen Hauptfenster annehmen. */
+  /** Renderer abgestürzt: offene Anfragen beenden, Hinweis mit „Neu laden“. */
+  async function onRendererGone() {
+    rendererGone = true;
+    rendererReady = false;
+    for (const [replyId, done] of replies) {
+      replies.delete(replyId);
+      clearTimeout(done.timer);
+      done({ error: 'renderer-gone' });
+    }
+    const name = docState.hasDocument ? docState.name : '';
+    docState = { hasDocument: false, name: '', dirty: false };
+    updateTitle();
+    if (!win || win.isDestroyed()) return;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'error',
+      title: APP_NAME,
+      message: 'Der PDF-Editor ist unerwartet abgestürzt.',
+      detail:
+        (name ? `Ungespeicherte Änderungen an „${name}“ sind leider verloren. ` : '') +
+        'Die zuletzt gespeicherte Fassung der Datei ist unverändert.',
+      buttons: ['Neu laden', 'Fenster schließen'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (!win || win.isDestroyed()) return;
+    if (response === 1) {
+      allowClose = true;
+      win.destroy();
+      return;
+    }
+    rendererGone = false;
+    win.loadURL(START_URL);
+  }
+
+  /** IPC nur vom Hauptframe des eigenen Hauptfensters annehmen (keine iframes, keine Vorschau). */
   const fromMainFrame = (event) =>
-    win &&
+    !!win &&
+    !win.isDestroyed() &&
     event.sender === win.webContents &&
-    event.senderFrame &&
+    event.senderFrame === win.webContents.mainFrame &&
     event.senderFrame.url.startsWith(ORIGIN + '/');
+  /**
+   * Antwort immer als { value } oder { error }: Fehlermeldungen sind deutsche Texte ohne Pfad
+   * (FileAccessError); alles andere wird nicht an den Renderer weitergegeben.
+   */
   const handle = (channel, fn) =>
-    ipcMain.handle(channel, (event, ...args) => {
-      if (!fromMainFrame(event)) throw new Error('Nicht erlaubt.');
-      return fn(...args);
+    ipcMain.handle(channel, async (event, ...args) => {
+      if (!fromMainFrame(event)) return { error: 'Nicht erlaubt.' };
+      try {
+        return { value: await fn(...args) };
+      } catch (err) {
+        if (!(err instanceof FileAccessError)) console.error(channel, err);
+        return { error: err instanceof FileAccessError ? err.message : 'Interner Fehler.' };
+      }
     });
 
   function registerIpc() {
@@ -285,9 +398,11 @@ function start() {
     ipcMain.on('app:ready', (event) => {
       if (!fromMainFrame(event)) return;
       rendererReady = true;
-      const first = pendingPaths.shift();
+      rendererGone = false;
+      // mehrere Dateien vor dem Start (z. B. schnell nacheinander per Doppelklick): die letzte
+      const last = pendingPaths.pop();
       pendingPaths.length = 0;
-      if (first) openPath(first);
+      if (last) openPath(last);
     });
     ipcMain.on('app:command-reply', (event, msg) => {
       if (!fromMainFrame(event) || !msg) return;
@@ -341,22 +456,40 @@ function start() {
   }
 
   const isPreviewUrl = (url) => typeof url === 'string' && url.startsWith(`blob:${ORIGIN}/`);
+  const previewTitle = () => (docState.name ? `${docState.name} – Vorschau – ${APP_NAME}` : APP_NAME);
+
+  /**
+   * Vorschaufenster: ohne Menü, fester Titel; es darf nur ein PDF anzeigen. Ein blob: mit
+   * anderem Inhalt (z. B. HTML) wird sofort geschlossen.
+   */
+  function setUpPreview(child) {
+    const title = previewTitle();
+    child.removeMenu();
+    child.setTitle(title);
+    child.on('page-title-updated', (e) => e.preventDefault());
+    const wc = child.webContents;
+    wc.once('did-finish-load', async () => {
+      const type = await wc.executeJavaScript('document.contentType', true).catch(() => '');
+      if (type !== 'application/pdf' && !child.isDestroyed()) child.destroy();
+    });
+  }
 
   app.on('web-contents-created', (_event, contents) => {
     contents.on('will-navigate', (e, url) => {
       // Einzige Ausnahme: Das Vorschaufenster (siehe unten) lädt das PDF als blob:-URL
       if (!(isPreviewUrl(url) && (!win || contents !== win.webContents))) e.preventDefault();
     });
+    contents.on('did-create-window', (child) => setUpPreview(child));
     contents.on('will-redirect', (e) => e.preventDefault());
     contents.on('will-attach-webview', (e) => e.preventDefault());
     // „Anzeigen und drucken“: die Web-App öffnet das PDF als blob:-URL – im eingebauten
     // PDF-Betrachter von Chromium (mit Drucken). Alles andere wird abgelehnt.
     contents.setWindowOpenHandler(({ url }) => {
-      if (isPreviewUrl(url))
+      if (isPreviewUrl(url) && win && contents === win.webContents)
         return {
           action: 'allow',
           overrideBrowserWindowOptions: {
-            title: APP_NAME,
+            title: previewTitle(),
             icon: ICON,
             autoHideMenuBar: true,
             width: 1000,
@@ -376,8 +509,8 @@ function start() {
   });
 
   app.on('second-instance', (_event, argv, workingDirectory) => {
-    const [first] = pdfPathsFromArgv(argv, workingDirectory);
-    if (first) openPath(first);
+    const last = pdfPathsFromArgv(argv, workingDirectory).pop();
+    if (last) openPath(last);
     else if (win) {
       if (win.isMinimized()) win.restore();
       win.focus();
@@ -396,7 +529,7 @@ function start() {
     hardenSession();
     registerIpc();
     menu = buildMenu({
-      command: (name) => command(name),
+      command: (name) => command(name, { fromMenu: true }),
       about: showAbout,
       licenses: showLicenses,
       fonts: () => shell.openPath(FONT_DIR),
