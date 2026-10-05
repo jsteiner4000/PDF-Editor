@@ -112,7 +112,7 @@ export class EditMode {
     ctx.innerHTML = `<span class="title">PDF bearbeiten</span>
       <button class="btn" id="cAddText">${icon('textbox', 's')}Text hinzufügen</button>
       <button class="btn" id="cAddImg">${icon('image', 's')}Bild hinzufügen</button>
-      <span class="chip" id="cHint">Klick in Text: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter</span>
+      <span class="chip" id="cHint">Klick: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter</span>
       <div class="grow"></div>
       <button class="btn outline" id="cDone">${icon('check', 's')}Fertig</button>`;
     $('#cAddText').addEventListener('click', () => this.arm(this.armed === 'text' ? null : 'text'));
@@ -1843,14 +1843,14 @@ export class EditMode {
   updateHint() {
     const hint = $('#cHint');
     if (!hint) return;
-    hint.textContent =
+    hint.textContent = hint.title =
       this.armed === 'text'
         ? 'Klicken Sie auf die Stelle, an der der Text beginnen soll.'
         : this.armed === 'image'
           ? 'Klicken Sie auf die Stelle, an der das Bild eingefügt werden soll.'
           : this.pe
-            ? 'Pfad bearbeiten · Punkt oder Kante ziehen · Alt = lösen · Entf = Kante löschen · Esc = fertig'
-            : 'Klick in Text: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter';
+            ? 'Pfad bearbeiten · Punkt oder Kante ziehen · Alt = lösen · Entf = löschen · Esc = fertig'
+            : 'Klick: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter';
   }
   sameFamilyVariants(fam) {
     const family = parseFontName(fam.key).family;
@@ -2122,6 +2122,7 @@ export class EditMode {
     }
     fontSelect.append(docGroup, stdGroup);
     if (style && style.fam) fontSelect.value = style.fam.key;
+    else fontSelect.selectedIndex = -1; // keine Textauswahl (z. B. Grafik): Feld leer statt erster Schrift
     fontSelect.disabled = !editor;
     fontSelect.addEventListener('change', async () => {
       const fam = fonts.get(fontSelect.value);
