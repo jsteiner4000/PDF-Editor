@@ -265,7 +265,7 @@ GUT ZU WISSEN
 -------------
 - Kennwortgeschützte (verschlüsselte) PDFs können nicht bearbeitet werden.
 - Seiten mit unzulässig großem oder aufwendigem Inhalt (entpackt über 8 MB,
-  mehr als 2,5 Millionen Zeichenbefehle oder mehr als 100 000 Zeichen – meist
+  mehr als 1,5 Millionen Zeichenbefehle oder mehr als 100 000 Zeichen – meist
   manipulierte Dateien) werden nur zum Ansehen angezeigt; der Editor meldet das,
   statt zu hängen, und ändert die Seite nicht. Normale Seiten sind meist unter
   1 MB groß, sehr aufwendige Zeichnungen oder Karten oft einige MB.

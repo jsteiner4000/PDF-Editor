@@ -24,7 +24,7 @@ export const MAX_CONTENT_BYTES = 8 * 1024 * 1024;
  * Mehr Operatoren hat keine sinnvolle Seite (aufwendige Pläne: wenige Millionen); darüber wird
  * die Auswertung abgebrochen, bevor sie Minuten dauert.
  */
-export const MAX_CONTENT_OPERATORS = 2_500_000;
+export const MAX_CONTENT_OPERATORS = 1_500_000;
 
 /** Mehr Zeichen hat keine echte Seite (sehr dichte Tabellen: einige zehntausend). */
 export const MAX_CONTENT_GLYPHS = 100_000;
