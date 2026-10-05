@@ -10,6 +10,20 @@ const isUpright = (glyph) =>
   glyph.trm[0] > 0 &&
   glyph.trm[3] > 0;
 
+/**
+ * Wie `array.find`, sucht aber nur im Umkreis von `radius` Einträgen um `index`. Die Zeilen liegen
+ * nach Höhe geordnet vor, Fortsetzungen stehen also nahe beieinander. Auf echten Seiten (weit unter
+ * 3000 Zeilen) ändert sich nichts; bei absichtlich vermüllten Seiten (tausende Textstücke an
+ * derselben Stelle) bleibt der Aufwand so begrenzt statt quadratisch.
+ */
+const MAX_SEARCH_RADIUS = 3000;
+function findNear(array, index, predicate) {
+  const from = Math.max(0, index - MAX_SEARCH_RADIUS);
+  const to = Math.min(array.length, index + MAX_SEARCH_RADIUS);
+  for (let i = from; i < to; i++) if (predicate(array[i])) return array[i];
+  return undefined;
+}
+
 const onSameBaseline = (y1, size1, y2, size2) =>
   Math.max(size1, size2) / Math.max(0.01, Math.min(size1, size2)) > 1.5
     ? Math.abs(y1 - y2) < 0.1 * Math.min(size1, size2)
@@ -41,7 +55,9 @@ export function buildTextLines(glyphs) {
   runs.sort((n, a) => a.y - n.y || n.x - a.x);
   const lines = [];
   for (const run of runs) {
-    const line = lines.find(
+    const line = findNear(
+      lines,
+      lines.length,
       (A) =>
         A.up &&
         run.up &&
@@ -60,7 +76,9 @@ export function buildTextLines(glyphs) {
   for (let k = lines.length - 1; k >= 0; k--) {
     const line = lines[k];
     if (line.glyphs.length > 3) continue;
-    const target = lines.find(
+    const target = findNear(
+      lines,
+      k,
       (s) =>
         s !== line &&
         s.up &&
@@ -130,12 +148,19 @@ export function buildTextLines(glyphs) {
 
 const overlapLength = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
 
+/** Höchstzahl der zuletzt angelegten Blöcke, die für eine neue Zeile geprüft werden. */
+const MAX_MERGE_CANDIDATES = 3000;
+
 export function buildTextBlocks(lines) {
   const blocks = [];
   for (const line of lines) {
     if (!line.text.trim()) continue;
     let best = null;
-    for (const block of blocks) {
+    // Nur die zuletzt angelegten Blöcke kommen als Fortsetzung in Frage: Echte Seiten haben weit
+    // weniger Blöcke (das Ergebnis bleibt dort unverändert), bei absichtlich vermüllten Seiten
+    // (tausende Textstücke an derselben Stelle) bleibt der Aufwand so begrenzt statt quadratisch.
+    for (let b = Math.max(0, blocks.length - MAX_MERGE_CANDIDATES); b < blocks.length; b++) {
+      const block = blocks[b];
       const last = block.lines[block.lines.length - 1];
       const gap = last.y - line.y;
       if (gap <= 0.4 * line.size) continue;

@@ -6,7 +6,10 @@ import { MAX_DECODED_BYTES, assertDecodedSize } from './stream-limit.js';
 
 export {
   MAX_CONTENT_BYTES,
+  MAX_CONTENT_GLYPHS,
+  MAX_CONTENT_OPERATORS,
   MAX_DECODED_BYTES,
+  PageTooComplexError,
   StreamTooLargeError,
   assertDecodedSize,
   unreadablePageMessage,

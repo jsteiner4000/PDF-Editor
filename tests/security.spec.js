@@ -427,6 +427,70 @@ test('Zu großer Seiteninhalt: kein Hänger, Hinweis, Seite bleibt unverändert 
   await context.close();
 });
 
+/** Seite mit rohem Inhalt `content` (Schrift F1 vorhanden). */
+async function textPdf(content) {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const page = doc.addPage([595, 842]);
+  page.node.set(N('Resources'), doc.context.obj({ Font: { F1: font.ref } }));
+  page.node.set(N('Contents'), doc.context.register(doc.context.flateStream(Buffer.from(content))));
+  return doc.save({ useObjectStreams: false });
+}
+
+async function modelAfterOpen(browser, bytes) {
+  const { page, context } = await launch(browser, 'neubau');
+  // ohne auf die Darstellung zu warten: pdf.js braucht für solche Seiten sehr lange (nicht Thema hier)
+  await page.evaluate(
+    (b64) =>
+      window.pdfEditor.openBytes(
+        Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)),
+        'komplex.pdf',
+        null,
+      ),
+    Buffer.from(bytes).toString('base64'),
+  );
+  const result = await page.evaluate(() => {
+    const t = performance.now();
+    try {
+      const m = window.pdfEditor.session.model(0);
+      return { ok: true, unreadable: m.unreadable, blocks: m.blocks.length, ms: performance.now() - t };
+    } catch (err) {
+      return { ok: false, error: err.name };
+    }
+  });
+  await context.close();
+  return result;
+}
+
+test('Zu viele Befehle, Zeichen oder absurde Einzelwerte: Seite nur zum Ansehen, kein Absturz', async ({
+  browser,
+}) => {
+  // 3 Millionen Befehle (nur 6 MB roh, wenige KB gepackt)
+  expect(await modelAfterOpen(browser, await textPdf('q '.repeat(3_000_000)))).toMatchObject({
+    ok: true,
+    unreadable: true,
+  });
+  // 120 000 winzige Textstücke an derselben Stelle: über der Zeichen-Obergrenze
+  const overlapping = (n) => Array.from({ length: n }, () => 'BT /F1 8 Tf (a) Tj ET').join('\n');
+  expect(await modelAfterOpen(browser, await textPdf(overlapping(120_000)))).toMatchObject({
+    ok: true,
+    unreadable: true,
+  });
+  // riesiges TJ-Array und riesiger String (Stapel-/Speicherüberlauf in der Auswertung)
+  const tj = 'BT /F1 10 Tf 50 700 Td [' + '(a) 5 '.repeat(600_000) + '] TJ ET';
+  expect(await modelAfterOpen(browser, await textPdf(tj))).toMatchObject({ ok: true, unreadable: true });
+});
+
+test('Viele übereinanderliegende Textstücke: Auswertung bleibt in Sekunden (nicht quadratisch)', async ({
+  browser,
+}) => {
+  const content = Array.from({ length: 30_000 }, () => 'BT /F1 8 Tf (a) Tj ET').join('\n');
+  const result = await modelAfterOpen(browser, await textPdf(content));
+  expect(result.ok).toBe(true);
+  expect(result.unreadable).toBe(false); // unter den Obergrenzen: weiter bearbeitbar
+  expect(result.ms).toBeLessThan(15_000); // vorher: über 20 Sekunden
+});
+
 test('Bombe mit ungültiger Fenstergröße im zlib-Kopf wird ebenfalls begrenzt', async ({ browser }) => {
   const { context } = await expectUnreadable(browser, await badWindowBomb());
   await context.close();

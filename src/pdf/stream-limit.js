@@ -20,6 +20,23 @@ export const MAX_DECODED_BYTES = 64 * 1024 * 1024;
  */
 export const MAX_CONTENT_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Mehr Operatoren hat keine sinnvolle Seite (aufwendige Pläne: wenige Millionen); darüber wird
+ * die Auswertung abgebrochen, bevor sie Minuten dauert.
+ */
+export const MAX_CONTENT_OPERATORS = 2_500_000;
+
+/** Mehr Zeichen hat keine echte Seite (sehr dichte Tabellen: einige zehntausend). */
+export const MAX_CONTENT_GLYPHS = 100_000;
+
+/** Die Auswertung einer Seite ist zu aufwendig (zu viele Operatoren). */
+export class PageTooComplexError extends Error {
+  constructor() {
+    super('Der Seiteninhalt ist zu komplex.');
+    this.name = 'PageTooComplexError';
+  }
+}
+
 /** Ein Stream ist entpackt größer als erlaubt (oder lässt sich nicht sicher begrenzen). */
 export class StreamTooLargeError extends Error {
   constructor(limit = MAX_CONTENT_BYTES) {
@@ -30,7 +47,7 @@ export class StreamTooLargeError extends Error {
 
 /** Hinweis für Nutzer: diese Seite ist nur zum Ansehen da. */
 export const unreadablePageMessage = (index) =>
-  `Seite ${index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als ${MAX_CONTENT_BYTES / 1048576} MB entpackt).`;
+  `Seite ${index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß oder zu komplex.`;
 
 const FLATE = /^(FlateDecode|Fl)$/;
 const LZW = /^(LZWDecode|LZW)$/;

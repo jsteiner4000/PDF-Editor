@@ -18,6 +18,9 @@ import {
 import { withoutActiveContent } from './active-content.js';
 import {
   MAX_CONTENT_BYTES,
+  MAX_CONTENT_GLYPHS,
+  MAX_CONTENT_OPERATORS,
+  PageTooComplexError,
   StreamTooLargeError,
   assertDecodedSize,
   nameText,
@@ -392,6 +395,16 @@ export class PdfSession {
    * Seitenmodell: Content-Stream parsen und interpretieren, Text in Zeilen/Blöcke gliedern,
    * Grafikobjekte bewerten (Hintergrund > 80 % der Seite, Clip-Pfade nicht auswählbar) und gruppieren.
    */
+  /** Content-Stream auswerten: Befehle, Seiteninhalt, Textzeilen und -blöcke. */
+  analyzeContent(page, src) {
+    const ops = parseContentStream(src);
+    if (ops.length > MAX_CONTENT_OPERATORS) throw new PageTooComplexError();
+    const content = interpretContent(this.ctx, ops, page.node.Resources(), this.fontCache);
+    if (content.glyphs.length > MAX_CONTENT_GLYPHS) throw new PageTooComplexError();
+    for (const glyph of content.glyphs) glyph.fam = this.fonts.family(glyph.font);
+    const lines = buildTextLines(content.glyphs);
+    return { ops, content, lines, blocks: buildTextBlocks(lines) };
+  }
   model(index) {
     const page = this.page(index);
     const key = page.ref.toString();
@@ -405,15 +418,18 @@ export class PdfSession {
       src = '';
       unreadable = true; // Seite wird leer und ohne Bearbeitungsmöglichkeit angezeigt
     }
-    const ops = parseContentStream(src);
-    const resources = page.node.Resources();
-    const content = interpretContent(this.ctx, ops, resources, this.fontCache);
-    for (const glyph of content.glyphs) {
-      glyph.fam = this.fonts.family(glyph.font);
-      glyph.fam.uses++;
+    let analysis;
+    try {
+      analysis = this.analyzeContent(page, src);
+    } catch (err) {
+      // zu viele Befehle oder Speicher-/Stapelüberlauf bei absurd großen Einzelwerten: nur ansehen
+      if (!(err instanceof PageTooComplexError || err instanceof RangeError)) throw err;
+      src = '';
+      unreadable = true;
+      analysis = this.analyzeContent(page, src);
     }
-    const lines = buildTextLines(content.glyphs);
-    const blocks = buildTextBlocks(lines);
+    const { ops, content, lines, blocks } = analysis;
+    for (const glyph of content.glyphs) glyph.fam.uses++;
     blocks.forEach((d, I) => {
       d.id = key + '#' + I;
       d.fam = d.glyphs[0].fam;
