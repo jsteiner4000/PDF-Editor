@@ -396,6 +396,12 @@ export class App {
       }
       this.closeDoc();
       this.session = session;
+      session.onUnreadable = (index) =>
+        toast(
+          `Seite ${index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als 16 MB entpackt).`,
+          'warn',
+          7000,
+        );
       this.file = { name, handle };
       this.origSize = bytes.length;
       this.running = null;
@@ -537,11 +543,15 @@ export class App {
     await this.edit.finishEdit();
     await this.edit.idle();
     if (this._syncP) await this._syncP;
-    const bytes = await this.session.save({ clean: true, strip: this.stripActive });
-    const removed = this.session.lastRemoved;
-    if (removed && hasRemoved(removed))
-      toast('Aktive Inhalte entfernt: ' + describeRemoved(removed) + '.', '', 6000);
+    const { bytes, removed } = await this.session.saveReport({ clean: true, strip: this.stripActive });
+    // Hinweis erst nach erfolgreichem Schreiben (markSaved) bzw. Anzeigen (print)
+    this.strippedNote = removed && hasRemoved(removed) ? describeRemoved(removed) : null;
     return bytes;
+  }
+  /** Meldet nach dem Speichern, welche aktiven Inhalte entfernt wurden (nichts, wenn es keine gab). */
+  announceStripped() {
+    if (this.strippedNote) toast('Aktive Inhalte entfernt: ' + this.strippedNote + '.', '', 6000);
+    this.strippedNote = null;
   }
   async save() {
     if (!this.session) return false;
@@ -622,10 +632,12 @@ export class App {
   markSaved() {
     this.session.savedVersion = this.session.version;
     this.updateHist();
+    this.announceStripped();
   }
   async print() {
     if (!this.session) return;
     const bytes = await withBusy(() => this.bytesForSave());
+    this.announceStripped();
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (!window.open(url, '_blank')) downloadBytes(bytes, this.file.name);
   }

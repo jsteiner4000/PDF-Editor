@@ -1684,7 +1684,22 @@ export class EditMode {
     this._editChain = (this._editChain || Promise.resolve()).then(run, run);
     return this._editChain;
   }
+  /**
+   * Seiten mit unzulässig großem Inhalt (siehe StreamTooLargeError) sind nur zum Ansehen da:
+   * meldet das verständlich und liefert false, bevor irgendetwas geändert wird.
+   */
+  pageEditable(pv) {
+    if (!this.session.model(pv.index).unreadable) return true;
+    toast(
+      `Seite ${pv.index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als 16 MB entpackt).`,
+      'warn',
+      7000,
+    );
+    this.arm(null);
+    return false;
+  }
   async _startEdit(pv, block, clickPoint, opts = {}) {
+    if (!this.pageEditable(pv)) return;
     this.clearSelection();
     if (pv.rendered) pv.remember(pv.rendered.sig, pv.rendered.scale);
     const editor = new TextEditor(this.app, pv, block, opts);
@@ -1997,6 +2012,10 @@ export class EditMode {
   async placeImage(pv, point) {
     const pendingImage = this.pendingImage;
     if (!pendingImage) return;
+    if (!this.pageEditable(pv)) {
+      this.pendingImage = null;
+      return;
+    }
     this.pendingImage = null;
     this.arm(null);
     const infoRaw = pv.infoRaw;

@@ -16,7 +16,7 @@ import {
   StringToken,
 } from './content-stream.js';
 import { withoutActiveContent } from './active-content.js';
-import { StreamTooLargeError, nameText, pdfName, readStreamBytes } from './pdf-objects.js';
+import { MAX_CONTENT_BYTES, StreamTooLargeError, nameText, pdfName, readStreamBytes } from './pdf-objects.js';
 import { PdfFontCache } from './pdf-font.js';
 import { IDENTITY_MATRIX, invertMatrix, multiplyMatrix } from './matrix.js';
 import { interpretContent } from './content-interpreter.js';
@@ -245,6 +245,9 @@ export class PdfSession {
     this.version = 0;
     this.savedVersion = 0;
     this.pending = null;
+    /** Wird mit (Seitenindex, Fehler) aufgerufen, wenn eine Seite wegen zu großen Inhalts unlesbar ist. */
+    this.onUnreadable = null;
+    this.unreadableNotified = new Set();
     this.nameSeq = 0;
     this.idents = new WeakMap();
     this.uidSeq = 0;
@@ -285,10 +288,15 @@ export class PdfSession {
     const contents = page.node.get(pdfName('Contents'));
     if (!contents) return '';
     const resolved = this.ctx.lookup(contents);
+    let total = 0;
     return (resolved instanceof PDFArray ? resolved.asArray() : [contents])
       .map((a) => {
         try {
-          return bytesToLatin1(readStreamBytes(this.ctx, a) || new Uint8Array(0));
+          const bytes = readStreamBytes(this.ctx, a, MAX_CONTENT_BYTES) || new Uint8Array(0);
+          total += bytes.length;
+          // auch alle Teile zusammen dürfen die Grenze nicht überschreiten
+          if (total > MAX_CONTENT_BYTES) throw new StreamTooLargeError();
+          return bytesToLatin1(bytes);
         } catch (err) {
           // Zu großer Inhalt darf nie wie „leere Seite“ aussehen – sonst würde eine Bearbeitung
           // den echten Inhalt überschreiben.
@@ -298,12 +306,19 @@ export class PdfSession {
       })
       .join('\n');
   }
+  /** Wirft `StreamTooLargeError`, wenn der Inhalt der Seite nicht gelesen werden darf. */
+  assertReadable(index) {
+    if (this.model(index).unreadable) throw new StreamTooLargeError();
+  }
   /**
    * Schreibt einen neuen Content-Stream. `derive(base)` beschreibt, wie sich die Objekt-Identität
    * ändert (`{ uids, types, clusters }` → neue Fassung); ohne Angabe bleibt die Reihenfolge der
    * Malbefehle erhalten und neu hinzugekommene Objekte am Ende bekommen neue Kennungen.
    */
   setContentSrc(page, src, derive = null) {
+    // letzte Sicherung: der Inhalt einer unlesbaren Seite wird nie überschrieben
+    const known = this.models.get(page.ref.toString());
+    if (known && known.unreadable) throw new StreamTooLargeError();
     const parent = this.idents.get(this.contentsKey(page)) || null;
     const ref = this.ctx.register(this.ctx.flateStream(latin1ToBytes(src)));
     page.node.set(pdfName('Contents'), ref);
@@ -367,6 +382,10 @@ export class PdfSession {
       if (!(err instanceof StreamTooLargeError)) throw err;
       src = '';
       unreadable = true; // Seite wird leer und ohne Bearbeitungsmöglichkeit angezeigt
+      if (!this.unreadableNotified.has(key)) {
+        this.unreadableNotified.add(key);
+        if (this.onUnreadable) this.onUnreadable(index, err);
+      }
     }
     const ops = parseContentStream(src);
     const resources = page.node.Resources();
@@ -718,6 +737,7 @@ export class PdfSession {
     return { text: out.join('\n'), warn: [...fallbacks] };
   }
   appendRaw(index, raw, label) {
+    this.assertReadable(index);
     const page = this.page(index);
     const before = this.snap(page);
     const src = this.contentSrc(page);
@@ -733,6 +753,7 @@ export class PdfSession {
     return this.addResource(page, 'ExtGState', this._gs.get(alpha), 'PEG');
   }
   beginEdit(index, block) {
+    this.assertReadable(index);
     const page = this.page(index);
     const model = this.model(index);
     const before = this.snap(page);
@@ -1256,6 +1277,7 @@ export class PdfSession {
    * `uprightMatrix`). Gleiche Bilddaten werden nur einmal eingebettet.
    */
   async insertImage(index, bytes, mime, rect, label = 'Bild eingefügt', matrix = null) {
+    this.assertReadable(index);
     const page = this.page(index);
     const before = this.snap(page);
     const image = await this.embedImageOnce(bytes, mime);
@@ -1424,6 +1446,10 @@ Q`,
    * internen Neudarstellung.
    */
   save(opts) {
+    return this.exclusive(() => this._save(opts)).then((r) => r.bytes);
+  }
+  /** Wie `save`, liefert aber auch, was entfernt wurde (nur mit `strip`): `{ bytes, removed }`. */
+  saveReport(opts) {
     return this.exclusive(() => this._save(opts));
   }
   /**
@@ -1438,16 +1464,14 @@ Q`,
   }
   /**
    * Serialisiert das Dokument. Mit `strip` werden aktive Inhalte (JavaScript, Programmstarts,
-   * Anhänge) nur für diesen Vorgang entfernt; `this.lastRemoved` nennt, was entfernt wurde.
+   * Anhänge) nur für diesen Vorgang entfernt; `removed` nennt, was entfernt wurde.
    */
   async _save({ clean = true, strip = false } = {}) {
     await this.doc.flush();
     this.fonts.fixEmbeddedNames();
-    this.lastRemoved = null;
-    if (!strip) return this._serialize(clean);
+    if (!strip) return { bytes: await this._serialize(clean), removed: null };
     const { result, removed } = await withoutActiveContent(this.doc, () => this._serialize(clean));
-    this.lastRemoved = removed;
-    return result;
+    return { bytes: result, removed };
   }
   async _serialize(clean) {
     if (!clean)

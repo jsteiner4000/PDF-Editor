@@ -6,9 +6,19 @@
  * die Dauer eines Speichervorgangs und stellt danach alles wieder her (Rückgängig, Neuladen und
  * ein späteres Speichern mit ausgeschaltetem Schalter bleiben unberührt).
  *
+ * Gesucht wird im gesamten Objektgraphen ab dem Katalog (Seiten, Anmerkungen, Formularfelder,
+ * Lesezeichen, Strukturbaum …), nicht nur an den bekannten Stellen:
+ *  - Aktionen (`/S`) vom Typ JavaScript, Launch, SubmitForm usw. werden dort ausgehängt, wo sie
+ *    eingetragen sind (`/A`, `/AA`-Einträge, `/Next`, `/OpenAction`); harmlose Aktionen
+ *    (URI, GoTo …) und harmlose Einträge derselben `/AA` bleiben.
+ *  - Eingebettete Dateien: `/EF` jeder Dateispezifikation, `/AF` (verknüpfte Dateien), der
+ *    Namensbaum `/EmbeddedFiles` und Datei-Anhang-Anmerkungen. Auch wenn eine entfernte Anmerkung
+ *    noch über ein Popup oder den Strukturbaum erreichbar ist, enthält sie keine Nutzlast mehr.
+ *  - JavaScript-Namensbaum und XFA-Formulare.
+ *
  * Bleibt erhalten: Text, Bilder, Grafiken, normale Links (URI/GoTo), Formularfelder, Lesezeichen.
  */
-import { PDFArray, PDFDict, PDFName } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFName, PDFStream } from 'pdf-lib';
 
 /** Aktionen, die Code ausführen, Programme starten oder Daten versenden. */
 const DANGEROUS_ACTIONS = new Set([
@@ -26,6 +36,9 @@ const DANGEROUS_ACTIONS = new Set([
 /** Anmerkungen, die selbst Anhänge oder aktive Medien sind. */
 const REMOVED_ANNOTATIONS = new Set(['FileAttachment', 'RichMedia', 'Screen', 'Movie', 'Sound', '3D']);
 
+/** Tiefste Schachtelung eines Namensbaums beim Zählen (Schutz vor Zyklen). */
+const MAX_TREE_DEPTH = 32;
+
 const N = (name) => PDFName.of(name);
 
 /**
@@ -38,6 +51,7 @@ export async function withoutActiveContent(doc, fn) {
   const ctx = doc.context;
   const undo = [];
   const removed = { scripts: 0, programs: 0, attachments: 0 };
+  const counted = new Set();
 
   const dictOf = (value) => {
     const resolved = ctx.lookup(value);
@@ -45,57 +59,40 @@ export async function withoutActiveContent(doc, fn) {
   };
 
   /** Entfernt einen Eintrag samt Merkzettel zum Wiederherstellen. */
-  const removeKey = (dict, name) => {
-    const old = dict.get(N(name));
+  const removeKey = (dict, key) => {
+    const name = typeof key === 'string' ? N(key) : key;
+    const old = dict.get(name);
     if (old === undefined) return false;
-    dict.delete(N(name));
-    undo.push(() => dict.set(N(name), old));
+    dict.delete(name);
+    undo.push(() => dict.set(name, old));
     return true;
   };
 
-  const countAction = (kind) => {
+  const removeIndex = (array, index) => {
+    const old = array.get(index);
+    array.remove(index);
+    undo.push(() => array.insert(index, old));
+  };
+
+  /** Art der Aktion (`/S`), wenn sie gefährlich ist, sonst null. */
+  const dangerousKind = (dict) => {
+    const type = dict.get(N('S'));
+    const name = type instanceof PDFName ? type.decodeText() : '';
+    return DANGEROUS_ACTIONS.has(name) ? name : null;
+  };
+
+  /** Zählt eine entfernte Aktion einmal, auch wenn sie von mehreren Stellen aus erreichbar ist. */
+  const countAction = (action, kind) => {
+    if (counted.has(action)) return;
+    counted.add(action);
     if (kind === 'JavaScript') removed.scripts++;
     else removed.programs++;
-  };
-
-  /** Erste gefährliche Aktion einer Kette (Aktion samt /Next), sonst null. */
-  const dangerousKind = (action, seen = new Set()) => {
-    const dict = dictOf(action);
-    if (!dict || seen.has(dict)) return null;
-    seen.add(dict);
-    const type = ctx.lookup(dict.get(N('S')));
-    const kind = type instanceof PDFName ? type.decodeText() : '';
-    if (DANGEROUS_ACTIONS.has(kind)) return kind;
-    const next = ctx.lookup(dict.get(N('Next')));
-    for (const item of next instanceof PDFArray ? next.asArray() : next ? [next] : []) {
-      const found = dangerousKind(item, seen);
-      if (found) return found;
-    }
-    return null;
-  };
-
-  /** Aktionen eines Objekts (Anmerkung, Formularfeld, Seite): gefährliches /A, immer /AA. */
-  const stripActions = (dict) => {
-    const kind = dangerousKind(dict.get(N('A')));
-    if (kind && removeKey(dict, 'A')) countAction(kind);
-    if (removeKey(dict, 'AA')) removed.scripts++;
-  };
-
-  const stripFieldTree = (fields, seen) => {
-    if (!(fields instanceof PDFArray)) return;
-    for (const entry of fields.asArray()) {
-      const dict = dictOf(entry);
-      if (!dict || seen.has(dict)) continue;
-      seen.add(dict);
-      stripActions(dict);
-      stripFieldTree(ctx.lookup(dict.get(N('Kids'))), seen);
-    }
   };
 
   /** Anzahl der Dateien in einem Namensbaum (/Names-Paare, /Kids rekursiv). */
   const countTreeLeaves = (node, depth = 0) => {
     const dict = dictOf(node);
-    if (!dict || depth > 32) return 0;
+    if (!dict || depth > MAX_TREE_DEPTH) return 0;
     const names = ctx.lookup(dict.get(N('Names')));
     const kids = ctx.lookup(dict.get(N('Kids')));
     return (
@@ -106,15 +103,49 @@ export async function withoutActiveContent(doc, fn) {
     );
   };
 
+  /** Durchsucht den Objektgraphen ab `root` und hängt gefährliche Aktionen und Dateien aus. */
+  const sweep = (root) => {
+    const seen = new Set();
+    const stack = [root];
+    const descend = (value) => {
+      const child = ctx.lookup(value);
+      if (child instanceof PDFDict || child instanceof PDFArray) stack.push(child);
+      else if (child instanceof PDFStream) stack.push(child.dict);
+    };
+    while (stack.length) {
+      const container = stack.pop();
+      if (seen.has(container)) continue;
+      seen.add(container);
+      if (container instanceof PDFArray) {
+        for (let index = container.size() - 1; index >= 0; index--) {
+          const child = ctx.lookup(container.get(index));
+          const kind = child instanceof PDFDict ? dangerousKind(child) : null;
+          if (kind) {
+            countAction(child, kind);
+            removeIndex(container, index);
+          } else descend(container.get(index));
+        }
+        continue;
+      }
+      // Dateispezifikation mit eingebetteter Datei: Nutzlast aushängen, wo auch immer sie hängt
+      if (container.has(N('EF')) && removeKey(container, 'EF')) removed.attachments++;
+      for (const [key, value] of [...container.entries()]) {
+        if (key.decodeText() === 'AF') {
+          removeKey(container, key); // verknüpfte Dateien (Verweise auf dieselben Anhänge)
+          continue;
+        }
+        const child = ctx.lookup(value);
+        const kind = child instanceof PDFDict ? dangerousKind(child) : null;
+        if (kind) {
+          countAction(child, kind);
+          removeKey(container, key);
+        } else descend(value);
+      }
+    }
+  };
+
   try {
     const catalog = doc.catalog;
-
-    // Startaktion: nur Aktionen entfernen, Zielansichten (Seite/Zoom beim Öffnen) bleiben
-    const openAction = dictOf(catalog.get(N('OpenAction')));
-    const kind = openAction && dangerousKind(openAction);
-    if (kind && removeKey(catalog, 'OpenAction')) countAction(kind);
-    if (removeKey(catalog, 'AA')) removed.scripts++;
-    removeKey(catalog, 'AF'); // verknüpfte Dateien: Verweise auf dieselben Anhänge, nicht doppelt zählen
 
     const names = dictOf(catalog.get(N('Names')));
     if (names) {
@@ -125,36 +156,28 @@ export async function withoutActiveContent(doc, fn) {
         removeKey(names, 'EmbeddedFiles');
       }
     }
-
     const acroForm = dictOf(catalog.get(N('AcroForm')));
-    if (acroForm) {
-      if (removeKey(acroForm, 'XFA')) removed.scripts++;
-      stripFieldTree(ctx.lookup(acroForm.get(N('Fields'))), new Set());
-    }
+    if (acroForm && removeKey(acroForm, 'XFA')) removed.scripts++;
 
+    // Anmerkungen, die selbst Anhänge oder aktive Medien sind, ganz entfernen
     for (const page of doc.getPages()) {
-      const node = page.node;
-      if (removeKey(node, 'AA')) removed.scripts++;
-      removeKey(node, 'AF');
-      const annots = ctx.lookup(node.get(N('Annots')));
+      const annots = ctx.lookup(page.node.get(N('Annots')));
       if (!(annots instanceof PDFArray)) continue;
       for (let index = annots.size() - 1; index >= 0; index--) {
-        const entry = annots.get(index);
-        const annot = dictOf(entry);
-        if (!annot) continue;
-        const subtype = ctx.lookup(annot.get(N('Subtype')));
+        const annot = dictOf(annots.get(index));
+        const subtype = annot && ctx.lookup(annot.get(N('Subtype')));
         const name = subtype instanceof PDFName ? subtype.decodeText() : '';
-        if (REMOVED_ANNOTATIONS.has(name)) {
-          annots.remove(index);
-          undo.push(() => annots.insert(index, entry));
-          if (name === 'FileAttachment') removed.attachments++;
-          else removed.programs++;
-        } else stripActions(annot);
+        if (!REMOVED_ANNOTATIONS.has(name)) continue;
+        removeIndex(annots, index);
+        if (name === 'FileAttachment') removed.attachments++;
+        else removed.programs++;
       }
     }
+
+    sweep(catalog);
     return { result: await fn(), removed };
   } finally {
-    // in umgekehrter Reihenfolge, damit Einfügepositionen in Anmerkungslisten wieder stimmen
+    // in umgekehrter Reihenfolge, damit Einfügepositionen in Listen wieder stimmen
     for (const restore of undo.reverse()) restore();
   }
 }

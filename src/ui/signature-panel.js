@@ -646,6 +646,7 @@ export class SignatureTool {
   }
   /** Setzt die Unterschrift als Bild ein (Mittelpunkt bei `point`, PDF-Koordinaten). */
   async place(pv, point, record) {
+    if (!this.edit.pageEditable(pv)) return;
     const [x, y, width, height] = this.rectAt(pv, point, this.sizeFor(record));
     // über die Änderungswarteschlange des Bearbeiten-Modus (serielle Änderungen, feste Auswahl)
     await withBusy(() =>

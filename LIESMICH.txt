@@ -224,8 +224,10 @@ Aktive Inhalte entfernen: PDF-Dateien können JavaScript, Programmstarts
 PDF-Editor führt nichts davon aus – würde sie beim Speichern aber unverändert
 weitergeben, z. B. aus einem zugelieferten Datenblatt in Ihre Anleitung.
 Deshalb entfernt „Speichern“ sie standardmäßig und meldet, was entfernt wurde.
-Text, Bilder, normale Web-Links und Formularfelder bleiben. Wer bewusst Dateien
-anhängt: Menü „Datei“ > „Aktive Inhalte beim Speichern entfernen“ ausschalten.
+Text, Bilder, normale Web-Links und Formularfelder bleiben. Skripte in
+Formularfeldern (z. B. Berechnungen, Eingabeprüfungen) werden mit entfernt; die
+Felder selbst bleiben und lassen sich weiter ausfüllen. Wer bewusst Dateien
+anhängt oder solche Skripte braucht: Menü „Datei“ > „Aktive Inhalte beim Speichern entfernen“ ausschalten.
 Das Dokument im Editor bleibt dabei unverändert; der Schalter gilt auch für
 „Als PDF speichern“ im Modus „Seiten organisieren“.
 
@@ -262,9 +264,10 @@ U Standard-Unterschrift einsetzen (im Modus „PDF bearbeiten“)
 GUT ZU WISSEN
 -------------
 - Kennwortgeschützte (verschlüsselte) PDFs können nicht bearbeitet werden.
-- Seiten, deren Inhalt entpackt größer als 64 MB ist (meist manipulierte
+- Seiten, deren Inhalt entpackt größer als 16 MB ist (meist manipulierte
   Dateien), werden leer und nicht bearbeitbar angezeigt; der Editor meldet das,
-  statt zu hängen, und ändert die Seite nicht.
+  statt zu hängen, und ändert die Seite nicht. Normale Seiten sind meist unter
+  1 MB groß, sehr aufwendige Zeichnungen oder Karten oft einige MB.
 - Gedrehter Text (z. B. senkrechte Beschriftungen) kann gelöscht, aber nicht
   bearbeitet werden.
 - Formularfelder, Kommentare und Links bleiben erhalten, werden aber nicht
