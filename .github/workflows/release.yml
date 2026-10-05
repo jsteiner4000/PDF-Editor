@@ -6,6 +6,7 @@ name: Release (Windows)
 on:
   push:
     tags: ['v*']
+    branches: ['win-ci'] # Probelauf: Push auf diesen Zweig baut und testet unter Windows (ohne Release)
   workflow_dispatch:
     inputs:
       skip_regression:
