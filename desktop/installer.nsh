@@ -1,12 +1,13 @@
 ﻿; Ergänzungen für den NSIS-Installer (electron-builder, nsis.include).
 ;
-; Optionale Dateizuordnung für .pdf: Eine eigene Seite im Installer fragt, ob der PDF-Editor
-; im Menü „Öffnen mit“ für PDF-Dateien angeboten werden soll (Standard: ja). Registriert wird
-; benutzerbezogen (HKCU, keine Adminrechte): ProgID, OpenWithProgids, Applications-Eintrag und
-; RegisteredApplications/Capabilities, damit die App auch unter „Standard-Apps“ erscheint.
-; Windows erlaubt Programmen nicht, sich selbst zum Standard zu machen – das entscheidet der
-; Nutzer („Öffnen mit“ > „Immer“). Der Uninstaller entfernt alle Einträge wieder; bei einem
-; Update bleibt die frühere Wahl erhalten.
+; Standardprogramm für .pdf: Eine eigene Seite im Installer fragt, ob der PDF-Editor das
+; Standardprogramm für PDF-Dateien werden soll (Standard: ja). Registriert wird benutzerbezogen
+; (HKCU, keine Adminrechte): ProgID, OpenWithProgids, Applications-Eintrag und
+; RegisteredApplications/Capabilities, damit die App unter „Standard-Apps“ erscheint.
+; Windows erlaubt Programmen nicht, sich selbst zum Standard zu machen – das bestätigt der
+; Nutzer. Deshalb öffnet der Installer am Ende die Windows-Einstellung „Standard-Apps“ direkt
+; beim PDF-Editor (nicht bei stiller Installation). Der Uninstaller entfernt alle Einträge
+; wieder; bei einem Update bleibt die frühere Wahl erhalten.
 
 !define PDFE_PROGID "PDFEditor.Dokument"
 !define PDFE_CAPS "Software\PDF-Editor\Capabilities"
@@ -37,15 +38,15 @@
     Page custom PdfeAssocPageCreate PdfeAssocPageLeave
 
     Function PdfeAssocPageCreate
-      !insertmacro MUI_HEADER_TEXT "PDF-Dateien" "PDF-Editor im Menü „Öffnen mit“ anbieten"
+      !insertmacro MUI_HEADER_TEXT "Standardprogramm für PDF-Dateien" "PDF-Editor zum Standard-PDF-Programm machen"
       nsDialogs::Create 1018
       Pop $0
       ${If} $0 == error
         Abort
       ${EndIf}
-      ${NSD_CreateLabel} 0 0 100% 40u "Wenn diese Option gewählt ist, erscheint der PDF-Editor beim Rechtsklick auf eine PDF-Datei unter „Öffnen mit“. Als Standardprogramm für PDF-Dateien legen Sie ihn dort mit „Immer diese App verwenden“ fest."
+      ${NSD_CreateLabel} 0 0 100% 52u "Mit dieser Option wird der PDF-Editor Ihr Standardprogramm für PDF-Dateien: Ein Doppelklick auf eine PDF öffnet sie direkt im PDF-Editor.$\r$\n$\r$\nWindows lässt Programme nicht selbst zum Standard werden. Nach der Installation öffnet sich deshalb die Windows-Einstellung „Standard-Apps“ – dort bestätigen Sie den PDF-Editor mit einem Klick."
       Pop $0
-      ${NSD_CreateCheckbox} 0 48u 100% 12u "PDF-Editor für PDF-Dateien anbieten"
+      ${NSD_CreateCheckbox} 0 62u 100% 12u "PDF-Editor zum Standardprogramm für PDF-Dateien machen"
       Pop $PdfeAssocCheckbox
       ${NSD_SetState} $PdfeAssocCheckbox $PdfeAssocState
       nsDialogs::Show
@@ -73,6 +74,11 @@
       WriteRegStr HKCU "Software\RegisteredApplications" "PDF-Editor" "${PDFE_CAPS}"
       ; Explorer über die geänderte Zuordnung informieren (SHCNE_ASSOCCHANGED)
       System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, p 0, p 0)'
+      ; Windows-Einstellung „Standard-Apps“ beim PDF-Editor öffnen: dort bestätigt der Nutzer
+      ; die Wahl (Windows 11 springt direkt zum PDF-Editor, Windows 10 zeigt die Liste)
+      ${IfNot} ${Silent}
+        ExecShell "open" "ms-settings:defaultapps?registeredAppUser=PDF-Editor"
+      ${EndIf}
     ${EndIf}
   !macroend
 !endif

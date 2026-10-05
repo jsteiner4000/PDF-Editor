@@ -2,8 +2,8 @@ PDF-Editor
 ==========
 
 Ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
-einfügen, löschen und ordnen. Läuft komplett offline – es werden keine Daten
-ins Internet übertragen.
+einfügen, löschen und ordnen, Dokumente unterschreiben. Alles bleibt auf Ihrem
+Rechner – es werden keine Daten ins Internet übertragen.
 
 
 STARTEN
@@ -13,11 +13,13 @@ Windows 10/11
 Installation: „PDF-Editor-Setup-2.0.2.exe“ ausführen. Der PDF-Editor wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
-Im Installer lässt sich wählen, dass der PDF-Editor beim Rechtsklick auf eine
-PDF-Datei unter „Öffnen mit“ erscheint (voreingestellt). Als Standardprogramm
-für PDF-Dateien: Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App
-auswählen“ > „PDF-Editor“ > „Immer“. Dann öffnet ein Doppelklick auf eine PDF
-direkt den PDF-Editor.
+Im Installer gibt es die Option „PDF-Editor zum Standardprogramm für PDF-Dateien
+machen“ (voreingestellt). Windows lässt Programme nicht selbst zum Standard
+werden: Nach der Installation öffnet sich deshalb die Windows-Einstellung
+„Standard-Apps“ beim PDF-Editor – dort mit einem Klick bestätigen. Danach öffnet
+ein Doppelklick auf eine PDF direkt den PDF-Editor. Wurde die Option abgewählt:
+Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDF-Editor“ >
+„Immer“.
 
 Ohne Installation: „PDF-Editor-2.0.2-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal

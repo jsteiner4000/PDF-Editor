@@ -3,7 +3,7 @@
   "productName": "PDF-Editor",
   "version": "2.0.2",
   "private": true,
-  "description": "PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten – Desktop-App für Windows (Electron), komplett offline.",
+  "description": "PDF-Editor: PDFs bearbeiten, ordnen und unterschreiben – Desktop-App für Windows (Electron).",
   "author": {
     "name": "jsteiner4000"
   },

@@ -146,7 +146,7 @@ function start() {
       title: 'Über PDF-Editor',
       message: `PDF-Editor ${app.getVersion()}`,
       detail: [
-        'Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen und ordnen.',
+        'PDFs bearbeiten, ordnen und unterschreiben.',
         'Läuft vollständig offline – es werden keine Daten übertragen.',
         '',
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome}`,

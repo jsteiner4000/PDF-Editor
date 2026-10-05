@@ -1,6 +1,6 @@
 # PDF-Editor
 
-PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen, löschen und ordnen.
+PDF-Editor: PDFs bearbeiten, ordnen und unterschreiben.
 Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer und
 Portable-EXE, mit echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
 (`dist/PDF-Editor.html` – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet), die

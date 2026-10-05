@@ -232,21 +232,28 @@ export class App {
     home.classList.remove('hidden');
     home.innerHTML = `
 <div class="hcard">
-  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1>PDF-Editor</h1><p>Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen und ordnen – komplett offline.</p></div></div>
+  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1>PDF-Editor</h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
   <div class="drop" id="dropZone">
     <div class="ficon" style="width:40px;height:50px"></div>
     <div class="dt"><b>PDF-Datei öffnen</b><span>Datei auswählen oder hierher ziehen</span></div>
     <button class="btn primary" id="hOpen">${icon('open', 's')}Datei öffnen</button>
   </div>
   <div class="feats">
-    <div class="feat"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></div>
-    <div class="feat"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></div>
-    <div class="feat"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></div>
+    <button class="feat" id="hEdit"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></button>
+    <button class="feat" id="hImages"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></button>
+    <button class="feat" id="hPages"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></button>
     <button class="feat" id="hSig"><div class="ti c4">${icon('signature')}</div><b>Unterschrift</b><span>Einmal aus einem Dokument übernehmen und in jedes PDF einsetzen.</span></button>
   </div>
   <div class="recent hidden" id="recent"><h4>Zuletzt geöffnet</h4><div class="rl" id="recentList"></div></div>
 </div>`;
     $('#hOpen').addEventListener('click', () => this.openDialog());
+    // Kacheln: PDF wählen und danach direkt mit dem passenden Werkzeug loslegen
+    for (const [id, tool] of [
+      ['hEdit', 'edit'],
+      ['hImages', 'edit'],
+      ['hPages', 'organize'],
+    ])
+      $('#' + id).addEventListener('click', () => this.openThenTool(tool));
     $('#hSig').addEventListener('click', (ev) => SignatureTool.of(this.edit).openPop(ev.currentTarget));
     const dropZone = $('#dropZone');
     dropZone.addEventListener('dragenter', () => dropZone.classList.add('over'));
@@ -329,6 +336,11 @@ export class App {
       anchor,
     );
   }
+  /** Öffnen-Dialog und, wenn eine PDF geöffnet wurde, danach das Werkzeug `tool` (Startseite). */
+  async openThenTool(tool) {
+    await this.openDialog();
+    if (this.session) await this.setTool(tool);
+  }
   async openDialog() {
     if (!(await this.confirmDiscard())) return;
     if (window.showOpenFilePicker)
@@ -342,7 +354,7 @@ export class App {
         if (err && err.name === 'AbortError') return;
       }
     const file = await pickFiles('.pdf,application/pdf');
-    if (file) this.openFile(file, null);
+    if (file) await this.openFile(file, null);
   }
   async openHandle(handle) {
     handle = reviveFileHandle(handle);
