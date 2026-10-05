@@ -4,7 +4,8 @@
 .sig-pop {
   position: fixed;
   z-index: 100;
-  width: 320px;
+  width: 360px;
+  max-width: calc(100vw - 16px);
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -74,7 +75,9 @@
   text-overflow: ellipsis;
 }
 .sig-card .def {
-  flex: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   font-size: 10px;
   font-weight: 600;
   color: var(--acc);

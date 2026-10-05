@@ -464,10 +464,11 @@ export class SignatureTool {
         const url = pngUrl(record);
         this.popUrls.push(url);
         const card = htmlToElement(
-          `<button class="sig-card" title="Einsetzen: danach auf die gewünschte Stelle klicken"><img alt=""><span class="row"><span class="nm"></span>${record.isDefault ? '<span class="def">Standard</span>' : ''}</span></button>`,
+          `<button class="sig-card" title="Einsetzen: danach auf die gewünschte Stelle klicken"><img alt=""><span class="row"><span class="nm"></span></span>${record.isDefault ? '<span class="def">Standard</span>' : ''}</button>`,
         );
         card.querySelector('img').src = url;
         card.querySelector('.nm').textContent = record.name;
+        card.title = `${record.name} einsetzen: danach auf die gewünschte Stelle klicken`;
         card.dataset.id = record.id;
         card.addEventListener('click', () => this.startPlacing(record));
         grid.appendChild(card);

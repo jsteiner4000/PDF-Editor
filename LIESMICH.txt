@@ -100,13 +100,15 @@ BILDER UND GRAFIKEN
 - Entf-Taste = löschen.
 - Zusammengehörige Teile (z. B. Kreisnummer mit Linie) werden als Gruppe
   ausgewählt. Ein weiterer Klick in die ausgewählte Gruppe wählt nur das
-  Element unter dem Mauszeiger. Gruppen bleiben, wie sie beim Öffnen erkannt
+  Element unter dem Mauszeiger; ein nochmaliger Klick darauf öffnet „Pfad
+  bearbeiten“. Bei einer einzelnen, nicht gruppierten Grafik öffnet schon der
+  zweite Klick „Pfad bearbeiten“. Gruppen bleiben, wie sie beim Öffnen erkannt
   wurden: Wer ein Element an ein anderes heranschiebt, gruppiert es dadurch
   nicht mit diesem. Tabellen und Raster aus vielen einzelnen Linien (mehr als
   acht) bilden keine Gruppe – jede Linie ist einzeln wählbar.
 - Pfad bearbeiten (einzelne Kanten und Punkte, z. B. nur eine Seite eines
   Rechtecks): Doppelklick auf die Grafik oder ein weiterer Klick auf die
-  ausgewählte Grafik. Die Ankerpunkte erscheinen als kleine Quadrate (gefüllt =
+  einzeln ausgewählte Grafik. Die Ankerpunkte erscheinen als kleine Quadrate (gefüllt =
   ausgewählt), die angeklickte Kante ist hervorgehoben.
   - Ankerpunkt oder Kante anklicken und ziehen, Umschalt+Klick wählt mehrere.
     Umschalt beim Ziehen = Schritte von 45°.
@@ -155,8 +157,8 @@ In der Vorschau:
 - „Farbe“: Original, Schwarz oder Dunkelblau.
 - „Formularlinien entfernen“: Linie, auf der unterschrieben wurde, weglassen.
 - „Art“: Unterschrift oder Initialen (Kürzel), dazu ein Name.
-„Sichern“ speichert die Unterschrift dauerhaft in diesem Browser auf diesem
-Rechner. Sie wird nirgendwohin übertragen.
+„Sichern“ speichert die Unterschrift dauerhaft in der Anwendung auf diesem
+Rechner (Desktop-App bzw. Browser). Sie wird nirgendwohin übertragen.
 
 Unterschrift einsetzen:
 „Unterschrift“ klicken, die gewünschte Unterschrift wählen und auf die Stelle im
@@ -170,11 +172,13 @@ Unterschrift mehrmals eingesetzt, ist sie in der PDF-Datei nur einmal enthalten.
 
 Verwalten: „Unterschrift“ > „Unterschriften verwalten …“ – umbenennen, als
 Standard festlegen oder löschen.
-Hinweis: Gespeicherte Unterschriften gehören zum Browser (Chrome bzw. Edge), in
-dem der Editor geöffnet wird. Wer die Browserdaten löscht, löscht sie mit.
+Hinweis: Gespeicherte Unterschriften gehören zur Desktop-App (Ordner
+%APPDATA%\PDF-Editor) bzw. – in der Browser-Variante – zum Browser, in dem der
+Editor geöffnet wird; die beiden teilen sich keine Unterschriften. Wer die
+Browserdaten löscht, löscht sie mit.
 
-Umstieg von Version 1.0: Beim ersten Start stellt der Editor seinen Speicher im
-Browser um (eigene Schriften und „Zuletzt geöffnet“ bleiben erhalten). Ist
+Umstieg von Version 1.0: Beim ersten Start stellt der Editor seinen Speicher
+um (eigene Schriften und „Zuletzt geöffnet“ bleiben erhalten). Ist
 dabei noch ein Fenster mit PDF-Editor 1.0 geöffnet, erscheint der Hinweis
 „Bitte die anderen Fenster des PDF-Editors schließen“ – danach geht es normal
 weiter. Achtung: Nach der Umstellung kann Version 1.0 diesen Speicher nicht mehr
