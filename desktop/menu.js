@@ -14,7 +14,7 @@ const isMac = process.platform === 'darwin';
 /**
  * @param {object} actions
  * @param {(command: string) => void} actions.command  Befehl an die Web-App senden
- * @param {() => void} actions.about                  „Über PDF-Editor“
+ * @param {() => void} actions.about                  „Über PDFix“
  * @param {() => void} actions.licenses               Lizenzhinweise öffnen
  * @param {() => void} actions.fonts                  Ordner mit den Schriftdateien öffnen
  * @param {boolean} actions.devTools                  Entwicklerwerkzeuge anbieten (nur Entwicklung)
@@ -48,7 +48,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         { type: 'separator' },
         {
           role: 'quit',
-          label: 'PDF-Editor beenden',
+          label: 'PDFix beenden',
           accelerator: isMac ? 'Cmd+Q' : 'Alt+F4',
           registerAccelerator: isMac,
         },
@@ -98,7 +98,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         { label: 'Schriftdateien anzeigen', click: fonts },
         { label: 'Lizenzhinweise', click: licenses },
         { type: 'separator' },
-        { label: 'Über PDF-Editor', click: about },
+        { label: 'Über PDFix', click: about },
       ],
     },
   ];

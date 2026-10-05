@@ -2,9 +2,9 @@
 # Windows: NSIS-Installer (Benutzerinstallation ohne Adminrechte, Deutsch) und Portable-EXE.
 # Vorher bauen: npm run build:desktop (macht npm run dist:win automatisch).
 appId: de.jsteiner.pdfeditor
-productName: PDF-Editor
+productName: PDFix
 copyright: © 2026 jsteiner4000
-artifactName: PDF-Editor-${version}-${arch}.${ext}
+artifactName: PDFix-${version}-${arch}.${ext}
 
 directories:
   output: release
@@ -53,19 +53,19 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
-  legalTrademarks: PDF-Editor
+  legalTrademarks: PDFix
   requestedExecutionLevel: asInvoker
 
 nsis:
-  artifactName: PDF-Editor-Setup-${version}.exe
+  artifactName: PDFix-Setup-${version}.exe
   oneClick: false
   perMachine: false
   allowElevation: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: PDF-Editor
-  uninstallDisplayName: PDF-Editor
+  shortcutName: PDFix
+  uninstallDisplayName: PDFix
   installerIcon: assets/icon/icon.ico
   uninstallerIcon: assets/icon/icon.ico
   installerLanguages: [de_DE]
@@ -79,7 +79,7 @@ nsis:
   include: desktop/installer.nsh
 
 portable:
-  artifactName: PDF-Editor-${version}-portable.exe
+  artifactName: PDFix-${version}-portable.exe
   requestExecutionLevel: user
 
 linux:

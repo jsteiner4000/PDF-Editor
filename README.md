@@ -1,6 +1,6 @@
-# PDF-Editor
+# PDFix
 
-PDF-Editor: PDFs bearbeiten, ordnen und unterschreiben.
+PDFix: PDFs bearbeiten, ordnen und unterschreiben.
 Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer und
 Portable-EXE, mit echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
 (`dist/PDF-Editor.html` – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet), die
@@ -104,9 +104,9 @@ release/                  Ausgabe von electron-builder (nicht im Repository)
 
 - `virtual:pdfjs-worker` – der separat gebündelte pdf.js-Worker als Quelltext-String
 - `virtual:bundled-fonts` – die Schriften aus `assets/fonts/embedded/` (gzip, base64)
-- `virtual:logos` – App-Symbol für Kopfzeile (`icon-small.svg`) und Startseite (`icon.svg`) als data:-URI
+- `virtual:logos` – App-Symbol für Kopfzeile und Startseite (aus `assets/icon/png`) als data:-URI
 
-Das Favicon stammt aus `assets/icon/favicon.svg`; Kopfzeile und Startseite nutzen `icon-small.svg` bzw. `icon.svg` aus demselben Ordner. Windows-Icon: `assets/icon/icon.ico` (erzeugt von `build-icons.mjs`).
+Das Symbol („Glas-Ebenen“) liegt als Vorlage in `assets/icon/quelle/`; `assets/icon/build-icons.mjs` erzeugt daraus die PNG-Größen sowie `icon.ico` (Windows) und `icon.icns`. Favicon, Kopfzeile und Startseite verwenden dieselben PNGs.
 
 ## Tests
 
@@ -161,7 +161,7 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   (eine zweite Datei öffnet im laufenden Fenster). Schreiben atomar (temporäre Datei, dann
   umbenennen).
 - **Fenster**: Größe/Position werden gemerkt, Mindestgröße 900 × 600, Titel
-  `Datei.pdf (Bearbeitet) – PDF-Editor`, Rückfrage bei ungespeicherten Änderungen als nativer
+  `Datei.pdf (Bearbeitet) – PDFix`, Rückfrage bei ungespeicherten Änderungen als nativer
   Dialog (Speichern / Nicht speichern / Abbrechen).
 - **Menü**: Datei, Bearbeiten, Ansicht (Zoom der App), Fenster, Hilfe (Über, Lizenzhinweise,
   Schriftdateien). Kürzel, die die Web-App selbst auswertet (Strg+O/S/Z/Y, Zoom, Strg+A …),

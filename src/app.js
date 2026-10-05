@@ -111,7 +111,7 @@ export class App {
   build() {
     this.root.innerHTML = `
 <header id="top">
-  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span>PDF-Editor</span></div>
+  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PD<em>Fix</em></span></div>
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
   <div class="doctab hidden" id="docTab">${icon('file', 's')}<span class="nm" id="docName"></span><span class="dot hidden" id="dirtyDot" title="Ungespeicherte Änderungen"></span><button class="btn ic" id="bClose" title="Dokument schließen">${icon('close', 's')}</button></div>
@@ -232,7 +232,7 @@ export class App {
     home.classList.remove('hidden');
     home.innerHTML = `
 <div class="hcard">
-  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1>PDF-Editor</h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
+  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1 class="wm">PD<em>Fix</em></h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
   <div class="drop" id="dropZone">
     <div class="ficon" style="width:40px;height:50px"></div>
     <div class="dt"><b>PDF-Datei öffnen</b><span>Datei auswählen oder hierher ziehen</span></div>
@@ -425,7 +425,7 @@ export class App {
       this.setZoom(null, 'width', true);
       this.setTool(null);
       if (handle) idbPut('recent', name, { name, handle, time: Date.now() });
-      document.title = name + ' – PDF-Editor';
+      document.title = name + ' – PDFix';
       return true;
     });
     if (failure) {
@@ -472,7 +472,7 @@ export class App {
         $('#bSave').disabled = true;
         $('#bPrint').disabled = true;
         this.updateHist();
-        document.title = 'PDF-Editor';
+        document.title = 'PDFix';
         this.showHome();
       }
     }
@@ -637,7 +637,7 @@ export class App {
           await writable.close();
           this.file = { name: handle.name, handle };
           $('#docName').textContent = handle.name;
-          document.title = handle.name + ' – PDF-Editor';
+          document.title = handle.name + ' – PDFix';
           this.markSaved();
           toast('Gespeichert als ' + handle.name);
           idbPut('recent', handle.name, { name: handle.name, handle, time: Date.now() });

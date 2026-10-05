@@ -1,7 +1,7 @@
-PDF-Editor
+PDFix
 ==========
 
-Ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
+PDFix – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
 einfügen, löschen und ordnen, Dokumente unterschreiben. Alles bleibt auf Ihrem
 Rechner – es werden keine Daten ins Internet übertragen.
 
@@ -10,18 +10,18 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDF-Editor-Setup-2.0.2.exe“ ausführen. Der PDF-Editor wird nur
+Installation: „PDFix-Setup-2.1.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
-Im Installer gibt es die Option „PDF-Editor zum Standardprogramm für PDF-Dateien
+Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
 machen“ (voreingestellt). Windows lässt Programme nicht selbst zum Standard
 werden: Nach der Installation öffnet sich deshalb die Windows-Einstellung
-„Standard-Apps“ beim PDF-Editor – dort mit einem Klick bestätigen. Danach öffnet
-ein Doppelklick auf eine PDF direkt den PDF-Editor. Wurde die Option abgewählt:
-Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDF-Editor“ >
+„Standard-Apps“ bei PDFix – dort mit einem Klick bestätigen. Danach öffnet
+ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
+Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
 „Immer“.
 
-Ohne Installation: „PDF-Editor-2.0.2-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDFix-2.1.0-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
@@ -31,11 +31,11 @@ ausführen“.
 
 Neue Version: einfach den neuen Installer ausführen – Einstellungen, eigene
 Schriften und „Zuletzt geöffnet“ bleiben erhalten.
-Deinstallieren: Windows-Einstellungen > Apps > „PDF-Editor“ > Deinstallieren.
+Deinstallieren: Windows-Einstellungen > Apps > „PDFix“ > Deinstallieren.
 Die persönlichen Einstellungen liegen in %APPDATA%\PDF-Editor und können danach
 von Hand gelöscht werden.
 
-Der PDF-Editor stellt keine Verbindung zum Internet her, sucht nicht nach
+PDFix stellt keine Verbindung zum Internet her, sucht nicht nach
 Updates und sendet keine Daten.
 
 
@@ -44,7 +44,7 @@ PDF ÖFFNEN
 „Datei öffnen“ klicken oder die PDF-Datei einfach ins Fenster ziehen.
 Zuletzt geöffnete Dateien erscheinen auf der Startseite.
 Desktop-App: außerdem per Doppelklick bzw. „Öffnen mit“ oder durch Ziehen der
-PDF auf das Programmsymbol. Läuft der PDF-Editor schon, öffnet sich die Datei
+PDF auf das Programmsymbol. Läuft PDFix schon, öffnet sich die Datei
 im vorhandenen Fenster. Der Fenstertitel zeigt den Dateinamen, „(Bearbeitet)“
 steht für ungespeicherte Änderungen.
 
@@ -173,7 +173,7 @@ diesen Ordner löscht, löscht sie mit.
 Umstieg von Version 1.0: Beim ersten Start stellt der Editor seinen Speicher
 um (eigene Schriften und „Zuletzt geöffnet“ bleiben erhalten). Ist
 dabei noch ein Fenster mit PDF-Editor 1.0 geöffnet, erscheint der Hinweis
-„Bitte die anderen Fenster des PDF-Editors schließen“ – danach geht es normal
+„Bitte die anderen Fenster von PDFix schließen“ – danach geht es normal
 weiter. Achtung: Nach der Umstellung kann Version 1.0 diesen Speicher nicht mehr
 öffnen (sie startet dann ohne eigene Schriften und ohne „Zuletzt geöffnet“).
 
@@ -218,12 +218,12 @@ SPEICHERN
 „Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
 (Strg+Umschalt+S) legt eine neue an. Jede Änderung lässt sich mit Strg+Z
 rückgängig machen und mit Strg+Y wiederholen.
-Beim Schließen mit ungespeicherten Änderungen fragt der PDF-Editor nach
+Beim Schließen mit ungespeicherten Änderungen fragt PDFix nach
 („Speichern“, „Nicht speichern“, „Abbrechen“).
 
 Aktive Inhalte entfernen: PDF-Dateien können JavaScript, Programmstarts
 („Launch“-Links), Formular-Versand und eingebettete Dateien enthalten. Der
-PDF-Editor führt nichts davon aus – würde sie beim Speichern aber unverändert
+PDFix führt nichts davon aus – würde sie beim Speichern aber unverändert
 weitergeben, z. B. aus einem zugelieferten Datenblatt in Ihre Anleitung.
 Deshalb entfernt „Speichern“ sie standardmäßig und meldet, was entfernt wurde.
 Text, Bilder, normale Web-Links und Formularfelder bleiben. Skripte in

@@ -79,7 +79,6 @@ const ICON_PATHS = {
 export const icon = (name, cls = '') =>
   `<svg class="i ${cls}" viewBox="0 0 20 20" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
 
-// App-Symbol: wird beim Build aus assets/icon/ eingebettet (virtual:logos), als <img> wegen eigener Gradient-IDs.
+// App-Symbol: wird beim Build aus assets/icon/png eingebettet (virtual:logos).
 export const LOGO_SMALL = `<img src="${LOGOS.small}" width="28" height="28" alt="" draggable="false">`;
-// icon.svg hat 100 von 1024 Einheiten Rand für den Schatten; 88 px ergeben einen sichtbaren Körper von ca. 71 px.
-export const LOGO_LARGE = `<img src="${LOGOS.large}" width="88" height="88" alt="" draggable="false">`;
+export const LOGO_LARGE = `<img src="${LOGOS.large}" width="76" height="76" alt="" draggable="false">`;

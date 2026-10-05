@@ -1053,7 +1053,7 @@ export class SignatureTool {
     });
     if (!record) {
       toast(
-        'Die Unterschrift konnte nicht gespeichert werden. Bitte andere Fenster des PDF-Editors schließen und erneut versuchen.',
+        'Die Unterschrift konnte nicht gespeichert werden. Bitte andere Fenster von PDFix schließen und erneut versuchen.',
         'err',
         6000,
       );
@@ -1075,7 +1075,7 @@ export class SignatureTool {
     const returnFocus = this.popAnchor && this.popAnchor.isConnected ? this.popAnchor : null;
     this.cancel();
     const body = htmlToElement(
-      '<div><div class="sig-list" data-local-enter></div><p class="hint" style="margin:10px 0 0">Unterschriften werden nur auf diesem Rechner gespeichert (im Browser-Speicher des PDF-Editors).</p></div>',
+      '<div><div class="sig-list" data-local-enter></div><p class="hint" style="margin:10px 0 0">Unterschriften werden nur auf diesem Rechner gespeichert (im Programmspeicher von PDFix).</p></div>',
     );
     const list = body.querySelector('.sig-list');
     let urls = [];

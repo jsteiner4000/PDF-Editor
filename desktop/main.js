@@ -1,5 +1,5 @@
 /**
- * PDF-Editor als Desktop-App (Electron-Hauptprozess).
+ * PDFix als Desktop-App (Electron-Hauptprozess).
  *
  * Lädt den gebauten Single-File-Editor (dist/PDF-Editor.html) über das eigene Schema
  * app://pdf-editor/ – ohne Netzwerk, ohne Node-Zugriff im Renderer. Dateien werden über eine
@@ -20,7 +20,7 @@ import { FileAccess, FileAccessError, pdfPathsFromArgv } from './file-access.js'
 import { buildMenu, DOCUMENT_ITEMS } from './menu.js';
 import { loadWindowState, trackWindowState, MIN_SIZE } from './window-state.js';
 
-const APP_NAME = 'PDF-Editor';
+const APP_NAME = 'PDFix';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://pdf-editor`;
@@ -37,12 +37,18 @@ const FONT_DIR = app.isPackaged
 // Im ausgelieferten Programm keine Fernsteuerung: Debug-Schalter führen zum Beenden (die Fuses
 // sperren --inspect bereits; --remote-debugging-* würde sonst den DevTools-Server öffnen).
 if (app.isPackaged && process.argv.some((a) => /^--(remote-debugging-|inspect|debug)/i.test(a))) {
-  console.error('PDF-Editor: Debug-Schalter sind im ausgelieferten Programm nicht erlaubt.');
+  console.error('PDFix: Debug-Schalter sind im ausgelieferten Programm nicht erlaubt.');
   app.exit(1);
 }
 
-// Tests/Entwicklung: eigener Datenordner (Einstellungen, IndexedDB, Freigaben)
-if (process.env.PDF_EDITOR_USER_DATA) app.setPath('userData', path.resolve(process.env.PDF_EDITOR_USER_DATA));
+// Tests/Entwicklung: eigener Datenordner (Einstellungen, IndexedDB, Freigaben). Sonst bleibt es beim
+// Ordner aus der Zeit vor der Umbenennung, damit Unterschriften und Einstellungen erhalten bleiben.
+app.setPath(
+  'userData',
+  process.env.PDF_EDITOR_USER_DATA
+    ? path.resolve(process.env.PDF_EDITOR_USER_DATA)
+    : path.join(app.getPath('appData'), 'PDF-Editor'),
+);
 
 app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId('de.jsteiner.pdfeditor');
@@ -143,8 +149,8 @@ function start() {
     const { response } = await dialog.showMessageBox(win, {
       type: 'none',
       icon: path.join(ROOT, 'assets', 'icon', 'png', 'icon-128.png'),
-      title: 'Über PDF-Editor',
-      message: `PDF-Editor ${app.getVersion()}`,
+      title: 'Über PDFix',
+      message: `PDFix ${app.getVersion()}`,
       detail: [
         'PDFs bearbeiten, ordnen und unterschreiben.',
         'Läuft vollständig offline – es werden keine Daten übertragen.',
@@ -252,7 +258,7 @@ function start() {
       const { response } = await dialog.showMessageBox(win, {
         type: 'warning',
         title: APP_NAME,
-        message: 'Der PDF-Editor reagiert nicht.',
+        message: 'PDFix reagiert nicht.',
         detail:
           'Sie können warten, bis er wieder reagiert, oder das Fenster schließen. Ungespeicherte Änderungen gehen beim Schließen verloren.',
         buttons: ['Warten', 'Fenster schließen'],
@@ -308,7 +314,7 @@ function start() {
     const { response } = await dialog.showMessageBox(win, {
       type: 'error',
       title: APP_NAME,
-      message: 'Der PDF-Editor ist unerwartet abgestürzt.',
+      message: 'PDFix ist unerwartet abgestürzt.',
       detail:
         (name ? `Ungespeicherte Änderungen an „${name}“ sind leider verloren. ` : '') +
         'Die zuletzt gespeicherte Fassung der Datei ist unverändert.',

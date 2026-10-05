@@ -57,7 +57,7 @@ export class FontsPanel {
     body.appendChild(addBtn);
     body.appendChild(
       htmlToElement(
-        '<p class="hint" style="margin:10px 4px">Hinzugefügte Schriften (TTF/OTF) merkt sich der PDF-Editor und ordnet sie über den Namen automatisch zu – auch in anderen Dokumenten.</p>',
+        '<p class="hint" style="margin:10px 4px">Hinzugefügte Schriften (TTF/OTF) merkt sich PDFix und ordnet sie über den Namen automatisch zu – auch in anderen Dokumenten.</p>',
       ),
     );
   }

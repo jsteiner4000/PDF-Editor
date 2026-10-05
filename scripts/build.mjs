@@ -63,22 +63,16 @@ function virtualModules(contents) {
   };
 }
 
-/** App-Symbol aus assets/icon (einzige Quelle): { small: Kopfzeile, large: Startseite } als data:-URI. */
+/** App-Symbol aus assets/icon/png (einzige Quelle, erzeugt von build-icons.mjs) als data:-URI. */
 async function loadLogos() {
   const [small, large] = await Promise.all([
-    readFile(path.join(ICON_DIR, 'icon-small.svg'), 'utf8'),
-    readFile(path.join(ICON_DIR, 'icon.svg'), 'utf8'),
+    readFile(path.join(ICON_DIR, 'png', 'icon-64.png')),
+    readFile(path.join(ICON_DIR, 'png', 'icon-256.png')),
   ]);
-  return { small: svgDataUri(small), large: svgDataUri(large) };
+  return { small: pngDataUri(small), large: pngDataUri(large) };
 }
 
-/** SVG als data:-URI (gleiche Kodierung wie in Version 1.0). */
-function svgDataUri(svg) {
-  return (
-    'data:image/svg+xml,' +
-    svg.trim().replace(/[%<>"()#]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
-  );
-}
+const pngDataUri = (bytes) => 'data:image/png;base64,' + bytes.toString('base64');
 
 function fill(template, values) {
   return template.replace(/\{\{(\w+)\}\}/g, (m, key) => {
@@ -116,12 +110,11 @@ export async function build() {
   const script = result.outputFiles[0].text;
   if (/<\/script/i.test(script))
     throw new Error('Das Skript enthält "</script" und kann nicht inline eingebettet werden.');
-  const [template, styles, favicon] = await Promise.all([
+  const [template, styles] = await Promise.all([
     readFile(path.join(SRC, 'index.html'), 'utf8'),
     readFile(path.join(SRC, 'styles.css'), 'utf8'),
-    readFile(path.join(ICON_DIR, 'favicon.svg'), 'utf8'),
   ]);
-  const html = fill(template, { FAVICON: svgDataUri(favicon), STYLES: styles, SCRIPT: script });
+  const html = fill(template, { FAVICON: logos.small, STYLES: styles, SCRIPT: script });
   await mkdir(path.dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, html);
   const kb = (n) => (n / 1024).toFixed(0) + ' KB';

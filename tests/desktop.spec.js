@@ -72,7 +72,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
 
     // 1. Per Kommandozeile übergebene Datei ist geöffnet, Titel = Dateiname
     await waitForDocument(page, 'dokument.pdf');
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDF-Editor');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDFix');
 
     // 2. Renderer-Isolation: kein Node, keine Pfade, kein Netz
     const security = await page.evaluate(async () => {
@@ -125,12 +125,12 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !window.pdfEditor.edit.editor && !window.pdfEditor.edit._finishing);
     await idle(page);
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf (Bearbeitet) – PDF-Editor');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf (Bearbeitet) – PDFix');
 
     // 4. Strg+S überschreibt die geöffnete Datei (ohne Dialog)
     await page.keyboard.press('Control+s');
     await page.waitForFunction(() => !window.pdfEditor.session.dirty);
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDF-Editor');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDFix');
     const saved = readFileSync(pdf);
     expect(Buffer.compare(saved, original)).not.toBe(0);
     expect((await extractText(saved))[0]).toContain('Desktop');
@@ -141,7 +141,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: copy.replace(/\.pdf$/, '') }); // ohne Endung
     }, copy);
     await page.keyboard.press('Control+Shift+s');
-    await expect.poll(() => mainWindowTitle(app)).toBe('kopie.pdf – PDF-Editor');
+    await expect.poll(() => mainWindowTitle(app)).toBe('kopie.pdf – PDFix');
     expect(readFileSync(copy).length).toBeGreaterThan(1000);
     expect(readFileSync(pdf).equals(saved)).toBe(true);
 
@@ -359,7 +359,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     });
     await expect
       .poll(() => app.evaluate(() => globalThis.__asked))
-      .toEqual(['Der PDF-Editor ist unerwartet abgestürzt.']);
+      .toEqual(['PDFix ist unerwartet abgestürzt.']);
     await expect
       .poll(() =>
         app.evaluate(({ BrowserWindow }) => {
@@ -368,7 +368,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
         }),
       )
       .toBe('app://pdf-editor/');
-    await expect.poll(() => mainWindowTitle(app)).toBe('PDF-Editor');
+    await expect.poll(() => mainWindowTitle(app)).toBe('PDFix');
     const closed = app.waitForEvent('close');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
     await closed;

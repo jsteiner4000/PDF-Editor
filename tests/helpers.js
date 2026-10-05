@@ -171,6 +171,18 @@ async function inkHash(page, png) {
   return sha(bits);
 }
 
+/** Farbwelt von Version 1.0 (Farben und Schatten), für den Vergleich der Anordnung. */
+const LEGACY_LOOK = `:root{
+  --ink:#1b2129; --ink2:#4c5561; --ink3:#7b8490; --line:#e3e6ea; --line2:#d3d7dd;
+  --bg:#f4f5f7; --canvas:#e9ebef; --hover:#f1f3f6; --press:#e7eaef;
+  --acc:#213fbf; --acc-h:#1a33a0; --acc-soft:#e9edff; --acc-line:#8fa2f2;
+  --t1:#e9edff; --t1-ink:#213fbf; --t2:#e3f4ef; --t2-ink:#12715a; --t3:#fdeee6; --t3-ink:#b44a15;
+  --t4:#f1ebfd; --t4-ink:#6a3dc4; --t5:#fff4d6; --t5-ink:#8a6100; --t6:#e8f1fb; --t6-ink:#1f5f9f;
+  --sh1:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
+  --sh2:0 4px 12px rgba(16,24,40,.10),0 2px 4px rgba(16,24,40,.06);
+  --sh3:0 18px 48px rgba(16,24,40,.18),0 4px 12px rgba(16,24,40,.08);
+}`;
+
 /**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).
  * Einzelne Elemente statt des ganzen Fensters, weil Ganzfenster-Aufnahmen im Headless-Chromium
@@ -183,14 +195,24 @@ export async function screenshots(page, selectors = ['#top', '#left', '#right', 
   await idle(page);
   // Die schwebende Navigation liegt mit Weichzeichner (backdrop-filter) über der Seite – das
   // Ergebnis ist nicht pixelstabil, daher wird sie für die Aufnahme ausgeblendet.
-  // Das App-Symbol ist in 2.0 bewusst neu (rot) und wird nicht mit 1.0 verglichen.
-  await page.evaluate(() => {
+  // Symbol, Name und Farbwelt sind ab 2.1 bewusst neu (PDFix) und werden nicht mit 1.0 verglichen:
+  // Für die Aufnahme gelten die alten Farben und der alte Name, die Anordnung bleibt vergleichbar.
+  await page.evaluate((legacy) => {
+    const style = document.createElement('style');
+    style.id = '__legacyLook';
+    style.textContent = legacy;
+    document.head.appendChild(style);
+    for (const w of document.querySelectorAll('.brand .wm')) {
+      w.dataset.wm = w.innerHTML;
+      w.className = '';
+      w.textContent = 'PDF-Editor';
+    }
     document.getElementById('nav').style.setProperty('visibility', 'hidden');
     for (const m of document.querySelectorAll('.brand .mark, .hhero .mark')) {
       m.dataset.logo = m.innerHTML;
       m.innerHTML = '<i style="display:block;width:28px;height:28px"></i>';
     }
-  });
+  }, LEGACY_LOOK);
   const out = {};
   for (const sel of selectors) {
     const loc = page.locator(sel).first();
@@ -201,6 +223,11 @@ export async function screenshots(page, selectors = ['#top', '#left', '#right', 
   await page.evaluate(() => {
     document.getElementById('nav').style.removeProperty('visibility');
     for (const m of document.querySelectorAll('.brand .mark, .hhero .mark')) m.innerHTML = m.dataset.logo;
+    document.getElementById('__legacyLook')?.remove();
+    for (const w of document.querySelectorAll('.brand span[data-wm]')) {
+      w.innerHTML = w.dataset.wm;
+      w.className = 'wm';
+    }
   });
   return out;
 }
@@ -280,14 +307,12 @@ export async function findBlock(page, index, needle) {
 export async function objectsOf(page, index) {
   return page.evaluate(
     (index) =>
-      window.pdfEditor.session
-        .model(index)
-        .objects.map((o) => ({
-          type: o.type,
-          vis: o.vis.map((v) => Math.round(v * 100) / 100),
-          selectable: o.selectable,
-          group: o.cluster ? o.cluster.members.length : 0,
-        })),
+      window.pdfEditor.session.model(index).objects.map((o) => ({
+        type: o.type,
+        vis: o.vis.map((v) => Math.round(v * 100) / 100),
+        selectable: o.selectable,
+        group: o.cluster ? o.cluster.members.length : 0,
+      })),
     index,
   );
 }
