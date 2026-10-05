@@ -146,6 +146,32 @@ export async function canvasHashes(page) {
 }
 
 /**
+ * Fingerabdruck nur der „Tinte“ (dunkle Pixel: Text, Symbole, Linien) eines Bildschirmfotos.
+ * Unter Windows zeichnet Chromium Haarlinien (Trennstriche) in 1.0 und Neubau mit Abweichungen von
+ * höchstens 2 von 255 Stufen an einzelnen Pixeln; ein bitgenauer Hash würde dort zufällig anschlagen.
+ * Text und Symbole müssen weiterhin exakt übereinstimmen.
+ */
+async function inkHash(page, png) {
+  const bits = await page.evaluate(async (b64) => {
+    const img = new Image();
+    await new Promise((ok) => {
+      img.onload = ok;
+      img.src = 'data:image/png;base64,' + b64;
+    });
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, img.width, img.height).data;
+    let s = img.width + 'x' + img.height + ':';
+    for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2] < 3 * 200 ? '1' : '0';
+    return s;
+  }, png.toString('base64'));
+  return sha(bits);
+}
+
+/**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).
  * Einzelne Elemente statt des ganzen Fensters, weil Ganzfenster-Aufnahmen im Headless-Chromium
  * nicht pixelstabil sind.
@@ -168,7 +194,9 @@ export async function screenshots(page, selectors = ['#top', '#left', '#right', 
   const out = {};
   for (const sel of selectors) {
     const loc = page.locator(sel).first();
-    out[sel] = (await loc.isVisible()) ? sha(await loc.screenshot()) : null;
+    if (!(await loc.isVisible())) out[sel] = null;
+    else if (sel === '#top') out[sel] = await inkHash(page, await loc.screenshot());
+    else out[sel] = sha(await loc.screenshot());
   }
   await page.evaluate(() => {
     document.getElementById('nav').style.removeProperty('visibility');

@@ -66,7 +66,7 @@ jobs:
 
       - name: Regressionstests (Browser)
         if: ${{ !inputs.skip_regression }}
-        run: npx playwright test tests/zz-debug-top.spec.js tests/regression.spec.js
+        run: npx playwright test tests/regression.spec.js
 
       - name: Installer und Portable bauen
         run: npx electron-builder --win nsis portable --x64 --publish never
