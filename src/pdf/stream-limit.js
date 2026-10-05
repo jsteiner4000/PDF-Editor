@@ -13,10 +13,12 @@ import { PDFArray, PDFName, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
 export const MAX_DECODED_BYTES = 64 * 1024 * 1024;
 
 /**
- * Für Seiteninhalte (Content-Streams) strenger: Sie werden Operator für Operator ausgewertet,
- * und das dauert (gemessen) etwa 0,8 s je Megabyte – 16 MB sind schon sehr große Seiten.
+ * Für Seiteninhalte (Content-Streams) strenger: Sie werden Operator für Operator ausgewertet. Das
+ * dauert bei normalem Inhalt etwa 1 s je MB, bei extrem dichtem (nur Kurzbefehle) bis zu 1,5 s
+ * je MB. 8 MB sind schon sehr große Seiten (Karten, Pläne); mehr als ein paar Sekunden Wartezeit
+ * entstehen so nicht. Siehe LIESMICH („Gut zu wissen“).
  */
-export const MAX_CONTENT_BYTES = 16 * 1024 * 1024;
+export const MAX_CONTENT_BYTES = 8 * 1024 * 1024;
 
 /** Ein Stream ist entpackt größer als erlaubt (oder lässt sich nicht sicher begrenzen). */
 export class StreamTooLargeError extends Error {
@@ -25,6 +27,10 @@ export class StreamTooLargeError extends Error {
     this.name = 'StreamTooLargeError';
   }
 }
+
+/** Hinweis für Nutzer: diese Seite ist nur zum Ansehen da. */
+export const unreadablePageMessage = (index) =>
+  `Seite ${index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als ${MAX_CONTENT_BYTES / 1048576} MB entpackt).`;
 
 const FLATE = /^(FlateDecode|Fl)$/;
 const LZW = /^(LZWDecode|LZW)$/;
@@ -116,7 +122,7 @@ export function lzwDecodedLength(data, early, limit = Infinity) {
  * `StreamTooLargeError`. Filterketten, die sich weder rechnerisch noch durch Zählen begrenzen
  * lassen, werden abgelehnt.
  */
-export function assertDecodedSize(ctx, stream, limit) {
+function checkDecodedSize(ctx, stream, limit) {
   const names = filterNames(ctx, stream);
   if (!names.length) return;
   let data = stream.getContents();
@@ -140,4 +146,12 @@ export function assertDecodedSize(ctx, stream, limit) {
     return;
   }
   throw new StreamTooLargeError(limit);
+}
+
+export function assertDecodedSize(ctx, stream, limit) {
+  try {
+    checkDecodedSize(ctx, stream, limit);
+  } catch (err) {
+    throw err instanceof StreamTooLargeError ? new StreamTooLargeError(limit) : err;
+  }
 }

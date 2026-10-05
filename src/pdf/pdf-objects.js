@@ -4,7 +4,13 @@
 import { PDFName, PDFNumber, PDFRawStream, PDFRef, decodePDFRawStream } from 'pdf-lib';
 import { MAX_DECODED_BYTES, assertDecodedSize } from './stream-limit.js';
 
-export { MAX_CONTENT_BYTES, MAX_DECODED_BYTES, StreamTooLargeError } from './stream-limit.js';
+export {
+  MAX_CONTENT_BYTES,
+  MAX_DECODED_BYTES,
+  StreamTooLargeError,
+  assertDecodedSize,
+  unreadablePageMessage,
+} from './stream-limit.js';
 
 export const pdfName = (name) => PDFName.of(name);
 

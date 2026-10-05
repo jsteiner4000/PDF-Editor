@@ -67,6 +67,13 @@ async function activePdf() {
     Subtype: 'FileAttachment',
     Rect: [50, 550, 70, 570],
     Contents: PDFString.of('Beilage'),
+    FS: ctx.register(
+      ctx.obj({
+        Type: 'Filespec',
+        F: PDFString.of('anmerkung.bin'),
+        EF: { F: ctx.register(ctx.stream(Buffer.from('ANMERKUNGS-NUTZLAST'))) },
+      }),
+    ),
   });
   page.node.set(N('Annots'), ctx.obj([launch, web, chained, attachment]));
   await doc.attach(Buffer.from('GEHEIME-NUTZLAST'), 'beilage.exe', { mimeType: 'application/octet-stream' });
@@ -118,7 +125,14 @@ test('Aktive Inhalte werden beim Speichern entfernt – Web-Links und Text bleib
   expect(saved.annots).toEqual(['Link:-', 'Link:URI', 'Link:URI']);
   expect(saved.text).toContain('Datenblatt Zulieferer');
   const text = await plainText(bytes);
-  for (const rest of ['/JavaScript', '/Launch', 'GEHEIME-NUTZLAST', '/EmbeddedFile', '/FileAttachment'])
+  for (const rest of [
+    '/JavaScript',
+    '/Launch',
+    'GEHEIME-NUTZLAST',
+    'ANMERKUNGS-NUTZLAST',
+    '/EmbeddedFile',
+    '/FileAttachment',
+  ])
     expect(text, rest).not.toContain(rest);
   expect(text).toContain('https://example.org/2');
   await context.close();
@@ -252,6 +266,26 @@ test('Aktive Inhalte an versteckten Stellen: Lesezeichen, Popup-Parent, /AF, gem
   await context.close();
 });
 
+test('Strukturelemente mit Aktions-Namen (/S /Sound) sind keine Aktionen und bleiben erhalten', async ({
+  browser,
+}) => {
+  const { page, context } = await launch(browser, 'neubau');
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const p = doc.addPage([595, 842]);
+  p.drawText('Getaggt', { x: 50, y: 780, size: 20, font });
+  const ctx = doc.context;
+  const element = ctx.register(ctx.obj({ Type: 'StructElem', S: 'Sound', P: p.ref }));
+  const root = ctx.register(ctx.obj({ Type: 'StructTreeRoot', K: [element] }));
+  ctx.lookup(element).set(N('P'), root);
+  doc.catalog.set(N('StructTreeRoot'), root);
+  await openPdf(page, await doc.save({ useObjectStreams: false }), 'getaggt.pdf');
+  const text = await plainText(await savedBytes(page));
+  expect(text).toContain('/StructElem');
+  expect(text).toMatch(/\/S \/Sound/);
+  await context.close();
+});
+
 test('Entfernen gilt nur für den Speichervorgang: Dokument im Speicher bleibt unverändert', async ({
   browser,
 }) => {
@@ -339,11 +373,13 @@ async function expectUnreadable(browser, bytes) {
   });
   expect(model).toEqual({ unreadable: true, blocks: 0, objects: 0 });
   expect(Date.now() - t0).toBeLessThan(20_000);
-  // Hinweis (einmal), kein Hänger
+  // Hinweis beim Öffnen (einmal gesammelt), kein Hänger
+  await page.waitForFunction(() => window.__toastLog.some((t) => t.includes('kann nicht bearbeitet')));
   const notes = await page.evaluate(() =>
     window.__toastLog.filter((t) => t.includes('kann nicht bearbeitet')),
   );
   expect(notes).toHaveLength(1);
+  expect(notes[0]).toContain('Seite 1 kann nicht bearbeitet werden');
   return { page, context };
 }
 
@@ -458,8 +494,8 @@ test('Normal große Seiteninhalte (unter der Grenze) bleiben bearbeitbar', async
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const p = doc.addPage([595, 842]);
   p.drawText('Normaler Text', { x: 50, y: 700, size: 14, font });
-  // 10 MB Leerraum im Inhalt: groß, aber erlaubt
-  const extra = doc.context.flateStream(Buffer.alloc(10 * 1024 * 1024, 0x20));
+  // 5 MB Leerraum im Inhalt: groß, aber erlaubt
+  const extra = doc.context.flateStream(Buffer.alloc(5 * 1024 * 1024, 0x20));
   const contents = p.node.lookup(N('Contents'));
   p.node.set(
     N('Contents'),

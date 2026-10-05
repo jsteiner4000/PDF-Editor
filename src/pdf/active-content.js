@@ -36,9 +36,6 @@ const DANGEROUS_ACTIONS = new Set([
 /** Anmerkungen, die selbst Anhänge oder aktive Medien sind. */
 const REMOVED_ANNOTATIONS = new Set(['FileAttachment', 'RichMedia', 'Screen', 'Movie', 'Sound', '3D']);
 
-/** Tiefste Schachtelung eines Namensbaums beim Zählen (Schutz vor Zyklen). */
-const MAX_TREE_DEPTH = 32;
-
 const N = (name) => PDFName.of(name);
 
 /**
@@ -89,28 +86,32 @@ export async function withoutActiveContent(doc, fn) {
     else removed.programs++;
   };
 
-  /** Anzahl der Dateien in einem Namensbaum (/Names-Paare, /Kids rekursiv). */
-  const countTreeLeaves = (node, depth = 0) => {
-    const dict = dictOf(node);
-    if (!dict || depth > MAX_TREE_DEPTH) return 0;
-    const names = ctx.lookup(dict.get(N('Names')));
-    const kids = ctx.lookup(dict.get(N('Kids')));
-    return (
-      (names instanceof PDFArray ? names.size() / 2 : 0) +
-      (kids instanceof PDFArray
-        ? kids.asArray().reduce((n, kid) => n + countTreeLeaves(kid, depth + 1), 0)
-        : 0)
-    );
-  };
-
   /** Durchsucht den Objektgraphen ab `root` und hängt gefährliche Aktionen und Dateien aus. */
   const sweep = (root) => {
     const seen = new Set();
     const stack = [root];
-    const descend = (value) => {
+    // Wörterbücher/Listen, deren Einträge Aktionen sind (/AA-Werte, /Next-Listen): nur dort wird
+    // nach Aktionen gesucht – ein Strukturelement mit /S /Sound ist keine Aktion.
+    const actionHolders = new Set();
+    const descend = (value, key) => {
       const child = ctx.lookup(value);
-      if (child instanceof PDFDict || child instanceof PDFArray) stack.push(child);
-      else if (child instanceof PDFStream) stack.push(child.dict);
+      if (child instanceof PDFDict || child instanceof PDFArray) {
+        if ((key === 'AA' && child instanceof PDFDict) || (key === 'Next' && child instanceof PDFArray))
+          actionHolders.add(child);
+        stack.push(child);
+      } else if (child instanceof PDFStream) stack.push(child.dict);
+    };
+    const isAction = (child, key, holder) =>
+      child instanceof PDFDict &&
+      (key === 'A' ||
+        key === 'Next' ||
+        key === 'OpenAction' ||
+        actionHolders.has(holder) ||
+        isTypedAction(child)) &&
+      dangerousKind(child);
+    const isTypedAction = (dict) => {
+      const type = dict.get(N('Type'));
+      return type instanceof PDFName && type.decodeText() === 'Action';
     };
     while (stack.length) {
       const container = stack.pop();
@@ -119,27 +120,28 @@ export async function withoutActiveContent(doc, fn) {
       if (container instanceof PDFArray) {
         for (let index = container.size() - 1; index >= 0; index--) {
           const child = ctx.lookup(container.get(index));
-          const kind = child instanceof PDFDict ? dangerousKind(child) : null;
+          const kind = isAction(child, null, container);
           if (kind) {
             countAction(child, kind);
             removeIndex(container, index);
-          } else descend(container.get(index));
+          } else descend(container.get(index), null);
         }
         continue;
       }
       // Dateispezifikation mit eingebetteter Datei: Nutzlast aushängen, wo auch immer sie hängt
       if (container.has(N('EF')) && removeKey(container, 'EF')) removed.attachments++;
       for (const [key, value] of [...container.entries()]) {
-        if (key.decodeText() === 'AF') {
+        const name = key.decodeText();
+        if (name === 'AF') {
           removeKey(container, key); // verknüpfte Dateien (Verweise auf dieselben Anhänge)
           continue;
         }
         const child = ctx.lookup(value);
-        const kind = child instanceof PDFDict ? dangerousKind(child) : null;
+        const kind = isAction(child, name, container);
         if (kind) {
           countAction(child, kind);
           removeKey(container, key);
-        } else descend(value);
+        } else descend(value, name);
       }
     }
   };
@@ -147,19 +149,18 @@ export async function withoutActiveContent(doc, fn) {
   try {
     const catalog = doc.catalog;
 
+    // Namensbaum mit JavaScript zuerst: seine Einträge sind Paare (Name, Aktion) und dürfen vom
+    // Durchlauf nicht einzeln herausgelöst werden
     const names = dictOf(catalog.get(N('Names')));
-    if (names) {
-      if (removeKey(names, 'JavaScript')) removed.scripts++;
-      const embedded = names.get(N('EmbeddedFiles'));
-      if (embedded !== undefined) {
-        removed.attachments += countTreeLeaves(embedded) || 1;
-        removeKey(names, 'EmbeddedFiles');
-      }
-    }
+    if (names && removeKey(names, 'JavaScript')) removed.scripts++;
     const acroForm = dictOf(catalog.get(N('AcroForm')));
     if (acroForm && removeKey(acroForm, 'XFA')) removed.scripts++;
 
-    // Anmerkungen, die selbst Anhänge oder aktive Medien sind, ganz entfernen
+    // Aktionen und Nutzlasten im ganzen Dokument aushängen; Anhänge werden dabei je Datei gezählt
+    sweep(catalog);
+
+    // Danach den Anhang-Namensbaum und Anmerkungen, die selbst Anhänge oder aktive Medien sind
+    if (names) removeKey(names, 'EmbeddedFiles');
     for (const page of doc.getPages()) {
       const annots = ctx.lookup(page.node.get(N('Annots')));
       if (!(annots instanceof PDFArray)) continue;
@@ -169,12 +170,9 @@ export async function withoutActiveContent(doc, fn) {
         const name = subtype instanceof PDFName ? subtype.decodeText() : '';
         if (!REMOVED_ANNOTATIONS.has(name)) continue;
         removeIndex(annots, index);
-        if (name === 'FileAttachment') removed.attachments++;
-        else removed.programs++;
+        if (name !== 'FileAttachment') removed.programs++;
       }
     }
-
-    sweep(catalog);
     return { result: await fn(), removed };
   } finally {
     // in umgekehrter Reihenfolge, damit Einfügepositionen in Listen wieder stimmen

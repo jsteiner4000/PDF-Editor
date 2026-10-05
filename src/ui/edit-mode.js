@@ -6,6 +6,7 @@ import { icon } from './icons.js';
 import { $, $$, escapeHtml, htmlToElement } from './dom.js';
 import { showMenu } from './menu.js';
 import { pickFiles, showDialog, toast, withBusy } from './dialogs.js';
+import { unreadablePageMessage } from '../pdf/stream-limit.js';
 import { idbPut } from '../storage/idb.js';
 import { SnapGuides } from './snap-guides.js';
 import { TextEditor } from './text-editor.js';
@@ -1690,11 +1691,7 @@ export class EditMode {
    */
   pageEditable(pv) {
     if (!this.session.model(pv.index).unreadable) return true;
-    toast(
-      `Seite ${pv.index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als 16 MB entpackt).`,
-      'warn',
-      7000,
-    );
+    toast(unreadablePageMessage(pv.index), 'warn', 7000);
     this.arm(null);
     return false;
   }

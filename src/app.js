@@ -6,6 +6,7 @@ import BUNDLED_FONTS from 'virtual:bundled-fonts';
 import { FontLibrary } from './fonts/font-manager.js';
 import { PdfSession } from './pdf/session.js';
 import { describeRemoved, hasRemoved } from './pdf/active-content.js';
+import { unreadablePageMessage } from './pdf/stream-limit.js';
 import { PdfRenderer, PREVIEW_MAX_PX } from './render/pdf-renderer.js';
 import { DetailRenderer } from './render/detail-renderer.js';
 import { PageView } from './ui/page-view.js';
@@ -396,14 +397,9 @@ export class App {
       }
       this.closeDoc();
       this.session = session;
-      session.onUnreadable = (index) =>
-        toast(
-          `Seite ${index + 1} kann nicht bearbeitet werden: Der Seiteninhalt ist zu groß (mehr als 16 MB entpackt).`,
-          'warn',
-          7000,
-        );
       this.file = { name, handle };
       this.origSize = bytes.length;
+      this.scanUnreadablePages(session);
       this.running = null;
       $('#home').classList.add('hidden');
       $('#docTab').classList.remove('hidden');
@@ -520,6 +516,26 @@ export class App {
       return handle && handle.kind === 'file' ? this.openHandle(handle) : this.openFile(file, null);
     }
     toast('Nur PDF-Dateien und Bilder (PNG, JPG) können abgelegt werden.', 'warn');
+  }
+  /**
+   * Prüft nach dem Öffnen (Seite für Seite, ohne die Oberfläche zu blockieren), ob Seiten wegen
+   * zu großen Inhalts nur zum Ansehen taugen, und meldet das einmal gesammelt.
+   */
+  async scanUnreadablePages(session) {
+    const pages = [];
+    for (let index = 0; index < session.numPages; index++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (this.session !== session) return; // inzwischen anderes Dokument
+      if (session.contentTooLarge(index)) pages.push(index);
+    }
+    if (!pages.length) return;
+    toast(
+      pages.length === 1
+        ? unreadablePageMessage(pages[0])
+        : `${pages.length} Seiten (${pages.map((i) => i + 1).join(', ')}) können nicht bearbeitet werden: Der Seiteninhalt ist zu groß.`,
+      'warn',
+      8000,
+    );
   }
   /**
    * Schalter „Aktive Inhalte beim Speichern entfernen“: JavaScript, Programmstarts und Anhänge

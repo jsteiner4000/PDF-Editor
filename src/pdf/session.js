@@ -16,7 +16,14 @@ import {
   StringToken,
 } from './content-stream.js';
 import { withoutActiveContent } from './active-content.js';
-import { MAX_CONTENT_BYTES, StreamTooLargeError, nameText, pdfName, readStreamBytes } from './pdf-objects.js';
+import {
+  MAX_CONTENT_BYTES,
+  StreamTooLargeError,
+  assertDecodedSize,
+  nameText,
+  pdfName,
+  readStreamBytes,
+} from './pdf-objects.js';
 import { PdfFontCache } from './pdf-font.js';
 import { IDENTITY_MATRIX, invertMatrix, multiplyMatrix } from './matrix.js';
 import { interpretContent } from './content-interpreter.js';
@@ -245,9 +252,6 @@ export class PdfSession {
     this.version = 0;
     this.savedVersion = 0;
     this.pending = null;
-    /** Wird mit (Seitenindex, Fehler) aufgerufen, wenn eine Seite wegen zu großen Inhalts unlesbar ist. */
-    this.onUnreadable = null;
-    this.unreadableNotified = new Set();
     this.nameSeq = 0;
     this.idents = new WeakMap();
     this.uidSeq = 0;
@@ -305,6 +309,24 @@ export class PdfSession {
         }
       })
       .join('\n');
+  }
+  /**
+   * Ob ein Content-Stream der Seite entpackt zu groß wäre – ohne Seitenmodell, nur durch Zählen
+   * (für die Prüfung beim Öffnen).
+   */
+  contentTooLarge(index) {
+    const contents = this.page(index).node.get(pdfName('Contents'));
+    if (!contents) return false;
+    const resolved = this.ctx.lookup(contents);
+    for (const part of resolved instanceof PDFArray ? resolved.asArray() : [contents]) {
+      const stream = this.ctx.lookup(part);
+      try {
+        if (stream instanceof PDFRawStream) assertDecodedSize(this.ctx, stream, MAX_CONTENT_BYTES);
+      } catch (err) {
+        if (err instanceof StreamTooLargeError) return true;
+      }
+    }
+    return false;
   }
   /** Wirft `StreamTooLargeError`, wenn der Inhalt der Seite nicht gelesen werden darf. */
   assertReadable(index) {
@@ -382,10 +404,6 @@ export class PdfSession {
       if (!(err instanceof StreamTooLargeError)) throw err;
       src = '';
       unreadable = true; // Seite wird leer und ohne Bearbeitungsmöglichkeit angezeigt
-      if (!this.unreadableNotified.has(key)) {
-        this.unreadableNotified.add(key);
-        if (this.onUnreadable) this.onUnreadable(index, err);
-      }
     }
     const ops = parseContentStream(src);
     const resources = page.node.Resources();

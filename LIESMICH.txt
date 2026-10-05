@@ -264,7 +264,7 @@ U Standard-Unterschrift einsetzen (im Modus „PDF bearbeiten“)
 GUT ZU WISSEN
 -------------
 - Kennwortgeschützte (verschlüsselte) PDFs können nicht bearbeitet werden.
-- Seiten, deren Inhalt entpackt größer als 16 MB ist (meist manipulierte
+- Seiten, deren Inhalt entpackt größer als 8 MB ist (meist manipulierte
   Dateien), werden leer und nicht bearbeitbar angezeigt; der Editor meldet das,
   statt zu hängen, und ändert die Seite nicht. Normale Seiten sind meist unter
   1 MB groß, sehr aufwendige Zeichnungen oder Karten oft einige MB.
