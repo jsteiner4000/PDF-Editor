@@ -11,7 +11,8 @@ export default defineConfig({
   // erwischen. Eine Wiederholung fängt das ab; Playwright weist solche Tests weiterhin als „flaky“ aus.
   retries: process.env.CI ? 2 : 0,
   workers: process.env.CI ? 2 : 4,
-  reporter: [['list']],
+  // Auf GitHub zusätzlich als Anmerkungen am Lauf, damit Fehler ohne das Rohprotokoll lesbar sind.
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
   outputDir: 'test-results',
   use: {
     browserName: 'chromium',

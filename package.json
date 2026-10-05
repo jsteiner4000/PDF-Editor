@@ -1,7 +1,7 @@
 {
   "name": "pdf-editor",
   "productName": "PDF-Editor",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten – als Desktop-App (Electron) oder als einzelne HTML-Datei im Browser, komplett offline.",
   "author": {

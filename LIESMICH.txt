@@ -10,7 +10,7 @@ STARTEN
 -------
 Desktop-App (empfohlen, Windows 10/11)
 
-Installation: „PDF-Editor-Setup-2.0.0.exe“ ausführen. Der PDF-Editor wird nur
+Installation: „PDF-Editor-Setup-2.0.1.exe“ ausführen. Der PDF-Editor wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer lässt sich wählen, dass der PDF-Editor beim Rechtsklick auf eine
@@ -19,7 +19,7 @@ für PDF-Dateien: Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App
 auswählen“ > „PDF-Editor“ > „Immer“. Dann öffnet ein Doppelklick auf eine PDF
 direkt den PDF-Editor.
 
-Ohne Installation: „PDF-Editor-2.0.0-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDF-Editor-2.0.1-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
