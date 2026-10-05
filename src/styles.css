@@ -4,7 +4,7 @@
      Violett/Magenta/Minze nur sparsam (Wortmarke, Werkzeug-Symbole). */
   --ink: #1b1e45;
   --ink2: #4b4f72;
-  --ink3: #7c809c;
+  --ink3: #5f6483;
   --line: #e3e5ef;
   --line2: #d2d5e3;
   --bg: #f3f4fa;
@@ -343,11 +343,9 @@ kbd {
 }
 .sec h4 {
   margin: 0 0 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
+  color: var(--ink2);
 }
 .row {
   display: flex;
@@ -362,6 +360,11 @@ kbd {
   background: #fff;
   padding: 0 9px;
   min-width: 0;
+}
+.fld:disabled {
+  background: var(--bg);
+  color: var(--ink3);
+  cursor: default;
 }
 .fld:focus {
   outline: 2px solid var(--acc-line);
@@ -1355,10 +1358,9 @@ button.feat:focus-visible {
   margin-top: 22px;
 }
 .recent h4 {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink3);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink2);
   margin: 0 0 8px;
 }
 .rl {
@@ -1676,4 +1678,29 @@ button.feat:focus-visible {
 .desktop #bFile,
 .desktop #bFile + .sep {
   display: none;
+}
+
+/* Browser-Flächen im Farbton der App: Markierung, Eingabemarke, Zahlen */
+::selection {
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+input,
+textarea {
+  caret-color: var(--acc);
+}
+.zin input,
+.pg input,
+#pgN {
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

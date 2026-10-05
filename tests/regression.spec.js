@@ -228,7 +228,8 @@ test('Seiten löschen und einfügen (Seitenzahlen, Kopfzeile)', async ({ browser
     await chooseTool(page, 'Seiten organisieren');
     await expect(page.locator('#org .ocard')).toHaveCount(3);
     await page.waitForFunction(() => window.pdfEditor.org.detected);
-    const panel = await page.locator('#lpBody').innerText();
+    // Abschnittstitel waren in 1.0 in Großbuchstaben gesetzt; verglichen wird der Wortlaut
+    const panel = (await page.locator('#lpBody').innerText()).toLowerCase().replaceAll('ß', 'ss');
     await page.locator('#org .ocard').nth(1).click();
     await page.locator('#oDel').click();
     await expect(page.locator('#org .ocard')).toHaveCount(2);

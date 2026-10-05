@@ -110,8 +110,7 @@ export class EditMode {
     $('#pages').classList.add('mode-edit');
     const ctx = $('#ctx');
     ctx.classList.remove('hidden');
-    ctx.innerHTML = `<span class="title">PDF bearbeiten</span>
-      <button class="btn" id="cAddText">${icon('textbox', 's')}Text hinzufügen</button>
+    ctx.innerHTML = `<button class="btn" id="cAddText">${icon('textbox', 's')}Text hinzufügen</button>
       <button class="btn" id="cAddImg">${icon('image', 's')}Bild hinzufügen</button>
       <span class="chip" id="cHint">Klick: bearbeiten · Pfeiltasten: verschieben · Alt+Klick: Element dahinter</span>
       <div class="grow"></div>

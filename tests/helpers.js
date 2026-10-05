@@ -181,7 +181,9 @@ const LEGACY_LOOK = `:root{
   --sh1:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);
   --sh2:0 4px 12px rgba(16,24,40,.10),0 2px 4px rgba(16,24,40,.06);
   --sh3:0 18px 48px rgba(16,24,40,.18),0 4px 12px rgba(16,24,40,.08);
-}`;
+}
+.sec h4,.recent h4{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
+.fld:disabled{background:#fff;color:revert;cursor:revert}`;
 
 /**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).
