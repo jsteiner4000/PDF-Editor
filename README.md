@@ -98,12 +98,13 @@ release/                  Ausgabe von electron-builder (nicht im Repository)
 ## Build
 
 `scripts/build.mjs` bündelt `src/main.js` mit esbuild als IIFE und setzt es zusammen mit
-`src/styles.css` in `src/index.html` ein. Zwei virtuelle Module werden dabei erzeugt:
+`src/styles.css` in `src/index.html` ein. Drei virtuelle Module werden dabei erzeugt:
 
 - `virtual:pdfjs-worker` – der separat gebündelte pdf.js-Worker als Quelltext-String
 - `virtual:bundled-fonts` – die Schriften aus `assets/fonts/embedded/` (gzip, base64)
+- `virtual:logos` – App-Symbol für Kopfzeile (`icon-small.svg`) und Startseite (`icon.svg`) als data:-URI
 
-Das Favicon stammt aus `assets/icon/favicon-1.0.svg` (Konstante `FAVICON` im Build-Skript).
+Das Favicon stammt aus `assets/icon/favicon.svg`; Kopfzeile und Startseite nutzen `icon-small.svg` bzw. `icon.svg` aus demselben Ordner. Windows-Icon: `assets/icon/icon.ico` (erzeugt von `build-icons.mjs`).
 
 ## Tests
 

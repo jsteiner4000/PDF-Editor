@@ -21,7 +21,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'src');
 const OUT_FILE = path.join(ROOT, 'dist', 'PDF-Editor.html');
 const FONT_DIR = path.join(ROOT, 'assets', 'fonts', 'embedded');
-const FAVICON = path.join(ROOT, 'assets', 'icon', 'favicon-1.0.svg');
+const ICON_DIR = path.join(ROOT, 'assets', 'icon');
 
 /** Bündelt den pdf.js-Worker als klassisches Skript (IIFE). */
 async function buildWorkerSource() {
@@ -63,11 +63,20 @@ function virtualModules(contents) {
   };
 }
 
+/** App-Symbol aus assets/icon (einzige Quelle): { small: Kopfzeile, large: Startseite } als data:-URI. */
+async function loadLogos() {
+  const [small, large] = await Promise.all([
+    readFile(path.join(ICON_DIR, 'icon-small.svg'), 'utf8'),
+    readFile(path.join(ICON_DIR, 'icon.svg'), 'utf8'),
+  ]);
+  return { small: svgDataUri(small), large: svgDataUri(large) };
+}
+
 /** SVG als data:-URI (gleiche Kodierung wie in Version 1.0). */
 function svgDataUri(svg) {
   return (
     'data:image/svg+xml,' +
-    svg.trim().replace(/[%<>"()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+    svg.trim().replace(/[%<>"()#]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
   );
 }
 
@@ -80,7 +89,11 @@ function fill(template, values) {
 
 export async function build() {
   const started = Date.now();
-  const [workerSource, fonts] = await Promise.all([buildWorkerSource(), loadBundledFonts()]);
+  const [workerSource, fonts, logos] = await Promise.all([
+    buildWorkerSource(),
+    loadBundledFonts(),
+    loadLogos(),
+  ]);
   const result = await esbuild.build({
     entryPoints: [path.join(SRC, 'main.js')],
     bundle: true,
@@ -96,6 +109,7 @@ export async function build() {
       virtualModules({
         'virtual:pdfjs-worker': 'export default ' + JSON.stringify(workerSource) + ';',
         'virtual:bundled-fonts': 'export default ' + JSON.stringify(fonts) + ';',
+        'virtual:logos': 'export default ' + JSON.stringify(logos) + ';',
       }),
     ],
   });
@@ -105,7 +119,7 @@ export async function build() {
   const [template, styles, favicon] = await Promise.all([
     readFile(path.join(SRC, 'index.html'), 'utf8'),
     readFile(path.join(SRC, 'styles.css'), 'utf8'),
-    readFile(FAVICON, 'utf8'),
+    readFile(path.join(ICON_DIR, 'favicon.svg'), 'utf8'),
   ]);
   const html = fill(template, { FAVICON: svgDataUri(favicon), STYLES: styles, SCRIPT: script });
   await mkdir(path.dirname(OUT_FILE), { recursive: true });

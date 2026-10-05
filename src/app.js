@@ -218,7 +218,7 @@ export class App {
     home.classList.remove('hidden');
     home.innerHTML = `
 <div class="hcard">
-  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1>PDF-Editor</h1><p>Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen und ordnen – direkt im Browser, ohne Internet.</p></div></div>
+  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1>PDF-Editor</h1><p>Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen und ordnen – komplett offline.</p></div></div>
   <div class="drop" id="dropZone">
     <div class="ficon" style="width:40px;height:50px"></div>
     <div class="dt"><b>PDF-Datei öffnen</b><span>Datei auswählen oder hierher ziehen</span></div>
