@@ -21,7 +21,7 @@ kbd{font:11px/1 var(--font);padding:2px 5px;border:1px solid var(--line2);border
 #app{display:grid;grid-template-rows:52px 1fr;height:100%}
 #top{display:flex;align-items:center;gap:6px;padding:0 10px 0 14px;background:var(--panel);border-bottom:1px solid var(--line);position:relative;z-index:30}
 .brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:14px;letter-spacing:-.01em;margin-right:6px;user-select:none}
-.brand .mark{width:28px;height:28px;display:grid;place-items:center}
+.brand .mark{width:30px;height:30px;display:grid;place-items:center}
 .sep{width:1px;height:24px;background:var(--line);margin:0 6px}
 .btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 11px;border-radius:7px;border:1px solid transparent;background:transparent;cursor:pointer;white-space:nowrap;user-select:none}
 .btn:hover{background:var(--hover)}

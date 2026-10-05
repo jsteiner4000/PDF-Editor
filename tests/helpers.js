@@ -157,13 +157,23 @@ export async function screenshots(page, selectors = ['#top', '#left', '#right', 
   await idle(page);
   // Die schwebende Navigation liegt mit Weichzeichner (backdrop-filter) über der Seite – das
   // Ergebnis ist nicht pixelstabil, daher wird sie für die Aufnahme ausgeblendet.
-  await page.evaluate(() => document.getElementById('nav').style.setProperty('visibility', 'hidden'));
+  // Das App-Symbol ist in 2.0 bewusst neu (rot) und wird nicht mit 1.0 verglichen.
+  await page.evaluate(() => {
+    document.getElementById('nav').style.setProperty('visibility', 'hidden');
+    for (const m of document.querySelectorAll('.brand .mark, .hhero .mark')) {
+      m.dataset.logo = m.innerHTML;
+      m.innerHTML = '<i style="display:block;width:28px;height:28px"></i>';
+    }
+  });
   const out = {};
   for (const sel of selectors) {
     const loc = page.locator(sel).first();
     out[sel] = (await loc.isVisible()) ? sha(await loc.screenshot()) : null;
   }
-  await page.evaluate(() => document.getElementById('nav').style.removeProperty('visibility'));
+  await page.evaluate(() => {
+    document.getElementById('nav').style.removeProperty('visibility');
+    for (const m of document.querySelectorAll('.brand .mark, .hhero .mark')) m.innerHTML = m.dataset.logo;
+  });
   return out;
 }
 
