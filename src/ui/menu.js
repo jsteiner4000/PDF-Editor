@@ -22,8 +22,11 @@ export function showMenu(items, anchor) {
       continue;
     }
     const button = htmlToElement(
-      `<button class="mi" role="menuitem">${item.icon ? icon(item.icon, 's') : '<span style="width:16px"></span>'}<span>${escapeHtml(item.label)}</span>${item.key ? `<span class="k">${escapeHtml(item.key)}</span>` : ''}</button>`,
+      `<button class="mi" role="menuitem">${item.checked ? icon('check', 's') : item.icon ? icon(item.icon, 's') : '<span style="width:16px"></span>'}<span>${escapeHtml(item.label)}</span>${item.key ? `<span class="k">${escapeHtml(item.key)}</span>` : ''}</button>`,
     );
+    if (item.checked !== undefined)
+      (button.setAttribute('role', 'menuitemcheckbox'),
+        button.setAttribute('aria-checked', String(!!item.checked)));
     if (item.disabled) button.disabled = true;
     button.addEventListener('click', () => {
       closeMenu();

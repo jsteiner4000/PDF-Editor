@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
       hasDocument: !!state.hasDocument,
       name: String(state.name || ''),
       dirty: !!state.dirty,
+      stripActive: !!state.stripActive,
     }),
   onCommand: (handler) => {
     commandHandler = handler;

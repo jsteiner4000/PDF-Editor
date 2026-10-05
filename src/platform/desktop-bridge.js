@@ -120,6 +120,7 @@ export function notifyDocumentState() {
       hasDocument: !!session,
       name: session && app.file ? app.file.name : '',
       dirty: !!(session && session.dirty),
+      stripActive: !!app.stripActive,
     });
   }, 0);
 }
@@ -137,6 +138,7 @@ const COMMANDS = {
   print: () => app.session && app.print(),
   properties: () => app.session && app.props(),
   closeDocument: () => app.close(),
+  stripActive: () => app.toggleStripActive(),
   undo: () => (inEditableField() ? document.execCommand('undo') : app.session && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : app.session && app.redo()),
   zoomIn: () => app.session && app.zoomStep(1),
@@ -199,4 +201,5 @@ export function installDesktopBridge(appInstance) {
   if (title) new MutationObserver(notifyDocumentState).observe(title, { childList: true });
   notifyDocumentState();
   desktop.ready();
+  notifyDocumentState(); // Stand des Schalters „Aktive Inhalte entfernen“ ins Menü
 }

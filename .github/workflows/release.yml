@@ -1,5 +1,5 @@
 # Windows-Release der Desktop-App: Installer (NSIS) und Portable-EXE.
-# Läuft bei Tags v* (z. B. v2.0.1) und manuell („Run workflow“). Bei Tags werden die Dateien
+# Läuft bei Tags v* (z. B. v2.0.2) und manuell („Run workflow“). Bei Tags werden die Dateien
 # als Release-Assets veröffentlicht, sonst nur als Artefakte des Laufs hochgeladen.
 name: Release (Windows)
 
@@ -108,7 +108,7 @@ jobs:
       - name: Ausgabedateien zusammenstellen
         run: |
           New-Item -ItemType Directory -Force upload | Out-Null
-          Copy-Item release\PDF-Editor-Setup-*.exe, release\PDF-Editor-*-portable.exe, dist\PDF-Editor.html upload\
+          Copy-Item release\PDF-Editor-Setup-*.exe, release\PDF-Editor-*-portable.exe upload\
           Get-ChildItem upload | Format-Table Name, Length
 
       - name: Artefakte hochladen

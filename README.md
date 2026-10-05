@@ -1,10 +1,12 @@
 # PDF-Editor
 
 PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten, Seiten einfügen, löschen und ordnen.
-Das Ergebnis des Builds ist **eine einzige HTML-Datei** (`dist/PDF-Editor.html`), die offline in
-Chrome oder Edge läuft – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet. Dieselbe
-Datei wird als **Desktop-App** (Electron, `desktop/`) für Windows ausgeliefert: Installer und
-Portable-EXE, mit echter Dateiintegration. Die Bedienung beschreibt `LIESMICH.txt`.
+Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer und
+Portable-EXE, mit echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
+(`dist/PDF-Editor.html` – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet), die
+die Desktop-App lädt und gegen die die Tests laufen. Sie ist ein internes Bauteil und wird nicht
+als eigenes Programm ausgeliefert oder unterstützt (im Browser gelten die Schutzmaßnahmen der
+Desktop-App nicht). Die Bedienung beschreibt `LIESMICH.txt`.
 
 ## Schnellstart
 
@@ -172,7 +174,7 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
 - **Release**: `.github/workflows/release.yml` auf `windows-latest` bei Tags `v*` und manuell:
   `npm ci`, Build, Desktop-Smoke-Test, Regressionstests, `electron-builder`, Prüfung des
   gepackten Programms (Start mit PDF, Fenstertitel) und des Installers (stille Installation,
-  Zuordnung, Startmenü, Deinstallation). Installer, Portable-EXE und `PDF-Editor.html` werden als
+  Zuordnung, Startmenü, Deinstallation). Installer und Portable-EXE werden als
   Artefakte hochgeladen; bei Tags legt der getrennte Job `release` (als einziger mit
   Schreibrecht) daraus die Release-Assets an. Der Tag muss zur Version in `package.json` passen.
   Aktionen sind auf Commit-SHAs festgelegt (Version im Kommentar); beim Aktualisieren SHA und

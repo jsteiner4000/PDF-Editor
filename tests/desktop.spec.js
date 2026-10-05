@@ -257,6 +257,24 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     // In-App-Menü „Datei“ ist in der Desktop-App ausgeblendet (natives Menü)
     await expect(page.locator('#bFile')).toBeHidden();
 
+    // Schalter „Aktive Inhalte beim Speichern entfernen“: im nativen Menü, Zustand wird gespiegelt
+    const stripItem = () =>
+      app.evaluate(({ Menu }) => {
+        const item = Menu.getApplicationMenu().getMenuItemById('stripActive');
+        return { label: item.label, checked: item.checked, enabled: item.enabled };
+      });
+    expect(await stripItem()).toEqual({
+      label: 'Aktive Inhalte beim Speichern entfernen',
+      checked: true,
+      enabled: true,
+    });
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('stripActive').click());
+    await expect.poll(() => page.evaluate(() => window.pdfEditor.stripActive)).toBe(false);
+    await expect.poll(async () => (await stripItem()).checked).toBe(false);
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('stripActive').click());
+    await expect.poll(() => page.evaluate(() => window.pdfEditor.stripActive)).toBe(true);
+    await expect.poll(async () => (await stripItem()).checked).toBe(true);
+
     // Schreibgeschützte Datei: klare Meldung ohne Pfad, Datei unverändert
     chmodSync(readonly, 0o444);
     const before = readFileSync(readonly);

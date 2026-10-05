@@ -394,6 +394,8 @@ function start() {
       if (!fromMainFrame(event) || !state) return;
       docState = { hasDocument: !!state.hasDocument, name: String(state.name || ''), dirty: !!state.dirty };
       updateTitle();
+      const strip = menu && menu.getMenuItemById('stripActive');
+      if (strip) strip.checked = !!state.stripActive;
     });
     ipcMain.on('app:ready', (event) => {
       if (!fromMainFrame(event)) return;

@@ -5,6 +5,7 @@ import { PDFName } from 'pdf-lib';
 import BUNDLED_FONTS from 'virtual:bundled-fonts';
 import { FontLibrary } from './fonts/font-manager.js';
 import { PdfSession } from './pdf/session.js';
+import { describeRemoved, hasRemoved } from './pdf/active-content.js';
 import { PdfRenderer, PREVIEW_MAX_PX } from './render/pdf-renderer.js';
 import { DetailRenderer } from './render/detail-renderer.js';
 import { PageView } from './ui/page-view.js';
@@ -70,10 +71,22 @@ const objectId = (obj) =>
  * Darstellung (`renderer`), Zoom und die Modi `edit` (EditMode), `org` (OrganizeMode) und
  * `fontsPanel`. Erreichbar als `window.pdfEditor` (auch von den Tests genutzt).
  */
+const STRIP_KEY = 'pdfeditor.stripActiveContent';
+
+/** Einstellung „Aktive Inhalte beim Speichern entfernen“ (Standard: an). */
+function readStripSetting() {
+  try {
+    return localStorage.getItem(STRIP_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
 export class App {
   constructor(root) {
     this.root = root;
     this.session = null;
+    this.stripActive = readStripSetting();
     this.renderer = new PdfRenderer();
     this.library = new FontLibrary();
     this.file = null;
@@ -302,6 +315,11 @@ export class App {
           run: () => this.saveAs(),
         },
         '-',
+        {
+          label: 'Aktive Inhalte beim Speichern entfernen',
+          checked: this.stripActive,
+          run: () => this.toggleStripActive(),
+        },
         { label: 'Im Browser anzeigen / Drucken', icon: 'print', disabled: !hasDoc, run: () => this.print() },
         { label: 'Dokumenteigenschaften', icon: 'info', disabled: !hasDoc, run: () => this.props() },
         '-',
@@ -497,13 +515,33 @@ export class App {
     }
     toast('Nur PDF-Dateien und Bilder (PNG, JPG) können abgelegt werden.', 'warn');
   }
+  /**
+   * Schalter „Aktive Inhalte beim Speichern entfernen“: JavaScript, Programmstarts und Anhänge
+   * (z. B. aus zugelieferten PDFs) gelangen so nicht unbemerkt in weitergegebene Dateien.
+   */
+  toggleStripActive(value = !this.stripActive) {
+    this.stripActive = !!value;
+    try {
+      localStorage.setItem(STRIP_KEY, this.stripActive ? '1' : '0');
+    } catch {}
+    toast(
+      this.stripActive
+        ? 'Beim Speichern werden aktive Inhalte (Skripte, Programmstarts, Anhänge) entfernt.'
+        : 'Beim Speichern bleiben aktive Inhalte der PDF erhalten.',
+    );
+    notifyDocumentState();
+    return this.stripActive;
+  }
   async bytesForSave() {
-    return this.session
-      ? (await this.edit.finishEdit(),
-        await this.edit.idle(),
-        this._syncP && (await this._syncP),
-        this.session.save({ clean: true }))
-      : null;
+    if (!this.session) return null;
+    await this.edit.finishEdit();
+    await this.edit.idle();
+    if (this._syncP) await this._syncP;
+    const bytes = await this.session.save({ clean: true, strip: this.stripActive });
+    const removed = this.session.lastRemoved;
+    if (removed && hasRemoved(removed))
+      toast('Aktive Inhalte entfernt: ' + describeRemoved(removed) + '.', '', 6000);
+    return bytes;
   }
   async save() {
     if (!this.session) return false;

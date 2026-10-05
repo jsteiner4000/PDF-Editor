@@ -15,7 +15,8 @@ import {
   serializeOps,
   StringToken,
 } from './content-stream.js';
-import { nameText, pdfName, readStreamBytes } from './pdf-objects.js';
+import { withoutActiveContent } from './active-content.js';
+import { StreamTooLargeError, nameText, pdfName, readStreamBytes } from './pdf-objects.js';
 import { PdfFontCache } from './pdf-font.js';
 import { IDENTITY_MATRIX, invertMatrix, multiplyMatrix } from './matrix.js';
 import { interpretContent } from './content-interpreter.js';
@@ -288,7 +289,10 @@ export class PdfSession {
       .map((a) => {
         try {
           return bytesToLatin1(readStreamBytes(this.ctx, a) || new Uint8Array(0));
-        } catch {
+        } catch (err) {
+          // Zu großer Inhalt darf nie wie „leere Seite“ aussehen – sonst würde eine Bearbeitung
+          // den echten Inhalt überschreiben.
+          if (err instanceof StreamTooLargeError) throw err;
           return '';
         }
       })
@@ -355,7 +359,15 @@ export class PdfSession {
     const page = this.page(index);
     const key = page.ref.toString();
     if (this.models.has(key)) return this.models.get(key);
-    const src = this.contentSrc(page);
+    let src;
+    let unreadable = false;
+    try {
+      src = this.contentSrc(page);
+    } catch (err) {
+      if (!(err instanceof StreamTooLargeError)) throw err;
+      src = '';
+      unreadable = true; // Seite wird leer und ohne Bearbeitungsmöglichkeit angezeigt
+    }
     const ops = parseContentStream(src);
     const resources = page.node.Resources();
     const content = interpretContent(this.ctx, ops, resources, this.fontCache);
@@ -409,6 +421,7 @@ export class PdfSession {
       objects,
       fonts: content.fonts,
       qctm: content.qctm,
+      unreadable,
     };
     this.models.set(key, model);
     return model;
@@ -1423,9 +1436,20 @@ Q`,
     this._saveLock = result.catch(() => {});
     return result;
   }
-  async _save({ clean = true } = {}) {
+  /**
+   * Serialisiert das Dokument. Mit `strip` werden aktive Inhalte (JavaScript, Programmstarts,
+   * Anhänge) nur für diesen Vorgang entfernt; `this.lastRemoved` nennt, was entfernt wurde.
+   */
+  async _save({ clean = true, strip = false } = {}) {
     await this.doc.flush();
     this.fonts.fixEmbeddedNames();
+    this.lastRemoved = null;
+    if (!strip) return this._serialize(clean);
+    const { result, removed } = await withoutActiveContent(this.doc, () => this._serialize(clean));
+    this.lastRemoved = removed;
+    return result;
+  }
+  async _serialize(clean) {
     if (!clean)
       return this.doc.save({ useObjectStreams: false, addDefaultPage: false, updateFieldAppearances: false });
     const unreachable = [];

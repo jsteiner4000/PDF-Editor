@@ -1,9 +1,9 @@
 {
   "name": "pdf-editor",
   "productName": "PDF-Editor",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
-  "description": "PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten – als Desktop-App (Electron) oder als einzelne HTML-Datei im Browser, komplett offline.",
+  "description": "PDF-Editor: Texte und Bilder in PDF-Dateien bearbeiten – Desktop-App für Windows (Electron), komplett offline.",
   "author": {
     "name": "jsteiner4000"
   },
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@pdf-lib/fontkit": "1.1.1",
+    "pako": "1.0.11",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "4.10.38"
   },

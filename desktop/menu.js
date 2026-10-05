@@ -40,6 +40,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         docItem('save', 'Speichern', shown('CmdOrCtrl+S')),
         docItem('saveAs', 'Speichern unter …', shown('CmdOrCtrl+Shift+S')),
         { type: 'separator' },
+        cmd('stripActive', 'Aktive Inhalte beim Speichern entfernen', { type: 'checkbox', checked: true }),
         docItem('print', 'Anzeigen und drucken …', shown('CmdOrCtrl+P')),
         docItem('properties', 'Dokumenteigenschaften'),
         { type: 'separator' },

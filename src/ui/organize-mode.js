@@ -625,9 +625,12 @@ export class OrganizeMode {
     if (!indices.length) return;
     await this.app.edit.finishEdit();
     const bytes = await withBusy(async () => {
-      const src = await PDFDocument.load(await this.session.save({ clean: false }), {
-        updateMetadata: false,
-      });
+      const src = await PDFDocument.load(
+        await this.session.save({ clean: false, strip: this.app.stripActive }),
+        {
+          updateMetadata: false,
+        },
+      );
       const out = await PDFDocument.create();
       (await out.copyPages(src, indices)).forEach((l) => out.addPage(l));
       return out.save({ useObjectStreams: true });

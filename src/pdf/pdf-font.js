@@ -321,8 +321,11 @@ class PdfFont {
       const map = this.cid && this.cid.get(pdfName('CIDToGIDMap'));
       if (!map || map instanceof PDFName) return code;
       if (!this._c2g) {
-        const bytes = readStreamBytes(this.ctx, map);
-        this._c2g = bytes;
+        try {
+          this._c2g = readStreamBytes(this.ctx, map);
+        } catch {
+          this._c2g = new Uint8Array(0); // zu groß oder beschädigt: keine Zuordnung
+        }
       }
       return code * 2 + 1 < this._c2g.length ? (this._c2g[code * 2] << 8) | this._c2g[code * 2 + 1] : 0;
     }

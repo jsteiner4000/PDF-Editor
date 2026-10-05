@@ -1,16 +1,16 @@
 PDF-Editor
 ==========
 
-Ein PDF-Editor für Windows (Desktop-App) und den Browser: Texte und Bilder in
-PDF-Dateien bearbeiten, Seiten einfügen, löschen und ordnen. Läuft komplett
-offline – es werden keine Daten ins Internet übertragen.
+Ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
+einfügen, löschen und ordnen. Läuft komplett offline – es werden keine Daten
+ins Internet übertragen.
 
 
 STARTEN
 -------
-Desktop-App (empfohlen, Windows 10/11)
+Windows 10/11
 
-Installation: „PDF-Editor-Setup-2.0.1.exe“ ausführen. Der PDF-Editor wird nur
+Installation: „PDF-Editor-Setup-2.0.2.exe“ ausführen. Der PDF-Editor wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer lässt sich wählen, dass der PDF-Editor beim Rechtsklick auf eine
@@ -19,7 +19,7 @@ für PDF-Dateien: Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App
 auswählen“ > „PDF-Editor“ > „Immer“. Dann öffnet ein Doppelklick auf eine PDF
 direkt den PDF-Editor.
 
-Ohne Installation: „PDF-Editor-2.0.1-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDF-Editor-2.0.2-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
@@ -35,13 +35,6 @@ von Hand gelöscht werden.
 
 Der PDF-Editor stellt keine Verbindung zum Internet her, sucht nicht nach
 Updates und sendet keine Daten.
-
-Alternative: Browser-Variante
-„PDF-Editor.html“ doppelklicken. Die Datei öffnet sich in Google Chrome oder
-Microsoft Edge (empfohlen). Eine Installation ist nicht nötig. Falls ein
-anderer Browser startet: Rechtsklick > „Öffnen mit“ > Chrome oder Edge.
-In anderen Browsern (z. B. Firefox) speichert „Speichern“ eine Kopie in den
-Download-Ordner, statt die Datei zu überschreiben.
 
 
 PDF ÖFFNEN
@@ -158,7 +151,7 @@ In der Vorschau:
 - „Formularlinien entfernen“: Linie, auf der unterschrieben wurde, weglassen.
 - „Art“: Unterschrift oder Initialen (Kürzel), dazu ein Name.
 „Sichern“ speichert die Unterschrift dauerhaft in der Anwendung auf diesem
-Rechner (Desktop-App bzw. Browser). Sie wird nirgendwohin übertragen.
+Rechner. Sie wird nirgendwohin übertragen.
 
 Unterschrift einsetzen:
 „Unterschrift“ klicken, die gewünschte Unterschrift wählen und auf die Stelle im
@@ -172,10 +165,8 @@ Unterschrift mehrmals eingesetzt, ist sie in der PDF-Datei nur einmal enthalten.
 
 Verwalten: „Unterschrift“ > „Unterschriften verwalten …“ – umbenennen, als
 Standard festlegen oder löschen.
-Hinweis: Gespeicherte Unterschriften gehören zur Desktop-App (Ordner
-%APPDATA%\PDF-Editor) bzw. – in der Browser-Variante – zum Browser, in dem der
-Editor geöffnet wird; die beiden teilen sich keine Unterschriften. Wer die
-Browserdaten löscht, löscht sie mit.
+Hinweis: Gespeicherte Unterschriften liegen im Ordner %APPDATA%\PDF-Editor. Wer
+diesen Ordner löscht, löscht sie mit.
 
 Umstieg von Version 1.0: Beim ersten Start stellt der Editor seinen Speicher
 um (eigene Schriften und „Zuletzt geöffnet“ bleiben erhalten). Ist
@@ -228,6 +219,16 @@ rückgängig machen und mit Strg+Y wiederholen.
 Beim Schließen mit ungespeicherten Änderungen fragt der PDF-Editor nach
 („Speichern“, „Nicht speichern“, „Abbrechen“).
 
+Aktive Inhalte entfernen: PDF-Dateien können JavaScript, Programmstarts
+(„Launch“-Links), Formular-Versand und eingebettete Dateien enthalten. Der
+PDF-Editor führt nichts davon aus – würde sie beim Speichern aber unverändert
+weitergeben, z. B. aus einem zugelieferten Datenblatt in Ihre Anleitung.
+Deshalb entfernt „Speichern“ sie standardmäßig und meldet, was entfernt wurde.
+Text, Bilder, normale Web-Links und Formularfelder bleiben. Wer bewusst Dateien
+anhängt: Menü „Datei“ > „Aktive Inhalte beim Speichern entfernen“ ausschalten.
+Das Dokument im Editor bleibt dabei unverändert; der Schalter gilt auch für
+„Als PDF speichern“ im Modus „Seiten organisieren“.
+
 
 SCHRIFTEN
 ---------
@@ -261,6 +262,9 @@ U Standard-Unterschrift einsetzen (im Modus „PDF bearbeiten“)
 GUT ZU WISSEN
 -------------
 - Kennwortgeschützte (verschlüsselte) PDFs können nicht bearbeitet werden.
+- Seiten, deren Inhalt entpackt größer als 64 MB ist (meist manipulierte
+  Dateien), werden leer und nicht bearbeitbar angezeigt; der Editor meldet das,
+  statt zu hängen, und ändert die Seite nicht.
 - Gedrehter Text (z. B. senkrechte Beschriftungen) kann gelöscht, aber nicht
   bearbeitet werden.
 - Formularfelder, Kommentare und Links bleiben erhalten, werden aber nicht
