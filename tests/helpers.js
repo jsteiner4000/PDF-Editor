@@ -323,7 +323,10 @@ export async function uiState(page) {
     const app = window.pdfEditor;
     const q = (s) => document.querySelector(s);
     return {
-      title: document.title,
+      // der Programmname ist ab 2.1 neu (PDFix); verglichen wird nur der Dateiname
+      title: document.title
+        .replace(/ – (PDFix|PDF-Editor)$/, ' – <Programm>')
+        .replace(/^(PDFix|PDF-Editor)$/, '<Programm>'),
       pages: app.session ? app.session.numPages : 0,
       pgN: q('#pgN') && q('#pgN').textContent,
       zoomLabel: q('#bZoom') && q('#bZoom').textContent,
