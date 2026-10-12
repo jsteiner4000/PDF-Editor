@@ -40,6 +40,7 @@ const num = (obj) => (obj instanceof PDFNumber ? obj.asNumber() : 0);
 /** Feld-Flags (PDF 32000-1, Tabellen 221, 226, 228, 230). */
 const FF = {
   readOnly: 1,
+  required: 1 << 1,
   multiline: 1 << 12,
   password: 1 << 13,
   noToggleToOff: 1 << 14,
@@ -48,9 +49,112 @@ const FF = {
   combo: 1 << 17,
   fileSelect: 1 << 20,
   multiSelect: 1 << 21,
+  doNotSpellCheck: 1 << 22,
+  doNotScroll: 1 << 23,
+  comb: 1 << 24,
 };
-/** Anmerkungs-Flags: versteckt (2) und nicht sichtbar (32). */
-const HIDDEN = 2 | 32;
+/** Anmerkungs-Flags für die Sichtbarkeit. */
+const F = { hidden: 2, print: 4, noView: 32 };
+
+/**
+ * Standardschriften für Formularfelder (wie in Acrobat), mit den üblichen Ressourcennamen.
+ * Sie müssen nicht eingebettet werden; jedes PDF-Programm kennt sie.
+ */
+export const FIELD_FONTS = [
+  { res: 'Helv', label: 'Helvetica', std: StandardFonts.Helvetica, css: 'Helvetica, Arial, sans-serif' },
+  {
+    res: 'HeBo',
+    label: 'Helvetica fett',
+    std: StandardFonts.HelveticaBold,
+    css: 'Helvetica, Arial, sans-serif',
+    weight: 700,
+  },
+  {
+    res: 'HeOb',
+    label: 'Helvetica kursiv',
+    std: StandardFonts.HelveticaOblique,
+    css: 'Helvetica, Arial, sans-serif',
+    italic: true,
+  },
+  {
+    res: 'HeBO',
+    label: 'Helvetica fett kursiv',
+    std: StandardFonts.HelveticaBoldOblique,
+    css: 'Helvetica, Arial, sans-serif',
+    weight: 700,
+    italic: true,
+  },
+  { res: 'TiRo', label: 'Times', std: StandardFonts.TimesRoman, css: '"Times New Roman", Times, serif' },
+  {
+    res: 'TiBo',
+    label: 'Times fett',
+    std: StandardFonts.TimesRomanBold,
+    css: '"Times New Roman", Times, serif',
+    weight: 700,
+  },
+  {
+    res: 'TiIt',
+    label: 'Times kursiv',
+    std: StandardFonts.TimesRomanItalic,
+    css: '"Times New Roman", Times, serif',
+    italic: true,
+  },
+  {
+    res: 'TiBI',
+    label: 'Times fett kursiv',
+    std: StandardFonts.TimesRomanBoldItalic,
+    css: '"Times New Roman", Times, serif',
+    weight: 700,
+    italic: true,
+  },
+  { res: 'Cour', label: 'Courier', std: StandardFonts.Courier, css: '"Courier New", Courier, monospace' },
+  {
+    res: 'CoBo',
+    label: 'Courier fett',
+    std: StandardFonts.CourierBold,
+    css: '"Courier New", Courier, monospace',
+    weight: 700,
+  },
+  {
+    res: 'CoOb',
+    label: 'Courier kursiv',
+    std: StandardFonts.CourierOblique,
+    css: '"Courier New", Courier, monospace',
+    italic: true,
+  },
+  {
+    res: 'CoBO',
+    label: 'Courier fett kursiv',
+    std: StandardFonts.CourierBoldOblique,
+    css: '"Courier New", Courier, monospace',
+    weight: 700,
+    italic: true,
+  },
+];
+/** Gebräuchliche andere Namen für dieselben Standardschriften. */
+const FONT_ALIASES = {
+  Helvetica: 'Helv',
+  Arial: 'Helv',
+  ArialMT: 'Helv',
+  'Helvetica-Bold': 'HeBo',
+  'Arial-BoldMT': 'HeBo',
+  'Times-Roman': 'TiRo',
+  TimesNewRoman: 'TiRo',
+  TimesNewRomanPSMT: 'TiRo',
+  'Times-Bold': 'TiBo',
+  Courier: 'Cour',
+  CourierNew: 'Cour',
+  'Courier-Bold': 'CoBo',
+};
+/** Standardschrift zu einem /DA-Schriftnamen (unbekannt → null). */
+export const fieldFont = (name) =>
+  FIELD_FONTS.find((f) => f.res === (FONT_ALIASES[name] || name) || f.std === name) || null;
+
+/** Innenabstand des Textes wie Acrobat: doppelte Rahmenbreite (abgeschrägt/eingelassen: dreifach). */
+export function fieldPadding(look) {
+  if (!look || !look.border) return 2;
+  return Math.max(2, look.width * (look.style === 'B' || look.style === 'I' ? 3 : 2));
+}
 
 /** Wert eines vererbbaren Eintrags (Feld, dann Eltern; DA zuletzt aus dem AcroForm). */
 function inherited(ctx, dict, key, acroForm = null) {
@@ -152,7 +256,7 @@ export function parseDA(da) {
  *    fontSize, color, align }` – `type`: 'text' | 'checkbox' | 'radio' | 'choice'.
  * `rect` = [x1, y1, x2, y2] in PDF-Punkten (Benutzerraum der Seite).
  */
-export function readPageFields(doc, pageNode) {
+export function readPageFields(doc, pageNode, { all = false } = {}) {
   const ctx = doc.context;
   const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
   if (!(acroForm instanceof PDFDict)) return [];
@@ -160,7 +264,7 @@ export function readPageFields(doc, pageNode) {
   if (!(annots instanceof PDFArray)) return [];
   const out = [];
   for (let k = 0; k < annots.size(); k++) {
-    const entry = describeWidget(ctx, acroForm, annots.get(k), k);
+    const entry = describeWidget(ctx, acroForm, annots.get(k), k, all);
     if (entry) out.push(entry);
   }
   // Lesereihenfolge (oben nach unten, dann links nach rechts) – ergibt die Tab-Reihenfolge
@@ -169,10 +273,11 @@ export function readPageFields(doc, pageNode) {
 }
 
 /** Eintrag zu einem Widget (siehe readPageFields) oder null, wenn es kein ausfüllbares Feld ist. */
-function describeWidget(ctx, acroForm, ref, k = 0) {
+function describeWidget(ctx, acroForm, ref, k = 0, all = false) {
   const widget = ctx.lookup(ref);
   if (!(widget instanceof PDFDict) || nameOf(widget.get(N('Subtype'))) !== 'Widget') return null;
-  if (num(ctx.lookup(widget.get(N('F')))) & HIDDEN) return null;
+  const annotFlags = num(ctx.lookup(widget.get(N('F'))));
+  if (!all && annotFlags & (F.hidden | F.noView)) return null;
   const rectArr = ctx.lookup(widget.get(N('Rect')));
   if (!(rectArr instanceof PDFArray) || rectArr.size() < 4) return null;
   const [a, b, c, d] = [0, 1, 2, 3].map((i) => num(ctx.lookup(rectArr.get(i))));
@@ -183,6 +288,7 @@ function describeWidget(ctx, acroForm, ref, k = 0) {
   const flags = num(inherited(ctx, field, 'Ff'));
   const da = parseDA(textOf(inherited(ctx, widget, 'DA', acroForm)) || '');
   const align = num(inherited(ctx, widget, 'Q', acroForm));
+  const look = appearanceColors(ctx, widget);
   const base = {
     id: ref instanceof PDFRef ? ref.toString() : 'w' + k,
     widget,
@@ -194,11 +300,25 @@ function describeWidget(ctx, acroForm, ref, k = 0) {
     color: da.color,
     align,
     readOnly: !!(flags & FF.readOnly),
-    border: !!appearanceColors(ctx, widget).border,
+    required: !!(flags & FF.required),
+    look,
+    font: da.font,
+    tooltip: textOf(ctx.lookup(field.get(N('TU')))) ?? '',
+    visibility:
+      annotFlags & F.hidden
+        ? 'hidden'
+        : annotFlags & F.noView
+          ? annotFlags & F.print
+            ? 'hiddenPrint'
+            : 'hidden'
+          : annotFlags & F.print
+            ? 'visible'
+            : 'noPrint',
+    rotation: rotationOf(ctx, widget),
   };
   const value = inherited(ctx, field, 'V');
   if (ft === 'Tx') {
-    if (flags & (FF.password | FF.fileSelect)) return null;
+    if (flags & FF.fileSelect) return null;
     const maxLen = num(inherited(ctx, field, 'MaxLen'));
     const text = textOf(value) ?? '';
     const lineHeight = (da.size || 10) * 1.15;
@@ -209,6 +329,11 @@ function describeWidget(ctx, acroForm, ref, k = 0) {
       // mehrzeilig laut Flag – oder der Wert enthält Zeilenumbrüche und das Feld hat Platz dafür
       multiline: !!(flags & FF.multiline) || (/[\r\n]/.test(text) && rect[3] - rect[1] > 1.8 * lineHeight),
       maxLen: maxLen > 0 ? maxLen : 0,
+      password: !!(flags & FF.password),
+      comb: !!(flags & FF.comb) && maxLen > 0,
+      doNotScroll: !!(flags & FF.doNotScroll),
+      doNotSpellCheck: !!(flags & FF.doNotSpellCheck),
+      defaultValue: textOf(inherited(ctx, field, 'DV')) ?? '',
     };
   } else if (ft === 'Btn') {
     if (flags & FF.pushbutton) return null;
@@ -301,7 +426,14 @@ function refreshTextAppearance(doc, widget, entry, set, fontCache) {
   }
 }
 
-/** Rahmen- und Hintergrundfarbe (/MK /BC, /BG) und Rahmenbreite eines Widgets. */
+/** Drehung des Felds (/MK /R): 0, 90, 180 oder 270. */
+function rotationOf(ctx, widget) {
+  const mk = ctx.lookup(widget.get(N('MK')));
+  const r = mk instanceof PDFDict ? num(ctx.lookup(mk.get(N('R')))) : 0;
+  return (((Math.round(r / 90) * 90) % 360) + 360) % 360;
+}
+
+/** Rahmen- und Hintergrundfarbe (/MK /BC, /BG), Rahmenbreite und -stil eines Widgets. */
 function appearanceColors(ctx, widget) {
   const mk = ctx.lookup(widget.get(N('MK')));
   const color = (key) => {
@@ -321,29 +453,47 @@ function appearanceColors(ctx, widget) {
       : border instanceof PDFArray && border.size() >= 3
         ? num(ctx.lookup(border.get(2)))
         : 1;
-  return { border: w > 0 ? color('BC') : null, background: color('BG'), width: w };
+  const style = (bs instanceof PDFDict && nameOf(ctx.lookup(bs.get(N('S'))))) || 'S';
+  return { border: w > 0 ? color('BC') : null, background: color('BG'), width: w, style };
 }
 
 const rgb = (c, op) => `${c.map((v) => +v.toFixed(3)).join(' ')} ${op}`;
 
-/** Rahmen und Hintergrund für ein Erscheinungsbild der Größe w × h. */
-function frameOps(ctx, widget, w, h) {
-  const { border, background, width } = appearanceColors(ctx, widget);
+/**
+ * Rahmen und Hintergrund für ein Erscheinungsbild der Größe w × h (wie Acrobat): Linienstil
+ * durchgezogen, gestrichelt, unterstrichen, abgeschrägt (hell oben/links) oder eingelassen
+ * (dunkel oben/links).
+ */
+function frameOps(ctx, widget, w, h, look = appearanceColors(ctx, widget)) {
+  const { border, background, width, style } = look;
   const ops = [];
   if (background) ops.push(rgb(background, 'rg'), `0 0 ${w} ${h} re f`);
   if (!border) return ops;
-  // Rahmenstil /BS /S: U = nur Unterstrich, D = gestrichelt, sonst durchgehend
   const bs = ctx.lookup(widget.get(N('BS')));
-  const style = bs instanceof PDFDict ? nameOf(ctx.lookup(bs.get(N('S')))) : null;
   ops.push('q', rgb(border, 'RG'), `${width} w`);
   if (style === 'D') {
-    const dash = bs && ctx.lookup(bs.get(N('D')));
+    const dash = bs instanceof PDFDict ? ctx.lookup(bs.get(N('D'))) : null;
     const parts =
       dash instanceof PDFArray && dash.size() ? dash.asArray().map((x) => num(ctx.lookup(x))) : [3];
     ops.push(`[${parts.join(' ')}] 0 d`);
   }
   if (style === 'U') ops.push(`0 ${width / 2} m ${w} ${width / 2} l S`);
   else ops.push(`${width / 2} ${width / 2} ${w - width} ${h - width} re S`);
+  if (style === 'B' || style === 'I') {
+    // innere Schräge: zwei Winkel in Rahmenbreite
+    const light = style === 'B' ? '1 g' : '0.5 g';
+    const dark = style === 'B' ? '0.5 g' : '0.75 g';
+    const i = width;
+    const o = 2 * width;
+    ops.push(
+      light,
+      `${i} ${i} m ${i} ${h - i} l ${w - i} ${h - i} l ${w - o} ${h - o} l ${o} ${h - o} l ${o} ${o} l f`,
+    );
+    ops.push(
+      dark,
+      `${w - i} ${h - i} m ${w - i} ${i} l ${i} ${i} l ${o} ${o} l ${w - o} ${o} l ${w - o} ${h - o} l f`,
+    );
+  }
   ops.push('Q');
   return ops;
 }
@@ -409,36 +559,44 @@ export function restoreChanges(changes, direction) {
   }
 }
 
-/** Helvetica (Standardschrift, nicht eingebettet) – je Dokument einmal angelegt. */
-function helvetica(doc, fontCache) {
-  if (!fontCache.helvetica) fontCache.helvetica = doc.embedStandardFont(StandardFonts.Helvetica);
-  return fontCache.helvetica;
+/** Standardschrift `res` (siehe FIELD_FONTS) – je Dokument einmal angelegt, nicht eingebettet. */
+function standardFont(doc, fontCache, res) {
+  const spec = FIELD_FONTS.find((f) => f.res === res) || FIELD_FONTS[0];
+  fontCache.std ||= {};
+  fontCache.std[spec.res] ||= doc.embedStandardFont(spec.std);
+  return fontCache.std[spec.res];
 }
 
 /**
- * Erscheinungsbild eines Textfelds (Form-XObject) oder null, wenn der Text nicht in Helvetica
- * (WinAnsi) darstellbar ist oder das Widget gedreht ist.
+ * Erscheinungsbild eines Textfelds (Form-XObject) oder null, wenn der Text in der gewählten
+ * Standardschrift (WinAnsi) nicht darstellbar ist. Berücksichtigt Schrift, Größe (0 = automatisch),
+ * Farbe, Ausrichtung, mehrzeilig, Kammfeld, Kennwort und die Drehung des Felds.
  */
 function textAppearance(doc, widget, entry, text, fontCache) {
   const ctx = doc.context;
-  const mk = ctx.lookup(widget.get(N('MK')));
-  if (mk instanceof PDFDict && num(ctx.lookup(mk.get(N('R')))) % 360) return null;
+  const rotation = rotationOf(ctx, widget);
   const rectArr = ctx.lookup(widget.get(N('Rect')));
   const [a, b, c, d] = [0, 1, 2, 3].map((i) => num(ctx.lookup(rectArr.get(i))));
-  const w = Math.abs(c - a);
-  const h = Math.abs(d - b);
-  const font = helvetica(doc, fontCache);
-  const pad = 2;
+  // gedreht: im ungedrehten Feld zeichnen, /Matrix dreht es in das Rechteck
+  const turned = rotation === 90 || rotation === 270;
+  const W = turned ? Math.abs(d - b) : Math.abs(c - a);
+  const H = turned ? Math.abs(c - a) : Math.abs(d - b);
+  const spec = fieldFont(entry.font) || FIELD_FONTS[0];
+  const font = standardFont(doc, fontCache, spec.res);
+  const frameLook = appearanceColors(ctx, widget);
+  const pad = fieldPadding(frameLook);
+  const shown = entry.password ? '*'.repeat([...text].length) : text;
+  const comb = entry.comb && entry.maxLen > 0 && !entry.multiline;
   const lines = [];
   let size = entry.fontSize;
   try {
-    const paragraphs = text.split(/\r\n|\r|\n/);
+    const paragraphs = shown.split(/\r\n|\r|\n/);
     if (!entry.multiline) {
-      if (!size) size = Math.max(4, Math.min(12, (h - 2 * pad) * 0.72));
+      if (!size) size = Math.max(4, Math.min(12, (H - 2 * pad) * 0.72));
       lines.push(paragraphs.join(' '));
     } else {
       if (!size) size = 10;
-      const width = Math.max(1, w - 2 * pad);
+      const width = Math.max(1, W - 2 * pad);
       for (const paragraph of paragraphs) {
         let line = '';
         for (const word of paragraph.split(/(\s+)/)) {
@@ -458,27 +616,49 @@ function textAppearance(doc, widget, entry, text, fontCache) {
   const [r, g, bl] = entry.color.map((v) => +v.toFixed(3));
   const lead = size * 1.15;
   const ascent = size * 0.718;
-  const ops = [
-    ...frameOps(ctx, widget, w, h),
+  const frame = frameOps(ctx, widget, W, H, frameLook);
+  const ops = [...frame];
+  // Kammfeld: Trennlinien in Rahmenfarbe zwischen den Zeichenzellen
+  const { border, width: borderWidth } = frameLook;
+  if (comb && border) {
+    const cell = W / entry.maxLen;
+    ops.push('q', rgb(border, 'RG'), `${borderWidth} w`);
+    for (let n = 1; n < entry.maxLen; n++)
+      ops.push(`${+(n * cell).toFixed(2)} 0 m ${+(n * cell).toFixed(2)} ${H} l S`);
+    ops.push('Q');
+  }
+  ops.push(
     '/Tx BMC',
     'q',
-    `${pad / 2} ${pad / 2} ${w - pad} ${h - pad} re W n`,
+    `${pad / 2} ${pad / 2} ${W - pad} ${H - pad} re W n`,
     'BT',
-    `/Helv ${+size.toFixed(2)} Tf`,
+    `/${spec.res} ${+size.toFixed(2)} Tf`,
     `${r} ${g} ${bl} rg`,
-  ];
-  lines.forEach((line, k) => {
-    const width = font.widthOfTextAtSize(line, size);
-    const x = entry.align === 1 ? (w - width) / 2 : entry.align === 2 ? w - pad - width : pad;
-    const y = entry.multiline ? h - pad - ascent - k * lead : (h - ascent) / 2 + size * 0.06;
-    ops.push(`1 0 0 1 ${+x.toFixed(2)} ${+y.toFixed(2)} Tm`, `${font.encodeText(line).toString()} Tj`);
-  });
+  );
+  const baseline = (H - ascent) / 2 + size * 0.06;
+  const put = (str, x, y) =>
+    ops.push(`1 0 0 1 ${+x.toFixed(2)} ${+y.toFixed(2)} Tm`, `${font.encodeText(str).toString()} Tj`);
+  if (comb) {
+    const cell = W / entry.maxLen;
+    [...lines[0]]
+      .slice(0, entry.maxLen)
+      .forEach((ch, n) => put(ch, n * cell + (cell - font.widthOfTextAtSize(ch, size)) / 2, baseline));
+  } else
+    lines.forEach((line, k) => {
+      const width = font.widthOfTextAtSize(line, size);
+      const x = entry.align === 1 ? (W - width) / 2 : entry.align === 2 ? W - pad - width : pad;
+      put(line, x, entry.multiline ? H - pad - ascent - k * lead : baseline);
+    });
   ops.push('ET', 'Q', 'EMC');
+  const matrix = { 0: null, 90: [0, 1, -1, 0, H, 0], 180: [-1, 0, 0, -1, W, H], 270: [0, -1, 1, 0, 0, W] }[
+    rotation
+  ];
   return ctx.stream(ops.join('\n'), {
     Type: 'XObject',
     Subtype: 'Form',
-    BBox: [0, 0, w, h],
-    Resources: { Font: { Helv: font.ref } },
+    BBox: [0, 0, W, H],
+    ...(matrix ? { Matrix: matrix } : {}),
+    Resources: { Font: { [spec.res]: font.ref } },
   });
 }
 
@@ -490,7 +670,7 @@ const NEW_FIELD_MK = { BC: [0.6, 0.6, 0.6], BG: [1, 1, 1] };
 /** AcroForm des Dokuments (wird bei Bedarf angelegt, mit Helvetica als Standardschrift). */
 function ensureAcroForm(doc, set, fontCache) {
   const ctx = doc.context;
-  const font = helvetica(doc, fontCache);
+  const font = standardFont(doc, fontCache, 'Helv');
   let acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
   if (!(acroForm instanceof PDFDict)) {
     acroForm = ctx.obj({ Fields: [], DA: PDFString.of('/Helv 0 Tf 0 g') });
@@ -598,18 +778,28 @@ export function createField(doc, pageIndex, type, rect, name, fontCache) {
   return { changes, id: ref.toString() };
 }
 
-/** DA mit neuer Schriftgröße (Schriftname und Farbe bleiben). */
-function withFontSize(da, size) {
+/** /DA mit geänderter Schrift, Größe oder Farbe (übrige Angaben bleiben). */
+function composeDA(da, { font, size, color } = {}) {
   const parsed = parseDA(da);
-  const font = parsed.font || 'Helv';
-  const [r, g, b] = parsed.color;
-  const color = r === g && g === b ? `${r} g` : `${r} ${g} ${b} rg`;
-  return `/${font} ${size} Tf ${color}`;
+  const name = font || parsed.font || 'Helv';
+  const fontSize = size ?? parsed.size;
+  const [r, g, b] = (color || parsed.color).map((v) => +(+v).toFixed(3));
+  const colorOps = r === g && g === b ? `${r} g` : `${r} ${g} ${b} rg`;
+  return `/${name} ${fontSize} Tf ${colorOps}`;
 }
 
+const sameColor = (a, b) => (!a && !b) || (!!a && !!b && a.every((v, i) => Math.abs(v - b[i]) < 0.002));
+
 /**
- * Ändert Lage und Eigenschaften eines Felds. `props` (alle optional): `rect`, `name`,
- * `fontSize` (0 = automatisch), `align` (0/1/2), `multiline`, `readOnly`, `border`.
+ * Ändert Lage und Eigenschaften eines Felds (wie der Eigenschaften-Dialog in Acrobat). `props`
+ * (alle optional):
+ *   Allgemein:  `rect`, `name`, `tooltip`, `visibility` ('visible' | 'hidden' | 'noPrint' |
+ *               'hiddenPrint'), `rotation` (0/90/180/270), `readOnly`, `required`
+ *   Darstellung: `borderColor` / `fillColor` ([r, g, b] oder null), `borderWidth` (1–3),
+ *               `borderStyle` ('S' | 'D' | 'B' | 'I' | 'U'), `font` (FIELD_FONTS.res),
+ *               `fontSize` (0 = automatisch), `textColor` ([r, g, b])
+ *   Optionen:   `align` (0/1/2), `defaultValue`, `multiline`, `doNotScroll`, `doNotSpellCheck`,
+ *               `maxLen` (0 = unbegrenzt), `password`, `comb`
  */
 export function updateField(doc, entry, props, fontCache) {
   const ctx = doc.context;
@@ -617,6 +807,27 @@ export function updateField(doc, entry, props, fontCache) {
   repairFieldTree(doc, set, fontCache);
   const { widget, field } = entry;
   const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+  const look = entry.look || appearanceColors(ctx, widget);
+  // nur tatsächliche Änderungen übernehmen (geerbte Standardwerte zählen als gesetzt)
+  props = { ...props };
+  for (const key of [
+    'fontSize',
+    'align',
+    'tooltip',
+    'visibility',
+    'rotation',
+    'font',
+    'maxLen',
+    'defaultValue',
+  ])
+    if (props[key] !== undefined && props[key] === entry[key]) delete props[key];
+  if (props.borderColor !== undefined && sameColor(props.borderColor, look.border)) delete props.borderColor;
+  if (props.fillColor !== undefined && sameColor(props.fillColor, look.background)) delete props.fillColor;
+  if (props.textColor !== undefined && sameColor(props.textColor, entry.color)) delete props.textColor;
+  if (props.borderWidth !== undefined && props.borderWidth === look.width) delete props.borderWidth;
+  if (props.borderStyle !== undefined && props.borderStyle === look.style) delete props.borderStyle;
+
+  // Allgemein
   const [ox1, oy1, ox2, oy2] = entry.rect;
   const resized =
     !!props.rect &&
@@ -625,47 +836,131 @@ export function updateField(doc, entry, props, fontCache) {
   if (props.rect) set(widget, 'Rect', ctx.obj(props.rect.map((v) => +v.toFixed(2))));
   if (props.name !== undefined && props.name !== entry.partialName)
     set(field, 'T', PDFHexString.fromText(props.name));
+  if (props.tooltip !== undefined)
+    set(field, 'TU', props.tooltip ? PDFHexString.fromText(props.tooltip) : undefined);
+  if (props.visibility !== undefined) {
+    const f = num(ctx.lookup(widget.get(N('F')))) & ~(F.hidden | F.print | F.noView);
+    const add = { visible: F.print, hidden: F.hidden, noPrint: 0, hiddenPrint: F.noView | F.print }[
+      props.visibility
+    ];
+    set(widget, 'F', ctx.obj(f | (add ?? F.print)));
+  }
   const flag = (bit, on) => {
     const ff = num(inherited(ctx, field, 'Ff'));
     const next = on ? ff | bit : ff & ~bit;
     if (next !== ff) set(field, 'Ff', ctx.obj(next));
   };
   if (props.readOnly !== undefined) flag(FF.readOnly, props.readOnly);
-  if (props.multiline !== undefined && entry.type === 'text') flag(FF.multiline, props.multiline);
-  // nur tatsächliche Änderungen übernehmen (geerbte Standardwerte zählen als gesetzt)
-  for (const key of ['fontSize', 'align', 'border'])
-    if (props[key] === entry[key]) props = { ...props, [key]: undefined };
-  if (props.fontSize !== undefined) {
-    const da = textOf(inherited(ctx, widget, 'DA', acroForm)) || '/Helv 0 Tf 0 g';
-    set(widget, 'DA', PDFString.of(withFontSize(da, props.fontSize)));
+  if (props.required !== undefined) flag(FF.required, props.required);
+  if (entry.type === 'text') {
+    // Kennwort und mehrzeilig schließen sich aus (wie in Acrobat)
+    if (props.multiline !== undefined) {
+      flag(FF.multiline, props.multiline);
+      if (props.multiline) flag(FF.password, false);
+    }
+    if (props.doNotScroll !== undefined) flag(FF.doNotScroll, props.doNotScroll);
+    if (props.doNotSpellCheck !== undefined) flag(FF.doNotSpellCheck, props.doNotSpellCheck);
+    if (props.password !== undefined) {
+      flag(FF.password, props.password);
+      if (props.password) flag(FF.multiline, false);
+    }
+    if (props.maxLen !== undefined)
+      set(field, 'MaxLen', props.maxLen > 0 ? ctx.obj(props.maxLen) : undefined);
+    if (props.comb !== undefined) {
+      flag(FF.comb, props.comb);
+      // Kammfeld: nur einzeilig, ohne Kennwort, mit fester Zeichenzahl (Acrobat-Regel)
+      if (props.comb) {
+        flag(FF.multiline, false);
+        flag(FF.password, false);
+        if (!num(inherited(ctx, field, 'MaxLen'))) set(field, 'MaxLen', ctx.obj(10));
+      }
+    }
+    if (props.defaultValue !== undefined) {
+      set(field, 'DV', props.defaultValue ? PDFHexString.fromText(props.defaultValue) : undefined);
+      // wie Acrobat: ein leeres Feld zeigt den neuen Standardwert sofort
+      if (!entry.value && props.defaultValue) set(field, 'V', PDFHexString.fromText(props.defaultValue));
+    }
   }
-  if (props.align !== undefined) set(widget, 'Q', ctx.obj(props.align));
-  if (props.border !== undefined) {
+
+  // Darstellung: /MK (Farben, Drehung), /BS (Linie), /DA (Schrift, Größe, Farbe)
+  const mkChange =
+    props.borderColor !== undefined || props.fillColor !== undefined || props.rotation !== undefined;
+  if (mkChange) {
     const mk = ctx.lookup(widget.get(N('MK')));
     const next = mk instanceof PDFDict ? mk.clone(ctx) : ctx.obj({});
-    if (props.border) {
-      next.set(N('BC'), ctx.obj(NEW_FIELD_MK.BC));
-      if (!next.has(N('BG'))) next.set(N('BG'), ctx.obj(NEW_FIELD_MK.BG));
-      set(widget, 'BS', ctx.obj({ W: 1, S: 'S' }));
-      set(widget, 'Border', undefined);
-    } else next.delete(N('BC'));
+    if (props.borderColor !== undefined) {
+      if (props.borderColor) next.set(N('BC'), ctx.obj(props.borderColor));
+      else next.delete(N('BC'));
+    }
+    if (props.fillColor !== undefined) {
+      if (props.fillColor) next.set(N('BG'), ctx.obj(props.fillColor));
+      else next.delete(N('BG'));
+    }
+    if (props.rotation !== undefined) {
+      if (props.rotation) next.set(N('R'), ctx.obj(props.rotation));
+      else next.delete(N('R'));
+    }
     set(widget, 'MK', next);
   }
-  // Erscheinungsbild an Größe und Eigenschaften anpassen
-  const now = describeWidget(ctx, acroForm, widget) || entry;
-  // reines Verschieben behält das Erscheinungsbild (Schrift, Stil) – neu nur bei Größe/Stil
-  const geometry = resized || props.border !== undefined;
-  if (now.type === 'text' || now.type === 'choice') {
-    if (
-      geometry ||
-      props.fontSize !== undefined ||
-      props.align !== undefined ||
-      props.multiline !== undefined
-    )
-      refreshTextAppearance(doc, widget, now, set, fontCache);
-  } else if (now.type === 'checkbox' && geometry && isOwnCheckbox(ctx, widget)) {
-    const [x1, y1, x2, y2] = now.rect;
-    set(widget, 'AP', checkboxAppearances(ctx, widget, x2 - x1, y2 - y1));
+  if (
+    props.borderWidth !== undefined ||
+    props.borderStyle !== undefined ||
+    (props.borderColor && !look.width)
+  ) {
+    const style = props.borderStyle || look.style || 'S';
+    const bs = ctx.obj({ W: props.borderWidth || look.width || 1, S: style });
+    if (style === 'D') bs.set(N('D'), ctx.obj([3]));
+    set(widget, 'BS', bs);
+    set(widget, 'Border', undefined);
+  }
+  const daChange = { font: props.font, size: props.fontSize, color: props.textColor };
+  if (props.font !== undefined || props.fontSize !== undefined || props.textColor !== undefined) {
+    const da = textOf(inherited(ctx, widget, 'DA', acroForm)) || '/Helv 0 Tf 0 g';
+    set(widget, 'DA', PDFString.of(composeDA(da, daChange)));
+    // Programme, die Felder selbst zeichnen, finden die Schrift unter /DR
+    if (props.font) {
+      const font = standardFont(doc, fontCache, props.font);
+      const form = ensureAcroForm(doc, set, fontCache);
+      const dr = ctx.lookup(form.get(N('DR')));
+      const fonts = dr instanceof PDFDict ? ctx.lookup(dr.get(N('Font'))) : null;
+      if (fonts instanceof PDFDict && !fonts.has(N(props.font))) set(fonts, props.font, font.ref);
+    }
+  }
+  if (props.align !== undefined) set(widget, 'Q', ctx.obj(props.align));
+
+  // Erscheinungsbild an Größe und Eigenschaften anpassen; reines Verschieben behält es
+  const now = describeWidget(ctx, acroForm, widget, 0, true) || entry;
+  const looks = [
+    'borderColor',
+    'fillColor',
+    'borderWidth',
+    'borderStyle',
+    'rotation',
+    'font',
+    'fontSize',
+    'textColor',
+    'align',
+    'multiline',
+    'password',
+    'comb',
+    'maxLen',
+    'defaultValue',
+  ].some((key) => props[key] !== undefined);
+  // Eigenschaften des Felds (Wert, Kennwort, Kamm, mehrzeilig, Zeichenzahl) betreffen alle seine
+  // Widgets – auch auf anderen Seiten; Rahmen, Schrift und Lage nur das gewählte
+  const fieldLevel = ['multiline', 'password', 'comb', 'maxLen', 'defaultValue'].some(
+    (key) => props[key] !== undefined,
+  );
+  const targets = fieldLevel ? [...new Set([widget, ...widgetsOf(ctx, field)])] : [widget];
+  for (const target of targets) {
+    const current = target === widget ? now : describeWidget(ctx, acroForm, target, 0, true);
+    if (!current) continue;
+    if (current.type === 'text' || current.type === 'choice') {
+      if (resized || looks) refreshTextAppearance(doc, target, current, set, fontCache);
+    } else if (current.type === 'checkbox' && (resized || looks) && isOwnCheckbox(ctx, target)) {
+      const [x1, y1, x2, y2] = current.rect;
+      set(target, 'AP', checkboxAppearances(ctx, target, x2 - x1, y2 - y1));
+    }
   }
   return changes;
 }

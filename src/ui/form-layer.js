@@ -7,6 +7,10 @@
  * (einzeilig); Esc verwirft die Eingabe. Jede Übernahme ist ein Schritt für Rückgängig.
  */
 import { toast } from './dialogs.js';
+import { fieldFont, fieldPadding } from '../pdf/form-fields.js';
+
+/** Art des Eingabeelements: ändert sie sich, wird es neu angelegt. */
+const kindOf = (entry) => `${entry.type}|${!!entry.multiline}|${!!entry.password}`;
 
 export class FormLayer {
   constructor(app) {
@@ -48,7 +52,7 @@ export class FormLayer {
     for (const entry of fields) {
       let el = existing.get(entry.id);
       existing.delete(entry.id);
-      if (!el || el.dataset.type !== entry.type || el.dataset.multi !== String(!!entry.multiline)) {
+      if (!el || el.dataset.kind !== kindOf(entry)) {
         if (el) el.remove();
         el = this.create(entry);
       }
@@ -74,9 +78,9 @@ export class FormLayer {
   create(entry) {
     let el;
     if (entry.type === 'text') {
-      el = document.createElement(entry.multiline ? 'textarea' : 'input');
-      if (!entry.multiline) el.type = 'text';
-      el.spellcheck = false;
+      // Kennwort immer einzeilig verdeckt (auch wenn die Datei zusätzlich „mehrzeilig“ setzt)
+      el = document.createElement(entry.multiline && !entry.password ? 'textarea' : 'input');
+      if (el.tagName === 'INPUT') el.type = entry.password ? 'password' : 'text';
       el.autocomplete = 'off';
       el.addEventListener('keydown', (ev) => {
         // Tastenkürzel mit Strg (Speichern, Drucken …) gelten weiter für die App
@@ -118,7 +122,7 @@ export class FormLayer {
     el.className = 'ff ff-' + entry.type;
     el.dataset.id = entry.id;
     el.dataset.type = entry.type;
-    el.dataset.multi = String(!!entry.multiline);
+    el.dataset.kind = kindOf(entry);
     // Klicks und Ziehen in Feldern gehören dem Feld, nicht dem Bearbeiten-Modus darunter
     for (const type of ['pointerdown', 'dblclick', 'contextmenu'])
       el.addEventListener(type, (ev) => ev.stopPropagation());
@@ -127,21 +131,51 @@ export class FormLayer {
   place(pv, el, entry) {
     const box = pv.boxOf(entry.rect);
     const style = el.style;
-    style.left = box.left + 'px';
-    style.top = box.top + 'px';
-    style.width = box.width + 'px';
-    style.height = box.height + 'px';
+    // gedrehtes Text-/Auswahlfeld (/MK /R): ungedreht anlegen und um die Mitte drehen
+    const rotation = entry.type === 'text' || entry.type === 'choice' ? entry.rotation : 0;
+    const turned = rotation === 90 || rotation === 270;
+    const w = turned ? box.height : box.width;
+    const h = turned ? box.width : box.height;
+    style.left = box.left + (box.width - w) / 2 + 'px';
+    style.top = box.top + (box.height - h) / 2 + 'px';
+    style.width = w + 'px';
+    style.height = h + 'px';
+    style.transform = rotation ? `rotate(${-rotation}deg)` : '';
     if (entry.type === 'text' || entry.type === 'choice') {
-      const size =
-        entry.fontSize || (entry.multiline ? 10 : Math.min(12, (entry.rect[3] - entry.rect[1] - 4) * 0.72));
-      style.fontSize = Math.max(4, size) * pv.scale + 'px';
+      // automatische Größe wie im Erscheinungsbild (Innenabstand je nach Rahmen)
+      const fieldHeight =
+        (turned ? entry.rect[2] - entry.rect[0] : entry.rect[3] - entry.rect[1]) -
+        2 * fieldPadding(entry.look);
+      const size = entry.fontSize || (entry.multiline ? 10 : Math.min(12, fieldHeight * 0.72));
+      const px = Math.max(4, size) * pv.scale;
+      style.fontSize = px + 'px';
       style.textAlign = ['left', 'center', 'right'][entry.align] || 'left';
+      // Schrift und Farbe wie im Feld (sichtbar beim Bearbeiten)
+      const font = fieldFont(entry.font);
+      style.fontFamily = font ? font.css : '';
+      style.fontWeight = font && font.weight ? String(font.weight) : '';
+      style.fontStyle = font && font.italic ? 'italic' : '';
+      const [r, g, b] = (entry.color || [0, 0, 0]).map((v) => Math.round(v * 255));
+      style.setProperty('--ff-ink', `rgb(${r}, ${g}, ${b})`);
+      // Kammfeld: Zeichen gleichmäßig auf die Zellen verteilt (angenähert)
+      if (entry.comb && entry.maxLen) {
+        const cell = w / entry.maxLen;
+        style.letterSpacing = Math.max(0, cell - px * 0.6) + 'px';
+        style.paddingLeft = Math.max(0, (cell - px * 0.6) / 2) + 'px';
+        style.textAlign = 'left';
+      } else style.letterSpacing = style.paddingLeft = '';
     }
   }
   fill(el, entry) {
-    el.title = (entry.name || '') + (entry.readOnly ? ' (schreibgeschützt)' : '');
+    el.title =
+      (entry.tooltip || entry.name || '') +
+      (entry.readOnly ? ' (schreibgeschützt)' : entry.required ? ' (Pflichtfeld)' : '');
+    el.classList.toggle('required', !!entry.required);
+    if (entry.required) el.setAttribute('aria-required', 'true');
+    else el.removeAttribute('aria-required');
+    if (entry.type === 'text') el.spellcheck = !entry.doNotSpellCheck;
     el.dataset.name = entry.name || '';
-    el.setAttribute('aria-label', entry.name || 'Formularfeld');
+    el.setAttribute('aria-label', entry.tooltip || entry.name || 'Formularfeld');
     el.classList.remove('pending');
     el.lastCommit = undefined;
     if (entry.type === 'text') {

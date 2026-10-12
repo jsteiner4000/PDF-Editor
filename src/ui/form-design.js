@@ -9,6 +9,7 @@
 import { icon } from './icons.js';
 import { $, htmlToElement, escapeHtml } from './dom.js';
 import { toast } from './dialogs.js';
+import { FIELD_FONTS, fieldFont } from '../pdf/form-fields.js';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const TYPE_LABEL = {
@@ -20,6 +21,8 @@ const TYPE_LABEL = {
 /** Standardgröße neuer Felder beim einfachen Klick (Punkte). */
 const DEFAULT_SIZE = { text: [160, 22], checkbox: [14, 14] };
 const MIN_SIZE = 6;
+/** Im Werkzeug erscheinen auch versteckte Felder (blass), damit man sie wieder einblenden kann. */
+const ALL = { all: true };
 const FONT_SIZES = [0, 8, 9, 10, 11, 12, 14, 16, 18, 24];
 
 export class FormDesign {
@@ -94,10 +97,10 @@ export class FormDesign {
       pv.layer.appendChild(pv.fd);
     }
     const frag = document.createDocumentFragment();
-    for (const entry of this.session.formFields(pv.index)) {
+    for (const entry of this.session.formFields(pv.index, ALL)) {
       const box = pv.boxOf(entry.rect);
       const el = htmlToElement(
-        `<div class="fdb" data-id="${escapeHtml(entry.id)}"><span class="fdn">${escapeHtml(entry.name || TYPE_LABEL[entry.type])}</span></div>`,
+        `<div class="fdb${entry.visibility === 'hidden' || entry.visibility === 'hiddenPrint' ? ' hid' : ''}" data-id="${escapeHtml(entry.id)}"><span class="fdn">${escapeHtml(entry.name || TYPE_LABEL[entry.type])}</span></div>`,
       );
       Object.assign(el.style, {
         left: box.left + 'px',
@@ -122,7 +125,7 @@ export class FormDesign {
     if (!this.sel || !this.session) return null;
     const pv = this.app.pvByKey.get(this.sel.key);
     if (!pv || pv.index < 0) return null;
-    const entry = this.session.formFields(pv.index).find((e) => e.id === this.sel.id);
+    const entry = this.session.formFields(pv.index, ALL).find((e) => e.id === this.sel.id);
     return entry ? { pv, entry } : null;
   }
   select(pv, id) {
@@ -333,7 +336,13 @@ export class FormDesign {
     if (!this.active || this.app.tool !== 'formdesign') return;
     // nicht neu aufbauen, während im Panel getippt wird (z. B. Name)
     const focused = document.activeElement;
-    if (focused && $('#lpBody').contains(focused) && /^(INPUT|SELECT)$/.test(focused.tagName)) {
+    if (
+      focused &&
+      $('#lpBody').contains(focused) &&
+      // Texteingaben und Auswahllisten (eine offene Liste ginge sonst verloren), nicht Schalter
+      (focused.tagName === 'SELECT' ||
+        (focused.tagName === 'INPUT' && !['checkbox', 'radio', 'color'].includes(focused.type)))
+    ) {
       if (!this.panelDeferred) {
         this.panelDeferred = true;
         // erst nach dem laufenden Klick neu aufbauen – sonst ginge der Klick ins Leere
@@ -373,68 +382,237 @@ export class FormDesign {
       );
       return;
     }
-    const { entry } = current;
-    const sec = htmlToElement(`<div class="sec"><h4>${escapeHtml(TYPE_LABEL[entry.type])}</h4></div>`);
-    body.appendChild(sec);
-    // Name
-    const name = htmlToElement(
-      '<input class="fld" style="width:100%" spellcheck="false" aria-label="Feldname">',
-    );
+    this.propertiesPanel(body, current.entry);
+  }
+  /**
+   * Eigenschaften des gewählten Felds – gegliedert wie der Eigenschaften-Dialog in Acrobat:
+   * Allgemein, Darstellung, Optionen (Aktionen, Format, Prüfen und Berechnen beruhen in Acrobat
+   * auf JavaScript, das PDFix bewusst nicht ausführt).
+   */
+  propertiesPanel(body, entry) {
+    const isText = entry.type === 'text';
+    const hasText = isText || entry.type === 'choice';
+    // Darstellung nur, wo PDFix das Aussehen neu zeichnet: Text, Auswahl, eigene Kontrollkästchen
+    const canDraw = hasText || (entry.type === 'checkbox' && entry.ownAppearance);
+    const section = (title) => {
+      const sec = htmlToElement(
+        `<div class="sec"><h4>${escapeHtml(title)}</h4><div class="fd-grid"></div></div>`,
+      );
+      body.appendChild(sec);
+      return sec.querySelector('.fd-grid');
+    };
+    const row = (grid, label, control) => {
+      grid.append(htmlToElement(`<label>${escapeHtml(label)}</label>`), control);
+      return control;
+    };
+    const textInput = (value, onCommit, aria) => {
+      const input = htmlToElement(`<input class="fld" spellcheck="false" aria-label="${escapeHtml(aria)}">`);
+      input.value = value;
+      input.addEventListener('keydown', (ev) => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') input.blur();
+        if (ev.key === 'Escape') ((input.value = value), input.blur());
+      });
+      input.addEventListener('change', () => onCommit(input.value, input));
+      return input;
+    };
+    const select = (options, value, onChange, aria) => {
+      const el = htmlToElement(`<select class="fld" aria-label="${escapeHtml(aria)}"></select>`);
+      for (const [v, label] of options) {
+        const option = document.createElement('option');
+        option.value = String(v);
+        option.textContent = label;
+        el.appendChild(option);
+      }
+      el.value = String(value);
+      el.addEventListener('change', () => onChange(el.value));
+      return el;
+    };
+    const check = (grid, label, checked, onChange, disabled = false) => {
+      const el = htmlToElement(
+        `<label class="fd-check"><input type="checkbox" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''}> <span>${escapeHtml(label)}</span></label>`,
+      );
+      el.querySelector('input').addEventListener('change', (ev) => onChange(ev.target.checked));
+      grid.appendChild(el);
+      return el;
+    };
+    /** Farbe mit „aus“-Schalter (Rahmen, Füllung) oder ohne (Textfarbe). */
+    const color = (value, onChange, aria, optional = true) => {
+      const wrap = htmlToElement('<div class="fd-color"></div>');
+      const picker = htmlToElement(`<input type="color" aria-label="${escapeHtml(aria)}">`);
+      picker.value = toHex(value || [0.6, 0.6, 0.6]);
+      picker.addEventListener('change', () => onChange(fromHex(picker.value)));
+      if (optional) {
+        // Schalter: Farbe verwenden (aus = keine Farbe)
+        const toggle = htmlToElement(
+          `<input type="checkbox" class="fd-toggle" ${value ? 'checked' : ''} title="${escapeHtml(aria)} verwenden" aria-label="${escapeHtml(aria)} verwenden">`,
+        );
+        picker.disabled = !value;
+        toggle.addEventListener('change', () => onChange(toggle.checked ? fromHex(picker.value) : null));
+        wrap.append(toggle, picker);
+        if (!value) wrap.appendChild(htmlToElement('<span class="hint">Keine</span>'));
+      } else wrap.append(picker);
+      return wrap;
+    };
+    const set = (props, label) => this.change(entry, props, label);
+
+    // ---------- Allgemein ----------
+    const general = section(TYPE_LABEL[entry.type]);
     // bearbeitet wird der eigene Teil des Namens; bei verschachtelten Feldern („Formular.Seite1.Name“)
     // bleibt der vordere Teil erhalten
     const prefix = entry.name.slice(0, entry.name.length - entry.partialName.length);
-    name.value = entry.partialName;
-    if (prefix) name.title = `Vollständiger Name: ${entry.name}`;
-    name.addEventListener('keydown', (ev) => {
-      ev.stopPropagation();
-      if (ev.key === 'Enter') name.blur();
-      if (ev.key === 'Escape') ((name.value = entry.partialName), name.blur());
-    });
-    name.addEventListener('change', () => {
-      const value = name.value.trim();
-      if (!value || value.includes('.')) {
-        toast('Der Name darf nicht leer sein und keinen Punkt enthalten.', 'warn');
-        name.value = entry.partialName;
-        return;
-      }
-      const taken = this.app.pvs.some(
-        (pv) =>
-          pv.index >= 0 &&
-          this.session.formFields(pv.index).some((e) => e.name === prefix + value && e.field !== entry.field),
-      );
-      if (taken) {
-        toast(
-          `Es gibt schon ein Feld „${value}“ – Felder mit gleichem Namen teilen sich ihren Wert.`,
-          'warn',
-          5000,
-        );
-        name.value = entry.partialName;
-        return;
-      }
-      this.change(entry, { name: value }, 'Formularfeld umbenannt');
-    });
-    sec.appendChild(
-      htmlToElement('<label class="hint" style="display:block;margin-bottom:4px">Name</label>'),
+    const name = row(
+      general,
+      'Name',
+      textInput(
+        entry.partialName,
+        (raw, input) => {
+          const value = raw.trim();
+          if (!value || value.includes('.')) {
+            toast('Der Name darf nicht leer sein und keinen Punkt enthalten.', 'warn');
+            input.value = entry.partialName;
+            return;
+          }
+          const taken = this.app.pvs.some(
+            (pv) =>
+              pv.index >= 0 &&
+              this.session
+                .formFields(pv.index, ALL)
+                .some((e) => e.name === prefix + value && e.field !== entry.field),
+          );
+          if (taken) {
+            toast(
+              `Es gibt schon ein Feld „${value}“ – Felder mit gleichem Namen teilen sich ihren Wert.`,
+              'warn',
+              5000,
+            );
+            input.value = entry.partialName;
+            return;
+          }
+          set({ name: value }, 'Formularfeld umbenannt');
+        },
+        'Feldname',
+      ),
     );
-    sec.appendChild(name);
-    if (entry.type === 'text' || entry.type === 'choice') {
-      const row = htmlToElement('<div class="row" style="margin-top:10px"></div>');
-      const size = htmlToElement(
-        '<select class="fld" aria-label="Schriftgröße" style="width:96px"></select>',
+    if (prefix) name.title = `Vollständiger Name: ${entry.name}`;
+    row(
+      general,
+      'QuickInfo',
+      textInput(entry.tooltip, (v) => set({ tooltip: v.trim() }, 'QuickInfo geändert'), 'QuickInfo'),
+    );
+    row(
+      general,
+      'Sichtbarkeit',
+      select(
+        [
+          ['visible', 'Sichtbar'],
+          ['hidden', 'Ausgeblendet'],
+          ['noPrint', 'Sichtbar, nicht drucken'],
+          ['hiddenPrint', 'Ausgeblendet, aber drucken'],
+        ],
+        entry.visibility,
+        (v) => set({ visibility: v }, 'Sichtbarkeit geändert'),
+        'Sichtbarkeit',
+      ),
+    );
+    if (hasText)
+      row(
+        general,
+        'Drehung',
+        select(
+          [0, 90, 180, 270].map((d) => [d, `${d}°`]),
+          entry.rotation,
+          (v) => set({ rotation: Number(v) }, 'Drehung geändert'),
+          'Drehung',
+        ),
       );
-      const sizes = FONT_SIZES.includes(entry.fontSize)
-        ? FONT_SIZES
-        : [...FONT_SIZES, entry.fontSize].sort((a, b) => a - b);
-      for (const value of sizes) {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = value ? `${String(value).replace('.', ',')} pt` : 'Automatisch';
-        size.appendChild(option);
+    check(general, 'Schreibgeschützt', entry.readOnly, (on) =>
+      set({ readOnly: on }, 'Schreibschutz geändert'),
+    );
+    check(general, 'Erforderlich', entry.required, (on) => set({ required: on }, 'Pflichtfeld geändert'));
+
+    // ---------- Darstellung ----------
+    if (canDraw) {
+      const look = section('Darstellung');
+      const l = entry.look || {};
+      row(
+        look,
+        'Rahmenfarbe',
+        color(l.border, (c) => set({ borderColor: c }, 'Rahmenfarbe geändert'), 'Rahmenfarbe'),
+      );
+      row(
+        look,
+        'Füllfarbe',
+        color(l.background, (c) => set({ fillColor: c }, 'Füllfarbe geändert'), 'Füllfarbe'),
+      );
+      row(
+        look,
+        'Linienstärke',
+        select(
+          [
+            [1, 'Dünn'],
+            [2, 'Mittel'],
+            [3, 'Dick'],
+          ],
+          Math.min(3, Math.max(1, Math.round(l.width || 1))),
+          (v) => set({ borderWidth: Number(v) }, 'Linienstärke geändert'),
+          'Linienstärke',
+        ),
+      );
+      row(
+        look,
+        'Linienart',
+        select(
+          [
+            ['S', 'Durchgezogen'],
+            ['D', 'Gestrichelt'],
+            ['B', 'Abgeschrägt'],
+            ['I', 'Eingelassen'],
+            ['U', 'Unterstrichen'],
+          ],
+          l.style || 'S',
+          (v) => set({ borderStyle: v }, 'Linienart geändert'),
+          'Linienart',
+        ),
+      );
+      if (hasText) {
+        const known = fieldFont(entry.font);
+        const fonts = FIELD_FONTS.map((f) => [f.res, f.label]);
+        if (!known) fonts.unshift(['', `${entry.font || 'Unbekannt'} (aus dem Dokument)`]);
+        row(
+          look,
+          'Schriftart',
+          select(
+            fonts,
+            known ? known.res : '',
+            (v) => v && set({ font: v }, 'Schriftart geändert'),
+            'Schriftart',
+          ),
+        );
+        const sizes = FONT_SIZES.includes(entry.fontSize)
+          ? FONT_SIZES
+          : [...FONT_SIZES, entry.fontSize].sort((a, b) => a - b);
+        row(
+          look,
+          'Schriftgröße',
+          select(
+            sizes.map((v) => [v, v ? `${String(v).replace('.', ',')} pt` : 'Automatisch']),
+            entry.fontSize,
+            (v) => set({ fontSize: Number(v) }, 'Schriftgröße geändert'),
+            'Schriftgröße',
+          ),
+        );
+        row(
+          look,
+          'Textfarbe',
+          color(entry.color, (c) => set({ textColor: c }, 'Textfarbe geändert'), 'Textfarbe', false),
+        );
       }
-      size.value = entry.fontSize;
-      size.addEventListener('change', () =>
-        this.change(entry, { fontSize: Number(size.value) }, 'Schriftgröße geändert'),
-      );
+    }
+
+    // ---------- Optionen ----------
+    if (hasText) {
+      const options = section('Optionen');
       const align = htmlToElement(
         `<div class="seg">${[
           [0, 'al', 'Linksbündig'],
@@ -448,33 +626,87 @@ export class FormDesign {
           .join('')}</div>`,
       );
       for (const btn of align.children)
-        btn.addEventListener('click', () =>
-          this.change(entry, { align: Number(btn.dataset.q) }, 'Ausrichtung geändert'),
+        btn.addEventListener('click', () => set({ align: Number(btn.dataset.q) }, 'Ausrichtung geändert'));
+      row(options, 'Ausrichtung', align);
+      if (isText) {
+        row(
+          options,
+          'Standardwert',
+          textInput(
+            entry.defaultValue,
+            (v) => set({ defaultValue: v }, 'Standardwert geändert'),
+            'Standardwert',
+          ),
         );
-      row.append(size, align);
-      sec.appendChild(row);
+        check(
+          options,
+          'Mehrzeilig',
+          entry.multiline,
+          (on) => set({ multiline: on }, 'Mehrzeilig geändert'),
+          entry.comb || entry.password,
+        );
+        check(options, 'Lange Texte scrollen', !entry.doNotScroll, (on) =>
+          set({ doNotScroll: !on }, 'Scrollen geändert'),
+        );
+        check(options, 'Rechtschreibprüfung', !entry.doNotSpellCheck, (on) =>
+          set({ doNotSpellCheck: !on }, 'Rechtschreibprüfung geändert'),
+        );
+        check(
+          options,
+          'Kennwort (verdeckte Eingabe)',
+          entry.password,
+          (on) => set({ password: on }, 'Kennwort geändert'),
+          entry.comb || entry.multiline,
+        );
+        // Zeichen begrenzen: Schalter + Anzahl
+        const limit = htmlToElement('<div class="fd-color"></div>');
+        const limitOn = htmlToElement(
+          `<input type="checkbox" class="fd-toggle" ${entry.maxLen ? 'checked' : ''} aria-label="Zeichenzahl begrenzen">`,
+        );
+        const count = htmlToElement(
+          '<input class="fld num" type="number" min="1" max="9999" aria-label="Höchstens Zeichen">',
+        );
+        count.value = entry.maxLen || 10;
+        count.disabled = !entry.maxLen;
+        count.addEventListener('keydown', (ev) => (ev.stopPropagation(), ev.key === 'Enter' && count.blur()));
+        count.addEventListener('change', () => {
+          const n = Math.max(1, Math.min(9999, Math.round(Number(count.value)) || 1));
+          set({ maxLen: n }, 'Zeichenbegrenzung geändert');
+        });
+        limitOn.addEventListener('change', () =>
+          set(
+            limitOn.checked ? { maxLen: Math.max(1, Number(count.value) || 10) } : { maxLen: 0, comb: false },
+            'Zeichenbegrenzung geändert',
+          ),
+        );
+        limit.append(limitOn, count, htmlToElement('<span class="hint">Zeichen</span>'));
+        row(options, 'Höchstens', limit);
+        check(options, 'Kammfeld (ein Kästchen je Zeichen)', entry.comb, (on) =>
+          set({ comb: on }, 'Kammfeld geändert'),
+        );
+      }
     }
-    const check = (label, checked, onChange) => {
-      const el = htmlToElement(
-        `<label class="row" style="cursor:pointer;margin:8px 0 0"><input type="checkbox" ${checked ? 'checked' : ''} style="accent-color:var(--acc)"> <span>${label}</span></label>`,
-      );
-      el.querySelector('input').addEventListener('change', (ev) => onChange(ev.target.checked));
-      sec.appendChild(el);
-    };
-    if (entry.type === 'text')
-      check('Mehrzeilig', entry.multiline, (on) =>
-        this.change(entry, { multiline: on }, 'Formularfeld geändert'),
-      );
-    check('Schreibgeschützt', entry.readOnly, (on) =>
-      this.change(entry, { readOnly: on }, 'Schreibschutz geändert'),
-    );
-    // Rahmen nur, wo PDFix das Aussehen neu zeichnen kann
-    if (entry.type === 'text' || entry.type === 'choice' || entry.ownAppearance)
-      check('Rahmen', entry.border, (on) => this.change(entry, { border: on }, 'Rahmen geändert'));
     const del = htmlToElement(
       `<button class="btn outline" style="width:100%;justify-content:center;margin-top:14px">${icon('trash', 's')}Feld löschen</button>`,
     );
     del.addEventListener('click', () => this.remove(entry));
-    sec.appendChild(del);
+    body.appendChild(del);
+    body.appendChild(
+      htmlToElement(
+        '<p class="hint" style="margin-top:12px">Aktionen, Format, Prüfen und Berechnen arbeiten in Acrobat mit JavaScript. PDFix führt aus Sicherheitsgründen kein JavaScript aus und bietet sie daher nicht an.</p>',
+      ),
+    );
   }
 }
+
+/** [r, g, b] (0–1) ↔ #rrggbb */
+const toHex = (c) =>
+  '#' +
+  c
+    .map((v) =>
+      Math.round(Math.max(0, Math.min(1, v)) * 255)
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('');
+const fromHex = (hex) => [1, 3, 5].map((i) => +(parseInt(hex.slice(i, i + 2), 16) / 255).toFixed(3));

@@ -1744,7 +1744,11 @@ select.ff {
 .ff:focus,
 .ff.pending {
   background: #fff;
-  color: #000;
+  color: var(--ff-ink, #000);
+}
+/* Pflichtfeld (wie Acrobat: roter Rahmen); Hover und Fokus behalten ihre eigene Markierung */
+.ff.required:not(:hover):not(:focus) {
+  box-shadow: inset 0 0 0 1px rgba(214, 40, 40, 0.6);
 }
 .ff:focus-visible,
 textarea.ff:focus,
@@ -1882,4 +1886,66 @@ select.ff:focus {
   border: 1.5px dashed var(--acc);
   background: rgba(44, 125, 255, 0.08);
   pointer-events: none;
+}
+
+/* Eigenschaften im Werkzeug „Formularfelder“ */
+.fd-grid {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: center;
+}
+.fd-grid > label {
+  color: var(--ink2);
+  font-size: 12px;
+}
+.fd-grid > .fld,
+.fd-grid > select.fld {
+  width: 100%;
+}
+.fd-grid > .fd-check {
+  grid-column: 1 / -1;
+}
+.fd-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.fd-check input {
+  accent-color: var(--acc);
+  margin: 0;
+}
+.fd-check:has(input:disabled) {
+  opacity: 0.5;
+  cursor: default;
+}
+.fd-color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fd-color input[type='color'] {
+  width: 36px;
+  height: 26px;
+  padding: 2px;
+  border: 1px solid var(--line2);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.fd-color input[type='color']:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.fd-color .fld.num {
+  width: 64px;
+}
+.fd-toggle {
+  accent-color: var(--acc);
+  margin: 0;
+}
+.fdb.hid {
+  opacity: 0.45;
+  border-style: dotted;
 }

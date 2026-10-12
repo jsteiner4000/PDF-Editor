@@ -630,10 +630,10 @@ export class PdfSession {
       (direction === 'undo' ? entry.beforeSnaps : entry.afterSnaps || []).forEach((i) => this.restoreSnap(i));
     }
   }
-  /** Ausfüllbare Formularfelder der Seite `index` (siehe readPageFields). */
-  formFields(index) {
+  /** Formularfelder der Seite `index` (siehe readPageFields; `{ all: true }` auch versteckte). */
+  formFields(index, opts = {}) {
     try {
-      return readPageFields(this.doc, this.page(index).node);
+      return readPageFields(this.doc, this.page(index).node, opts);
     } catch (err) {
       console.warn('Formularfelder', err);
       return [];

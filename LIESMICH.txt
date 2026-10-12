@@ -10,7 +10,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.2.1.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.3.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -21,7 +21,7 @@ ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
 Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
 „Immer“.
 
-Ohne Installation: „PDFix-2.2.1-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDFix-2.3.0-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
@@ -89,8 +89,22 @@ Werkzeug „Formularfelder“ (in „Alle Werkzeuge“ oder unter „PDF bearbei
 - Vorhandene Felder – auch aus anderen Programmen – erscheinen als blaue
   Rahmen: Klick wählt aus, Ziehen verschiebt, die Griffe ändern die Größe,
   Pfeiltasten verschieben um 1 Punkt (mit Umschalt um 10), Entf löscht.
-- In der Seitenleiste: Name, Schriftgröße, Ausrichtung, „Mehrzeilig“,
-  „Schreibgeschützt“ und „Rahmen“.
+- In der Seitenleiste – gegliedert wie der Eigenschaften-Dialog in Acrobat:
+  Allgemein: Name, QuickInfo, Sichtbarkeit (sichtbar, ausgeblendet, sichtbar
+    aber nicht drucken, ausgeblendet aber drucken), Drehung, schreibgeschützt,
+    erforderlich.
+  Darstellung: Rahmenfarbe, Füllfarbe, Linienstärke (dünn, mittel, dick),
+    Linienart (durchgezogen, gestrichelt, abgeschrägt, eingelassen,
+    unterstrichen), Schriftart (Helvetica, Times, Courier, jeweils normal,
+    fett, kursiv), Schriftgröße (auch automatisch), Textfarbe.
+  Optionen: Ausrichtung, Standardwert, mehrzeilig, lange Texte scrollen,
+    Rechtschreibprüfung, Kennwort (verdeckte Eingabe), Zeichenbegrenzung,
+    Kammfeld (ein Kästchen je Zeichen).
+  Aktionen, Format, Prüfen und Berechnen arbeiten in Acrobat mit JavaScript;
+  PDFix führt aus Sicherheitsgründen kein JavaScript aus und bietet sie nicht
+  an.
+- Ausgeblendete Felder erscheinen im Werkzeug blass und lassen sich wieder
+  einblenden.
 Ausgefüllt wird außerhalb des Werkzeugs direkt auf der Seite. Jede Änderung
 lässt sich mit Strg+Z rückgängig machen.
 
