@@ -48,7 +48,7 @@ src/
     matrix.js             2D-Matrizen
     path-geometry.js      Geometrie von Pfaden: Teilpfade, Abstände, Bearbeiten, Serialisieren
     session.js            PdfSession: Seitenmodelle, Änderungen, Rückgängig/Wiederholen, Speichern
-    form-fields.js        Formularfelder (AcroForm) lesen und ausfüllen, Erscheinungsbild, Feldbaum-Reparatur
+    form-fields.js        Formularfelder (AcroForm) lesen, ausfüllen, anlegen, ändern, löschen; Erscheinungsbilder
     page-numbers.js       Seitenzahlen und Kopf-/Fußzeilen erkennen und anpassen
   fonts/
     font-manager.js       Schriftfamilien, Schriftbibliothek, Schriftwahl beim Schreiben
@@ -70,6 +70,7 @@ src/
     zoom-gestures.js      Strg+Mausrad, Touchpad-Pinch, Hand-Werkzeug (Leertaste/mittlere Maustaste)
     edit-mode.js          Modus „PDF bearbeiten“ (Auswahl, Ziehen, Griffe, Text, Bilder)
     form-layer.js         Formularfelder auf der Seite ausfüllen (Eingabeelemente über den Widgets)
+    form-design.js        Werkzeug „Formularfelder“: anlegen, verschieben, Größe, Eigenschaften, löschen
     text-editor.js        Inline-Texteditor
     snap-guides.js        Hilfslinien/Einrasten (auch an Punkten und Kanten)
     gesture.js            Zeigergesten (Pointer-Capture, Abbruch, verpasstes Loslassen)

@@ -26,6 +26,7 @@ import {
   PDFName,
   PDFNumber,
   PDFRef,
+  PDFStream,
   PDFString,
   StandardFonts,
 } from 'pdf-lib';
@@ -158,71 +159,80 @@ export function readPageFields(doc, pageNode) {
   if (!(annots instanceof PDFArray)) return [];
   const out = [];
   for (let k = 0; k < annots.size(); k++) {
-    const ref = annots.get(k);
-    const widget = ctx.lookup(ref);
-    if (!(widget instanceof PDFDict) || nameOf(widget.get(N('Subtype'))) !== 'Widget') continue;
-    if (num(ctx.lookup(widget.get(N('F')))) & HIDDEN) continue;
-    const rectArr = ctx.lookup(widget.get(N('Rect')));
-    if (!(rectArr instanceof PDFArray) || rectArr.size() < 4) continue;
-    const [a, b, c, d] = [0, 1, 2, 3].map((i) => num(ctx.lookup(rectArr.get(i))));
-    const rect = [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
-    if (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1) continue;
-    const field = fieldOf(ctx, widget);
-    const ft = nameOf(inherited(ctx, field, 'FT'));
-    const flags = num(inherited(ctx, field, 'Ff'));
-    const da = parseDA(textOf(inherited(ctx, widget, 'DA', acroForm)) || '');
-    const align = num(inherited(ctx, widget, 'Q', acroForm));
-    const base = {
-      id: ref instanceof PDFRef ? ref.toString() : 'w' + k,
-      widget,
-      field,
-      name: fullName(ctx, field),
-      rect,
-      fontSize: da.size,
-      color: da.color,
-      align,
-      readOnly: !!(flags & FF.readOnly),
-    };
-    const value = inherited(ctx, field, 'V');
-    if (ft === 'Tx') {
-      if (flags & (FF.password | FF.fileSelect)) continue;
-      const maxLen = num(inherited(ctx, field, 'MaxLen'));
-      const text = textOf(value) ?? '';
-      const lineHeight = (da.size || 10) * 1.15;
-      out.push({
-        ...base,
-        type: 'text',
-        value: text,
-        // mehrzeilig laut Flag – oder der Wert enthält Zeilenumbrüche und das Feld hat Platz dafür
-        multiline: !!(flags & FF.multiline) || (/[\r\n]/.test(text) && rect[3] - rect[1] > 1.8 * lineHeight),
-        maxLen: maxLen > 0 ? maxLen : 0,
-      });
-    } else if (ft === 'Btn') {
-      if (flags & FF.pushbutton) continue;
-      const onState = onStateOf(ctx, widget);
-      const state = nameOf(widget.get(N('AS'))) ?? nameOf(value);
-      out.push({
-        ...base,
-        type: flags & FF.radio ? 'radio' : 'checkbox',
-        onState,
-        checked: state === onState,
-        noToggleToOff: !!(flags & FF.noToggleToOff),
-      });
-    } else if (ft === 'Ch') {
-      if (flags & FF.multiSelect) continue;
-      const selected = value instanceof PDFArray ? textOf(ctx.lookup(value.get(0))) : textOf(value);
-      out.push({
-        ...base,
-        type: 'choice',
-        value: selected ?? '',
-        options: optionsOf(ctx, field),
-        combo: !!(flags & FF.combo),
-      });
-    }
+    const entry = describeWidget(ctx, acroForm, annots.get(k), k);
+    if (entry) out.push(entry);
   }
   // Lesereihenfolge (oben nach unten, dann links nach rechts) – ergibt die Tab-Reihenfolge
   out.sort((p, q) => (Math.abs(q.rect[3] - p.rect[3]) > 4 ? q.rect[3] - p.rect[3] : p.rect[0] - q.rect[0]));
   return out;
+}
+
+/** Eintrag zu einem Widget (siehe readPageFields) oder null, wenn es kein ausfüllbares Feld ist. */
+function describeWidget(ctx, acroForm, ref, k = 0) {
+  const widget = ctx.lookup(ref);
+  if (!(widget instanceof PDFDict) || nameOf(widget.get(N('Subtype'))) !== 'Widget') return null;
+  if (num(ctx.lookup(widget.get(N('F')))) & HIDDEN) return null;
+  const rectArr = ctx.lookup(widget.get(N('Rect')));
+  if (!(rectArr instanceof PDFArray) || rectArr.size() < 4) return null;
+  const [a, b, c, d] = [0, 1, 2, 3].map((i) => num(ctx.lookup(rectArr.get(i))));
+  const rect = [Math.min(a, c), Math.min(b, d), Math.max(a, c), Math.max(b, d)];
+  if (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1) return null;
+  const field = fieldOf(ctx, widget);
+  const ft = nameOf(inherited(ctx, field, 'FT'));
+  const flags = num(inherited(ctx, field, 'Ff'));
+  const da = parseDA(textOf(inherited(ctx, widget, 'DA', acroForm)) || '');
+  const align = num(inherited(ctx, widget, 'Q', acroForm));
+  const base = {
+    id: ref instanceof PDFRef ? ref.toString() : 'w' + k,
+    widget,
+    field,
+    name: fullName(ctx, field),
+    partialName: textOf(ctx.lookup(field.get(N('T')))) ?? '',
+    rect,
+    fontSize: da.size,
+    color: da.color,
+    align,
+    readOnly: !!(flags & FF.readOnly),
+    border: !!appearanceColors(ctx, widget).border,
+  };
+  const value = inherited(ctx, field, 'V');
+  if (ft === 'Tx') {
+    if (flags & (FF.password | FF.fileSelect)) return null;
+    const maxLen = num(inherited(ctx, field, 'MaxLen'));
+    const text = textOf(value) ?? '';
+    const lineHeight = (da.size || 10) * 1.15;
+    return {
+      ...base,
+      type: 'text',
+      value: text,
+      // mehrzeilig laut Flag – oder der Wert enthält Zeilenumbrüche und das Feld hat Platz dafür
+      multiline: !!(flags & FF.multiline) || (/[\r\n]/.test(text) && rect[3] - rect[1] > 1.8 * lineHeight),
+      maxLen: maxLen > 0 ? maxLen : 0,
+    };
+  } else if (ft === 'Btn') {
+    if (flags & FF.pushbutton) return null;
+    const onState = onStateOf(ctx, widget);
+    const state = nameOf(widget.get(N('AS'))) ?? nameOf(value);
+    return {
+      ...base,
+      type: flags & FF.radio ? 'radio' : 'checkbox',
+      onState,
+      checked: state === onState,
+      ownAppearance: onState === 'Yes',
+      noToggleToOff: !!(flags & FF.noToggleToOff),
+    };
+  } else if (ft === 'Ch') {
+    if (flags & FF.multiSelect) return null;
+    const selected = value instanceof PDFArray ? textOf(ctx.lookup(value.get(0))) : textOf(value);
+    return {
+      ...base,
+      type: 'choice',
+      value: selected ?? '',
+      options: optionsOf(ctx, field),
+      combo: !!(flags & FF.combo),
+    };
+  }
+  return null;
 }
 
 /**
@@ -231,15 +241,7 @@ export function readPageFields(doc, pageNode) {
  */
 export function applyFieldValue(doc, entry, value, fontCache) {
   const ctx = doc.context;
-  const changes = [];
-  const set = (dict, key, after) => {
-    const name = N(key);
-    const before = dict.get(name);
-    if (before === after) return;
-    changes.push({ dict, key: name, before, after });
-    if (after === undefined) dict.delete(name);
-    else dict.set(name, after);
-  };
+  const { changes, set } = recorder();
   const field = entry.field;
   repairFieldTree(doc, set, fontCache);
   const widgets = widgetsOf(ctx, field);
@@ -260,20 +262,89 @@ export function applyFieldValue(doc, entry, value, fontCache) {
   const text = String(value);
   if (text === entry.value) return changes;
   set(field, 'V', PDFHexString.fromText(text));
-  const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
-  let needAppearances = false;
-  for (const widget of widgets) {
-    const label =
-      entry.type === 'choice' ? (entry.options.find((o) => o.value === text)?.label ?? text) : text;
-    const stream = textAppearance(doc, widget, entry, label, fontCache);
-    if (stream) set(widget, 'AP', ctx.obj({ N: ctx.register(stream) }));
-    else {
-      set(widget, 'AP', undefined);
-      needAppearances = true;
-    }
-  }
-  if (needAppearances && acroForm instanceof PDFDict) set(acroForm, 'NeedAppearances', ctx.obj(true));
+  for (const widget of widgets) refreshTextAppearance(doc, widget, { ...entry, value: text }, set, fontCache);
   return changes;
+}
+
+/** Änderungsprotokoll: `set(dict, key, value)` ändert und merkt sich den vorherigen Wert. */
+function recorder() {
+  const changes = [];
+  const set = (dict, key, after) => {
+    const name = N(key);
+    const before = dict.get(name);
+    if (before === after || same(before, after)) return;
+    changes.push({ dict, key: name, before, after });
+    if (after === undefined) dict.delete(name);
+    else dict.set(name, after);
+  };
+  return { changes, set };
+}
+
+/** Gleicher Wert (neu erzeugte Objekte mit gleichem Inhalt gelten als unverändert)? */
+function same(a, b) {
+  if (a === undefined || b === undefined || a instanceof PDFStream || b instanceof PDFStream) return false;
+  return a.constructor === b.constructor && a.toString() === b.toString();
+}
+
+/** Neues Erscheinungsbild eines Text- oder Auswahlfelds (sonst /NeedAppearances). */
+function refreshTextAppearance(doc, widget, entry, set, fontCache) {
+  const ctx = doc.context;
+  const text = entry.value;
+  const label = entry.type === 'choice' ? (entry.options.find((o) => o.value === text)?.label ?? text) : text;
+  const stream = textAppearance(doc, widget, entry, label, fontCache);
+  if (stream) set(widget, 'AP', ctx.obj({ N: ctx.register(stream) }));
+  else {
+    set(widget, 'AP', undefined);
+    const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+    if (acroForm instanceof PDFDict) set(acroForm, 'NeedAppearances', ctx.obj(true));
+  }
+}
+
+/** Rahmen- und Hintergrundfarbe (/MK /BC, /BG) und Rahmenbreite eines Widgets. */
+function appearanceColors(ctx, widget) {
+  const mk = ctx.lookup(widget.get(N('MK')));
+  const color = (key) => {
+    const arr = mk instanceof PDFDict ? ctx.lookup(mk.get(N(key))) : null;
+    if (!(arr instanceof PDFArray) || !arr.size()) return null;
+    const v = arr.asArray().map((x) => num(ctx.lookup(x)));
+    if (v.length === 1) return [v[0], v[0], v[0]];
+    if (v.length === 4) return [0, 1, 2].map((i) => 1 - Math.min(1, v[i] + v[3]));
+    return v.slice(0, 3);
+  };
+  // Rahmenbreite: /BS /W, sonst das ältere /Border [h v Breite], sonst 1
+  const bs = ctx.lookup(widget.get(N('BS')));
+  const border = ctx.lookup(widget.get(N('Border')));
+  const w =
+    bs instanceof PDFDict && bs.has(N('W'))
+      ? num(ctx.lookup(bs.get(N('W'))))
+      : border instanceof PDFArray && border.size() >= 3
+        ? num(ctx.lookup(border.get(2)))
+        : 1;
+  return { border: w > 0 ? color('BC') : null, background: color('BG'), width: w };
+}
+
+const rgb = (c, op) => `${c.map((v) => +v.toFixed(3)).join(' ')} ${op}`;
+
+/** Rahmen und Hintergrund für ein Erscheinungsbild der Größe w × h. */
+function frameOps(ctx, widget, w, h) {
+  const { border, background, width } = appearanceColors(ctx, widget);
+  const ops = [];
+  if (background) ops.push(rgb(background, 'rg'), `0 0 ${w} ${h} re f`);
+  if (!border) return ops;
+  // Rahmenstil /BS /S: U = nur Unterstrich, D = gestrichelt, sonst durchgehend
+  const bs = ctx.lookup(widget.get(N('BS')));
+  const style = bs instanceof PDFDict ? nameOf(ctx.lookup(bs.get(N('S')))) : null;
+  ops.push('q', rgb(border, 'RG'), `${width} w`);
+  if (style === 'D') {
+    const dash = bs && ctx.lookup(bs.get(N('D')));
+    const parts =
+      dash instanceof PDFArray && dash.size() ? dash.asArray().map((x) => num(ctx.lookup(x))) : [3];
+    ops.push(`[${parts.join(' ')}] 0 d`);
+  }
+  if (style === 'U') ops.push(`0 ${width / 2} m ${w} ${width / 2} l S`);
+  else ops.push(`${width / 2} ${width / 2} ${w - width} ${h - width} re S`);
+  ops.push('Q');
+  return ops;
 }
 
 /**
@@ -387,6 +458,7 @@ function textAppearance(doc, widget, entry, text, fontCache) {
   const lead = size * 1.15;
   const ascent = size * 0.718;
   const ops = [
+    ...frameOps(ctx, widget, w, h),
     '/Tx BMC',
     'q',
     `${pad / 2} ${pad / 2} ${w - pad} ${h - pad} re W n`,
@@ -407,4 +479,224 @@ function textAppearance(doc, widget, entry, text, fontCache) {
     BBox: [0, 0, w, h],
     Resources: { Font: { Helv: font.ref } },
   });
+}
+
+/* ---------- Formularfelder anlegen, ändern, löschen ---------- */
+
+/** Rahmen neuer Felder: dezentes Grau, weißer Hintergrund. */
+const NEW_FIELD_MK = { BC: [0.6, 0.6, 0.6], BG: [1, 1, 1] };
+
+/** AcroForm des Dokuments (wird bei Bedarf angelegt, mit Helvetica als Standardschrift). */
+function ensureAcroForm(doc, set, fontCache) {
+  const ctx = doc.context;
+  const font = helvetica(doc, fontCache);
+  let acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+  if (!(acroForm instanceof PDFDict)) {
+    acroForm = ctx.obj({ Fields: [], DA: PDFString.of('/Helv 0 Tf 0 g') });
+    acroForm.set(N('DR'), ctx.obj({ Font: { Helv: font.ref } }));
+    set(doc.catalog, 'AcroForm', ctx.register(acroForm));
+    return acroForm;
+  }
+  // Standardschrift für Programme, die Erscheinungsbilder selbst erzeugen
+  let dr = ctx.lookup(acroForm.get(N('DR')));
+  if (!(dr instanceof PDFDict)) set(acroForm, 'DR', ctx.obj({ Font: { Helv: font.ref } }));
+  else {
+    const fonts = ctx.lookup(dr.get(N('Font')));
+    if (!(fonts instanceof PDFDict)) set(dr, 'Font', ctx.obj({ Helv: font.ref }));
+    else if (!fonts.has(N('Helv'))) set(fonts, 'Helv', font.ref);
+  }
+  return acroForm;
+}
+
+/** Freier Feldname („Textfeld 1“, „Textfeld 2“ …). */
+export function uniqueFieldName(doc, base) {
+  const ctx = doc.context;
+  const taken = new Set();
+  for (const page of doc.getPages()) {
+    const annots = ctx.lookup(page.node.get(N('Annots')));
+    if (!(annots instanceof PDFArray)) continue;
+    for (const ref of annots.asArray()) {
+      const widget = ctx.lookup(ref);
+      if (widget instanceof PDFDict) taken.add(fullName(ctx, fieldOf(ctx, widget)));
+    }
+  }
+  for (let n = 1; ; n++) if (!taken.has(`${base} ${n}`)) return `${base} ${n}`;
+}
+
+/** Erscheinungsbilder eines Kontrollkästchens (an: Haken, aus: leer), jeweils mit Rahmen. */
+function checkboxAppearances(ctx, widget, w, h) {
+  const frame = frameOps(ctx, widget, w, h);
+  const s = Math.min(w, h);
+  const x0 = (w - s) / 2;
+  const y0 = (h - s) / 2;
+  const pt = (fx, fy) => `${+(x0 + fx * s).toFixed(2)} ${+(y0 + fy * s).toFixed(2)}`;
+  const check = [
+    'q',
+    '0.1 0.1 0.12 RG',
+    `${+(s * 0.12).toFixed(2)} w`,
+    '1 J 1 j',
+    `${pt(0.22, 0.52)} m`,
+    `${pt(0.42, 0.3)} l`,
+    `${pt(0.78, 0.74)} l`,
+    'S',
+    'Q',
+  ];
+  const stream = (ops) =>
+    ctx.register(ctx.stream(ops.join('\n'), { Type: 'XObject', Subtype: 'Form', BBox: [0, 0, w, h] }));
+  return ctx.obj({ N: { Yes: stream([...frame, ...check]), Off: stream(frame) } });
+}
+
+/**
+ * Legt ein neues Feld auf der Seite an. `type`: 'text' | 'checkbox'; `rect` in PDF-Punkten.
+ * Liefert { changes, id } (id = Referenz des neuen Widgets).
+ */
+export function createField(doc, pageIndex, type, rect, name, fontCache) {
+  const ctx = doc.context;
+  const { changes, set } = recorder();
+  repairFieldTree(doc, set, fontCache);
+  const acroForm = ensureAcroForm(doc, set, fontCache);
+  const page = doc.getPage(pageIndex);
+  const [x1, y1, x2, y2] = rect;
+  const w = x2 - x1;
+  const h = y2 - y1;
+  const common = {
+    Type: 'Annot',
+    Subtype: 'Widget',
+    Rect: [x1, y1, x2, y2],
+    F: 4,
+    P: page.ref,
+    MK: NEW_FIELD_MK,
+    BS: { W: 1, S: 'S' },
+  };
+  let widget;
+  if (type === 'checkbox') {
+    widget = ctx.obj({ ...common, FT: 'Btn', V: 'Off', AS: 'Off' });
+    widget.set(N('DA'), PDFString.of('/ZaDb 0 Tf 0 g'));
+  } else {
+    widget = ctx.obj({ ...common, FT: 'Tx', Q: 0 });
+    widget.set(N('DA'), PDFString.of('/Helv 10 Tf 0 g'));
+    widget.set(N('V'), PDFHexString.fromText(''));
+  }
+  widget.set(N('T'), PDFHexString.fromText(name));
+  const ref = ctx.register(widget);
+  if (type === 'checkbox') widget.set(N('AP'), checkboxAppearances(ctx, widget, w, h));
+  else {
+    const stream = textAppearance(
+      doc,
+      widget,
+      { multiline: false, fontSize: 10, color: [0, 0, 0], align: 0 },
+      '',
+      fontCache,
+    );
+    if (stream) widget.set(N('AP'), ctx.obj({ N: ctx.register(stream) }));
+  }
+  const annots = ctx.lookup(page.node.get(N('Annots')));
+  set(page.node, 'Annots', ctx.obj([...(annots instanceof PDFArray ? annots.asArray() : []), ref]));
+  const fields = ctx.lookup(acroForm.get(N('Fields')));
+  set(acroForm, 'Fields', ctx.obj([...(fields instanceof PDFArray ? fields.asArray() : []), ref]));
+  return { changes, id: ref.toString() };
+}
+
+/** DA mit neuer Schriftgröße (Schriftname und Farbe bleiben). */
+function withFontSize(da, size) {
+  const parsed = parseDA(da);
+  const font = parsed.font || 'Helv';
+  const [r, g, b] = parsed.color;
+  const color = r === g && g === b ? `${r} g` : `${r} ${g} ${b} rg`;
+  return `/${font} ${size} Tf ${color}`;
+}
+
+/**
+ * Ändert Lage und Eigenschaften eines Felds. `props` (alle optional): `rect`, `name`,
+ * `fontSize` (0 = automatisch), `align` (0/1/2), `multiline`, `readOnly`, `border`.
+ */
+export function updateField(doc, entry, props, fontCache) {
+  const ctx = doc.context;
+  const { changes, set } = recorder();
+  repairFieldTree(doc, set, fontCache);
+  const { widget, field } = entry;
+  const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+  const [ox1, oy1, ox2, oy2] = entry.rect;
+  const resized =
+    !!props.rect &&
+    (Math.abs(props.rect[2] - props.rect[0] - (ox2 - ox1)) > 0.01 ||
+      Math.abs(props.rect[3] - props.rect[1] - (oy2 - oy1)) > 0.01);
+  if (props.rect) set(widget, 'Rect', ctx.obj(props.rect.map((v) => +v.toFixed(2))));
+  if (props.name !== undefined && props.name !== entry.partialName)
+    set(field, 'T', PDFHexString.fromText(props.name));
+  const flag = (bit, on) => {
+    const ff = num(inherited(ctx, field, 'Ff'));
+    const next = on ? ff | bit : ff & ~bit;
+    if (next !== ff) set(field, 'Ff', ctx.obj(next));
+  };
+  if (props.readOnly !== undefined) flag(FF.readOnly, props.readOnly);
+  if (props.multiline !== undefined && entry.type === 'text') flag(FF.multiline, props.multiline);
+  // nur tatsächliche Änderungen übernehmen (geerbte Standardwerte zählen als gesetzt)
+  for (const key of ['fontSize', 'align', 'border'])
+    if (props[key] === entry[key]) props = { ...props, [key]: undefined };
+  if (props.fontSize !== undefined) {
+    const da = textOf(inherited(ctx, widget, 'DA', acroForm)) || '/Helv 0 Tf 0 g';
+    set(widget, 'DA', PDFString.of(withFontSize(da, props.fontSize)));
+  }
+  if (props.align !== undefined) set(widget, 'Q', ctx.obj(props.align));
+  if (props.border !== undefined) {
+    const mk = ctx.lookup(widget.get(N('MK')));
+    const next = mk instanceof PDFDict ? mk.clone(ctx) : ctx.obj({});
+    if (props.border) {
+      next.set(N('BC'), ctx.obj(NEW_FIELD_MK.BC));
+      if (!next.has(N('BG'))) next.set(N('BG'), ctx.obj(NEW_FIELD_MK.BG));
+      set(widget, 'BS', ctx.obj({ W: 1, S: 'S' }));
+      set(widget, 'Border', undefined);
+    } else next.delete(N('BC'));
+    set(widget, 'MK', next);
+  }
+  // Erscheinungsbild an Größe und Eigenschaften anpassen
+  const now = describeWidget(ctx, acroForm, widget) || entry;
+  // reines Verschieben behält das Erscheinungsbild (Schrift, Stil) – neu nur bei Größe/Stil
+  const geometry = resized || props.border !== undefined;
+  if (now.type === 'text' || now.type === 'choice') {
+    if (
+      geometry ||
+      props.fontSize !== undefined ||
+      props.align !== undefined ||
+      props.multiline !== undefined
+    )
+      refreshTextAppearance(doc, widget, now, set, fontCache);
+  } else if (now.type === 'checkbox' && geometry && isOwnCheckbox(ctx, widget)) {
+    const [x1, y1, x2, y2] = now.rect;
+    set(widget, 'AP', checkboxAppearances(ctx, widget, x2 - x1, y2 - y1));
+  }
+  return changes;
+}
+
+/** Kontrollkästchen mit den Zuständen Yes/Off (wie von PDFix angelegt): Aussehen neu erzeugbar. */
+export function isOwnCheckbox(ctx, widget) {
+  return onStateOf(ctx, widget) === 'Yes';
+}
+
+/** Entfernt ein Widget von der Seite und aus dem Feldbaum (leere Elternfelder ebenso). */
+export function deleteField(doc, entry, fontCache) {
+  const ctx = doc.context;
+  const { changes, set } = recorder();
+  repairFieldTree(doc, set, fontCache);
+  const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+  for (const page of doc.getPages()) {
+    const annots = ctx.lookup(page.node.get(N('Annots')));
+    if (!(annots instanceof PDFArray)) continue;
+    const rest = annots.asArray().filter((ref) => ctx.lookup(ref) !== entry.widget);
+    if (rest.length !== annots.size()) set(page.node, 'Annots', ctx.obj(rest));
+  }
+  const detach = (node, depth = 0) => {
+    const parent = ctx.lookup(node.get(N('Parent')));
+    const owner = parent instanceof PDFDict ? parent : acroForm;
+    if (!(owner instanceof PDFDict) || depth > 32) return;
+    const key = owner === acroForm ? 'Fields' : 'Kids';
+    const list = ctx.lookup(owner.get(N(key)));
+    if (!(list instanceof PDFArray)) return;
+    const rest = list.asArray().filter((ref) => ctx.lookup(ref) !== node);
+    set(owner, key, ctx.obj(rest));
+    if (owner !== acroForm && !rest.length) detach(owner, depth + 1);
+  };
+  detach(entry.widget);
+  return changes;
 }

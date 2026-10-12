@@ -171,7 +171,7 @@ async function inkHash(page, png) {
   return sha(bits);
 }
 
-/** Farbwelt von Version 1.0 (Farben und Schatten), für den Vergleich der Anordnung. */
+/** Farbwelt von Version 1.0 (Farben und Schatten) und ohne neue Werkzeuge, für den Vergleich der Anordnung. */
 const LEGACY_LOOK = `:root{
   --ink:#1b2129; --ink2:#4c5561; --ink3:#7b8490; --line:#e3e6ea; --line2:#d3d7dd;
   --bg:#f4f5f7; --canvas:#e9ebef; --hover:#f1f3f6; --press:#e7eaef;
@@ -183,7 +183,8 @@ const LEGACY_LOOK = `:root{
   --sh3:0 18px 48px rgba(16,24,40,.18),0 4px 12px rgba(16,24,40,.08);
 }
 .sec h4,.recent h4{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
-.fld:disabled{background:#fff;color:revert;cursor:revert}`;
+.fld:disabled{background:#fff;color:revert;cursor:revert}
+.tool[data-tool="formdesign"]{display:none}`;
 
 /**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).

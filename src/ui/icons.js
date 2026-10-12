@@ -26,6 +26,8 @@ const ICON_PATHS = {
   pages:
     '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/>',
   text: '<path d="M5 5.5V4h10v1.5M10 4v12M7.5 16h5"/>',
+  field: '<rect x="2.5" y="6" width="15" height="8" rx="1.5"/><path d="M6 8.5v3"/>',
+  checkbox: '<rect x="3.5" y="3.5" width="13" height="13" rx="2.5"/><path d="M6.8 10.2l2.2 2.3 4.3-5"/>',
   textbox:
     '<rect x="3" y="4" width="14" height="12" rx="1.5" stroke-dasharray="2.2 2"/><path d="M7 7.5h6M10 7.5v6"/>',
   image:

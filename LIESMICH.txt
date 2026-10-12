@@ -70,6 +70,21 @@ Eingetragene Werte sind Formularfelder, keine Seitenschrift: Sie werden
 deshalb über das Feld geändert, nicht über „Text bearbeiten“.
 
 
+FORMULARFELDER ANLEGEN UND ÄNDERN
+---------------------------------
+Werkzeug „Formularfelder“ (in „Alle Werkzeuge“ oder unter „PDF bearbeiten“ >
+„Formularfeld“):
+- Neues Feld: „Textfeld“ oder „Kontrollkästchen“ wählen, dann auf die Seite
+  klicken (Standardgröße) oder einen Rahmen aufziehen.
+- Vorhandene Felder – auch aus anderen Programmen – erscheinen als blaue
+  Rahmen: Klick wählt aus, Ziehen verschiebt, die Griffe ändern die Größe,
+  Pfeiltasten verschieben um 1 Punkt (mit Umschalt um 10), Entf löscht.
+- In der Seitenleiste: Name, Schriftgröße, Ausrichtung, „Mehrzeilig“,
+  „Schreibgeschützt“ und „Rahmen“.
+Ausgefüllt wird außerhalb des Werkzeugs direkt auf der Seite. Jede Änderung
+lässt sich mit Strg+Z rückgängig machen.
+
+
 TEXT BEARBEITEN
 ---------------
 1. Links „PDF bearbeiten“ wählen.

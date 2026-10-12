@@ -16,7 +16,15 @@ import {
   StringToken,
 } from './content-stream.js';
 import { withoutActiveContent } from './active-content.js';
-import { applyFieldValue, readPageFields, restoreChanges } from './form-fields.js';
+import {
+  applyFieldValue,
+  createField,
+  deleteField,
+  readPageFields,
+  restoreChanges,
+  uniqueFieldName,
+  updateField,
+} from './form-fields.js';
 import {
   MAX_CONTENT_BYTES,
   MAX_CONTENT_GLYPHS,
@@ -635,24 +643,54 @@ export class PdfSession {
    * Felds werden neu dargestellt. Liefert true, wenn sich etwas geändert hat.
    */
   setFormValue(entry, value, label = 'Formularfeld ausgefüllt') {
+    return this.formEdit(label, () => applyFieldValue(this.doc, entry, value, this.formFonts), [
+      entry.widget,
+    ]).then((changes) => changes.length > 0);
+  }
+  /** Neues Formularfeld (`type`: 'text' | 'checkbox') auf Seite `index`; liefert die Kennung. */
+  async addFormField(index, type, rect) {
+    const name = uniqueFieldName(this.doc, type === 'checkbox' ? 'Kontrollkästchen' : 'Textfeld');
+    let id = null;
+    await this.formEdit(type === 'checkbox' ? 'Kontrollkästchen eingefügt' : 'Textfeld eingefügt', () => {
+      const result = createField(this.doc, index, type, rect, name, this.formFonts);
+      id = result.id;
+      return result.changes;
+    });
+    return id;
+  }
+  /** Lage/Eigenschaften eines Felds ändern (siehe updateField). */
+  updateFormField(entry, props, label = 'Formularfeld geändert') {
+    return this.formEdit(label, () => updateField(this.doc, entry, props, this.formFonts), [entry.widget]);
+  }
+  deleteFormField(entry) {
+    return this.formEdit('Formularfeld gelöscht', () => deleteField(this.doc, entry, this.formFonts), [
+      entry.widget,
+    ]);
+  }
+  /**
+   * Führt eine Formular-Änderung exklusiv aus und legt einen Verlaufsschritt an. Neu dargestellt
+   * werden alle Seiten, deren Anmerkungsliste oder Widgets betroffen sind.
+   */
+  formEdit(label, fn, widgets = []) {
     return this.exclusive(() => {
-      const changes = applyFieldValue(this.doc, entry, value, this.formFonts);
-      if (!changes.length) return false;
-      const touched = new Set(changes.map((c) => c.dict));
+      const changes = fn();
+      if (!changes.length) return changes;
+      const touched = new Set([...changes.map((c) => c.dict), ...widgets]);
       const pages = [];
       for (let k = 0; k < this.numPages; k++) {
-        const annots = this.ctx.lookup(this.page(k).node.get(pdfName('Annots')));
-        if (!(annots instanceof PDFArray)) continue;
+        const node = this.page(k).node;
+        const annots = this.ctx.lookup(node.get(pdfName('Annots')));
+        const before = changes.find((c) => c.dict === node && c.key === pdfName('Annots'));
+        const lists = [annots, before && this.ctx.lookup(before.before)].filter((a) => a instanceof PDFArray);
         if (
-          annots
-            .asArray()
-            .some((ref) => touched.has(this.ctx.lookup(ref)) || this.ctx.lookup(ref) === entry.widget)
+          touched.has(node) ||
+          lists.some((list) => list.asArray().some((ref) => touched.has(this.ctx.lookup(ref))))
         )
           pages.push(this.page(k).ref.toString());
       }
       this.bumpForm(pages);
       this.push({ kind: 'form', label, changes, pages });
-      return true;
+      return changes;
     });
   }
   undo() {

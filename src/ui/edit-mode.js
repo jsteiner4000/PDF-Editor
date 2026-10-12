@@ -2108,6 +2108,9 @@ export class EditMode {
     addImageBtn.addEventListener('click', () => this.pickImage());
     addSection.append(addTextBtn, addImageBtn);
     if (this.signature) this.signature.mountPanel(addSection);
+    const formBtn = htmlToElement(`<button class="btn big">${icon('field')}Formularfeld</button>`);
+    formBtn.addEventListener('click', () => this.app.setTool('formdesign'));
+    addSection.appendChild(formBtn);
     const style = editor ? editor.currentStyle() : null;
     const formatSection = htmlToElement('<div class="sec"><h4>Format</h4></div>');
     body.appendChild(formatSection);

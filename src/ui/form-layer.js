@@ -20,6 +20,13 @@ export class FormLayer {
   /** Baut die Felder einer sichtbaren Seite auf bzw. gleicht sie ab (Fokus bleibt erhalten). */
   draw(pv) {
     if (!this.session || pv.index < 0) return;
+    // im Werkzeug „Formularfelder“ werden Felder gestaltet, nicht ausgefüllt
+    if (this.app.tool === 'formdesign') {
+      if (pv.fl) pv.fl.remove();
+      pv.fl = null;
+      pv.flSig = null;
+      return;
+    }
     const editing = this.app.tool === 'edit';
     const sig = pv.sig + '@' + pv.scale + '@' + editing;
     if (pv.fl && pv.flSig === sig && pv.fl.isConnected) return;

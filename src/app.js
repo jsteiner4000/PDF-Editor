@@ -17,6 +17,7 @@ import { downloadBytes, pickFiles, showDialog, toast, withBusy } from './ui/dial
 import { idbDelete, idbList, idbPut } from './storage/idb.js';
 import { EditMode } from './ui/edit-mode.js';
 import { FormLayer } from './ui/form-layer.js';
+import { FormDesign } from './ui/form-design.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
 import { SignatureTool } from './ui/signature-panel.js';
@@ -105,6 +106,7 @@ export class App {
     this.edit = new EditMode(this);
     this.org = new OrganizeMode(this);
     this.forms = new FormLayer(this);
+    this.design = new FormDesign(this);
     this.fontsPanel = new FontsPanel(this);
     this.build();
     this.loadFonts();
@@ -197,6 +199,7 @@ export class App {
               this.queueRender(pv);
               if (this.edit.active) this.edit.drawBoxes(pv);
               this.forms.draw(pv);
+              this.design.draw(pv);
             } else {
               pv.lastSeen = performance.now();
               pv.clearDetail();
@@ -791,6 +794,7 @@ export class App {
     this.edit.afterSync();
     this.org.afterSync();
     this.forms.refresh();
+    this.design.afterSync();
   }
   sigOf(index) {
     const node = this.session.page(index).node;
@@ -848,6 +852,7 @@ export class App {
     for (const pv of this.pvs) pv.setGeometry(pv.infoRaw, scale);
     this.edit.layoutChanged();
     this.forms.refresh();
+    this.design.layoutChanged();
   }
   /**
    * Ist die Vorschau von `pv` aktuell? Gleiche Seite und gleiche Pixelgröße genügen – oberhalb von
@@ -1278,6 +1283,7 @@ export class App {
     this.tool = name;
     if (prev === 'edit' && name !== 'edit') this.edit.leave();
     if (prev === 'organize' && name !== 'organize') this.org.leave();
+    if (prev === 'formdesign' && name !== 'formdesign') this.design.leave();
     $('#scroller').classList.toggle('hidden', name === 'organize');
     $('#org').classList.toggle('hidden', name !== 'organize');
     $('#nav').classList.toggle('hidden', !this.session || name === 'organize');
@@ -1285,6 +1291,7 @@ export class App {
     $('#left').classList.remove('collapsed');
     if (name === 'edit') this.edit.enter();
     else if (name === 'organize') this.org.enter();
+    else if (name === 'formdesign') this.design.enter();
     else if (name === 'fonts') {
       $('#ctx').classList.add('hidden');
       this.fontsPanel.show();
@@ -1312,6 +1319,7 @@ export class App {
       ['organize', 'c2', 'pages', 'Seiten organisieren', 'Einfügen, löschen, drehen, ordnen'],
       ['addtext', 'c4', 'textbox', 'Text hinzufügen', 'Neues Textfeld auf der Seite'],
       ['addimage', 'c3', 'image', 'Bild hinzufügen', 'PNG oder JPG einfügen'],
+      ['formdesign', 'c6', 'field', 'Formularfelder', 'Textfelder und Kästchen anlegen und ändern'],
       ['signature', 'c4', 'signature', 'Unterschrift', 'Hinterlegen und einsetzen'],
       ['insert', 'c6', 'pageadd', 'Seiten einfügen', 'Leere Seite oder aus Datei'],
       ['fonts', 'c5', 'fonts', 'Schriften', 'Im Dokument verwendete Schriften'],
@@ -1414,7 +1422,8 @@ export class App {
         }
         if (!(
           (this.tool === 'edit' && this.edit.onKey(ev)) ||
-          (this.tool === 'organize' && this.org.onKey(ev))
+          (this.tool === 'organize' && this.org.onKey(ev)) ||
+          (this.tool === 'formdesign' && this.design.onKey(ev))
         )) {
           if (key === 'home' && !this.edit.hasSelection()) {
             ev.preventDefault();

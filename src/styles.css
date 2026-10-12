@@ -1766,3 +1766,120 @@ select.ff:focus {
     display: none;
   }
 }
+
+/* ---------- Werkzeug „Formularfelder“ ---------- */
+.mode-fd .layer {
+  cursor: default;
+}
+.fd-armed .page,
+.fd-armed .layer {
+  cursor: crosshair;
+}
+.fd {
+  position: absolute;
+  inset: 0;
+}
+.fdb {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--acc);
+  border-radius: 2px;
+  background: rgba(44, 125, 255, 0.07);
+  cursor: move;
+  touch-action: none;
+}
+.fd-armed .fdb {
+  cursor: crosshair;
+}
+.fdb:hover {
+  background: rgba(44, 125, 255, 0.14);
+}
+.fdb.on {
+  z-index: 1; /* Griffe liegen über benachbarten Feldern */
+  border: 1.5px solid var(--acc);
+  background: rgba(44, 125, 255, 0.1);
+}
+.fdn {
+  position: absolute;
+  left: -1px;
+  bottom: 100%;
+  margin-bottom: 3px;
+  max-width: 260px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--acc);
+  color: #fff;
+  font: 600 11px/1.35 var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.fdb:hover .fdn,
+.fdb.on .fdn {
+  opacity: 1;
+}
+.fdh {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--acc);
+  border-radius: 2px;
+  background: #fff;
+}
+.fdh::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+.fdh[data-h='nw'] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.fdh[data-h='n'] {
+  left: 50%;
+  top: 0;
+  cursor: ns-resize;
+}
+.fdh[data-h='ne'] {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+.fdh[data-h='e'] {
+  left: 100%;
+  top: 50%;
+  cursor: ew-resize;
+}
+.fdh[data-h='se'] {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+.fdh[data-h='s'] {
+  left: 50%;
+  top: 100%;
+  cursor: ns-resize;
+}
+.fdh[data-h='sw'] {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+.fdh[data-h='w'] {
+  left: 0;
+  top: 50%;
+  cursor: ew-resize;
+}
+.fd-ghost {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--acc);
+  background: rgba(44, 125, 255, 0.08);
+  pointer-events: none;
+}
