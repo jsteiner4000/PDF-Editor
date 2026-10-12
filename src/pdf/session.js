@@ -22,6 +22,7 @@ import {
   deleteField,
   readPageFields,
   restoreChanges,
+  settleNeedAppearances,
   uniqueFieldName,
   updateField,
 } from './form-fields.js';
@@ -253,7 +254,14 @@ export class PdfSession {
     });
     doc.registerFontkit(fontkit);
     repairStreamLengths(doc, bytes);
-    return new PdfSession(doc, opts.library);
+    const session = new PdfSession(doc, opts.library);
+    // Formulare: gespeicherte Erscheinungsbilder statt Neuzeichnen (gleiches Bild wie in Acrobat)
+    try {
+      session.formsSettled = settleNeedAppearances(doc);
+    } catch (err) {
+      console.warn('Formular-Erscheinungsbilder', err);
+    }
+    return session;
   }
   constructor(doc, library) {
     this.doc = doc;

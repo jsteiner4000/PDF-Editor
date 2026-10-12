@@ -24,6 +24,9 @@ files:
   - assets/icon/png/icon-128.png
   - '!node_modules/**'
 extraResources:
+  # Symbol für PDF-Dateien (Explorer/Desktop), wenn PDFix das Standardprogramm ist
+  - from: assets/icon/document.ico
+    to: document.ico
   - from: dist/licenses
     to: Lizenzen
   # Schriftdateien zum Installieren in Windows (Hilfe > Schriftdateien anzeigen)

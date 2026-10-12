@@ -29,6 +29,10 @@ Falls Windows warnt („Der Computer wurde durch Windows geschützt“): Das
 Programm ist nicht digital signiert. „Weitere Informationen“ > „Trotzdem
 ausführen“.
 
+PDF-Dateien haben als Standardprogramm PDFix ein eigenes Dokument-Symbol
+(Blatt mit PDFix-Zeichen und „PDF“), damit man sie vom Programm unterscheidet.
+Zeigt Windows noch das alte Symbol, hilft eine Abmeldung oder ein Neustart.
+
 Drucken ohne Öffnen (Outlook-Schnelldruck): Ist PDFix das Standardprogramm für
 PDF-Dateien, druckt es Anhänge über Outlooks „Schnelldruck“ und über
 Rechtsklick > „Drucken“ im Explorer direkt auf dem Standarddrucker – ohne
@@ -66,6 +70,12 @@ Schreibgeschützte Felder – viele Formular-Apps sperren ein Protokoll nach dem
 Abschluss – lassen sich nur unter „PDF bearbeiten“ ändern. Der Schreibschutz
 bleibt in der Datei erhalten; andere Programme zeigen die Felder weiter als
 gesperrt.
+Gleiche Darstellung wie in Acrobat: Manche Formulare verlangen, dass jedes
+Programm die Felder selbst neu zeichnet. Acrobat nimmt dafür die vorgesehene
+Schrift (z. B. Calibri), Chrome und andere eine Ersatzschrift – deshalb sahen
+solche Formulare je nach Programm verschieden aus. PDFix nutzt in diesem Fall
+die in der Datei gespeicherten Feldbilder und speichert die Datei so, dass auch
+andere Programme diese Bilder zeigen.
 Eingetragene Werte sind Formularfelder, keine Seitenschrift: Sie werden
 deshalb über das Feld geändert, nicht über „Text bearbeiten“.
 

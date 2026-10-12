@@ -16,9 +16,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { buildIco, loadPlaywright } from './ico.mjs';
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUT_PNG = path.join(DIR, 'png');
@@ -35,19 +34,6 @@ const ICNS_ENTRIES = [
   ['icp4', 16], ['icp5', 32], ['ic11', 32], ['ic12', 64], ['ic07', 128],
   ['ic13', 256], ['ic08', 256], ['ic14', 512], ['ic09', 512], ['ic10', 1024],
 ];
-
-function loadPlaywright() {
-  try {
-    return createRequire(import.meta.url)('playwright');
-  } catch {
-    try {
-      return createRequire(path.join(DIR, '..', '..', 'package.json'))('@playwright/test');
-    } catch {
-      const globalRoot = execSync('npm root -g').toString().trim();
-      return createRequire(path.join(globalRoot, '/'))('playwright');
-    }
-  }
-}
 
 async function renderAll() {
   const { chromium } = loadPlaywright();
@@ -100,33 +86,6 @@ async function renderAll() {
   );
   await browser.close();
   return new Map(SIZES.map((size) => [size, Buffer.from(result[size], 'base64')]));
-}
-
-// ICO: ICONDIR + ICONDIRENTRY je Bild, Bilddaten als PNG (Vista+). 256 wird als 0 kodiert.
-function buildIco(pngs, sizes) {
-  const header = Buffer.alloc(6);
-  header.writeUInt16LE(0, 0);
-  header.writeUInt16LE(1, 2);
-  header.writeUInt16LE(sizes.length, 4);
-  const entries = [];
-  const images = [];
-  let offset = 6 + 16 * sizes.length;
-  for (const size of sizes) {
-    const data = pngs.get(size);
-    const e = Buffer.alloc(16);
-    e.writeUInt8(size >= 256 ? 0 : size, 0);
-    e.writeUInt8(size >= 256 ? 0 : size, 1);
-    e.writeUInt8(0, 2); // keine Palette
-    e.writeUInt8(0, 3);
-    e.writeUInt16LE(1, 4); // Farbebenen
-    e.writeUInt16LE(32, 6); // Bit pro Pixel
-    e.writeUInt32LE(data.length, 8);
-    e.writeUInt32LE(offset, 12);
-    offset += data.length;
-    entries.push(e);
-    images.push(data);
-  }
-  return Buffer.concat([header, ...entries, ...images]);
 }
 
 // ICNS: 'icns' + Gesamtlaenge, danach je Eintrag OSType + Laenge (inkl. 8 Byte Kopf) + PNG.

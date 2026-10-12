@@ -99,6 +99,8 @@ jobs:
           if (-not $progids -or -not ($progids.PSObject.Properties.Name -contains 'PDFix.Dokument')) { throw '.pdf-Zuordnung fehlt' }
           $print = (Get-ItemProperty 'HKCU:\Software\Classes\PDFix.Dokument\shell\print\command' -ErrorAction SilentlyContinue).'(default)'
           if (-not $print -or $print -notlike '*--pdfix-print=%1*') { throw "Druckbefehl fehlt: $print" }
+          $docIcon = (Get-ItemProperty 'HKCU:\Software\Classes\PDFix.Dokument\DefaultIcon' -ErrorAction SilentlyContinue).'(default)'
+          if (-not $docIcon -or -not (Test-Path $docIcon)) { throw "Dokument-Symbol fehlt: $docIcon" }
           $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'PDFix.lnk'
           if (-not (Test-Path $lnk)) { throw "Startmenü-Verknüpfung fehlt: $lnk" }
           Start-Process -FilePath (Join-Path $dir 'Uninstall PDFix.exe') -ArgumentList '/S' -Wait

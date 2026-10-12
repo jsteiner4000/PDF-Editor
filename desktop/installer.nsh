@@ -65,7 +65,8 @@
     ${If} $PdfeAssocState == ${BST_CHECKED}
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}" "" "PDF-Dokument"
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}" "FriendlyTypeName" "PDF-Dokument"
-      WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
+      ; PDF-Dateien bekommen ein eigenes Dokument-Symbol (nicht das Programmsymbol)
+      WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\DefaultIcon" "" "$INSTDIR\resources\document.ico"
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\open" "FriendlyAppName" "PDFix"
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
       ; Drucken ohne Fenster (Outlook-Schnelldruck, Explorer „Drucken“ / „Drucken auf“)

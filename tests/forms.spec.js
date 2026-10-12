@@ -4,7 +4,7 @@
  * Nur gegen den Neubau.
  */
 import { test, expect } from '@playwright/test';
-import { PDFArray, PDFDocument, PDFName, StandardFonts } from 'pdf-lib';
+import { PDFArray, PDFBool, PDFDocument, PDFHexString, PDFName, StandardFonts } from 'pdf-lib';
 import { launch, openPdf, idle, savedBytes } from './helpers.js';
 
 const N = (name) => PDFName.of(name);
@@ -180,4 +180,34 @@ test('Doppelter Feldbaum (iOS): gespeicherte Werte sind auch über /Fields lesba
   } finally {
     await context.close();
   }
+});
+
+test('Gleiche Darstellung wie Acrobat: /NeedAppearances entfällt nur, wenn die Bilder passen', async ({
+  browser,
+}) => {
+  const make = async (stale) => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([595, 842]);
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const field = doc.getForm().createTextField('kunde');
+    field.setText(stale ? '' : 'Firma');
+    field.addToPage(page, { x: 100, y: 700, width: 200, height: 22 });
+    doc.getForm().updateFieldAppearances(font);
+    // veraltet: Wert nachträglich gesetzt, Erscheinungsbild noch leer (Programm verlässt sich auf den Schalter)
+    if (stale) field.acroField.dict.set(N('V'), PDFHexString.fromText('Firma'));
+    doc.getForm().acroForm.dict.set(N('NeedAppearances'), PDFBool.True);
+    return doc.save({ updateFieldAppearances: false });
+  };
+  const flagAfterSave = async (bytes) => {
+    const { page, context } = await launch(browser, 'neubau');
+    try {
+      await openPdf(page, bytes, 'formular.pdf');
+      const saved = await PDFDocument.load(await savedBytes(page));
+      return String(saved.catalog.lookup(N('AcroForm')).get(N('NeedAppearances')));
+    } finally {
+      await context.close();
+    }
+  };
+  expect(await flagAfterSave(await make(false))).toBe('false');
+  expect(await flagAfterSave(await make(true))).toBe('true');
 });

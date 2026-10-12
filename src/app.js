@@ -408,7 +408,8 @@ export class App {
         return false;
       }
       try {
-        await this.renderer.load(bytes);
+        // Formular-Schalter angepasst: die Darstellung zeigt den Stand der Sitzung, nicht der Datei
+        await this.renderer.load(session.formsSettled ? await session.save({ clean: false }) : bytes);
       } catch {
         failure = 'bad';
         return false;

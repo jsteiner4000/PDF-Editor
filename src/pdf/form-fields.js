@@ -30,6 +30,7 @@ import {
   PDFString,
   StandardFonts,
 } from 'pdf-lib';
+import { readStreamBytes } from './pdf-objects.js';
 
 const N = (name) => PDFName.of(name);
 const nameOf = (obj) => (obj instanceof PDFName ? obj.decodeText() : null);
@@ -699,4 +700,58 @@ export function deleteField(doc, entry, fontCache) {
   };
   detach(entry.widget);
   return changes;
+}
+
+/* ---------- Gleiche Darstellung in allen Programmen ---------- */
+
+/**
+ * `/NeedAppearances true` fordert jedes Programm auf, Formularfelder selbst neu zu zeichnen. Jedes
+ * tut das anders: Acrobat nimmt die Schrift aus /DA (z. B. Calibri), Chrome und pdf.js eine
+ * Ersatzschrift – das Formular sieht je nach Programm verschieden aus. Passen die gespeicherten
+ * Erscheinungsbilder aber zu den Werten, ist das Neuzeichnen unnötig: Dann wird der Schalter
+ * entfernt, und alle Programme zeigen dasselbe gespeicherte Bild.
+ *
+ * Geprüft wird je sichtbarem Feld: Text/Auswahl – ein Erscheinungsbild existiert und enthält
+ * genau dann Text, wenn das Feld einen Wert hat; Kästchen – der Zustand /AS hat ein Bild.
+ * Bei Zweifeln bleibt der Schalter. Liefert true, wenn er entfernt wurde.
+ */
+export function settleNeedAppearances(doc) {
+  const ctx = doc.context;
+  const acroForm = ctx.lookup(doc.catalog.get(N('AcroForm')));
+  if (!(acroForm instanceof PDFDict)) return false;
+  const flag = ctx.lookup(acroForm.get(N('NeedAppearances')));
+  if (!flag || flag.toString() !== 'true') return false;
+  for (const page of doc.getPages()) {
+    const annots = ctx.lookup(page.node.get(N('Annots')));
+    if (!(annots instanceof PDFArray)) continue;
+    for (let k = 0; k < annots.size(); k++) {
+      const entry = describeWidget(ctx, acroForm, annots.get(k), k);
+      if (entry && !appearanceFits(ctx, entry)) return false;
+    }
+  }
+  acroForm.set(N('NeedAppearances'), ctx.obj(false));
+  return true;
+}
+
+function appearanceFits(ctx, entry) {
+  const ap = ctx.lookup(entry.widget.get(N('AP')));
+  const normal = ap instanceof PDFDict ? ctx.lookup(ap.get(N('N'))) : null;
+  if (entry.type === 'checkbox' || entry.type === 'radio') {
+    const state = nameOf(entry.widget.get(N('AS')));
+    return !!state && normal instanceof PDFDict && (state === 'Off' || normal.has(N(state)));
+  }
+  if (!(normal instanceof PDFStream)) return false;
+  let content;
+  try {
+    content = new TextDecoder('latin1').decode(
+      readStreamBytes(ctx, normal, 4 * 1024 * 1024) || new Uint8Array(),
+    );
+  } catch {
+    return false;
+  }
+  // Text im Bild (direkt oder über ein eingebettetes Form-XObject) genau dann, wenn ein Wert da ist
+  // (leere Textbefehle wie „() Tj“ zählen nicht)
+  const visible = content.replace(/(\(\)|<>)\s*Tj/g, '').replace(/\[\s*\]\s*TJ/g, '');
+  const drawsText = /(^|[\s\]>)])(Tj|TJ|'|")(\s|$)/.test(visible) || /\bDo\b/.test(visible);
+  return drawsText === (entry.value !== '');
 }
