@@ -14,6 +14,7 @@ files:
   - package.json
   - desktop/main.js
   - desktop/file-access.js
+  - desktop/quick-print.js
   - desktop/menu.js
   - desktop/window-state.js
   - desktop/preload.cjs

@@ -14,6 +14,9 @@ import { randomUUID } from 'node:crypto';
 /** Kennung → { pages: Uint8Array[] } der gerade laufenden Druckaufträge. */
 const jobs = new Map();
 
+/** Höchstdauer, bis der Drucker den Auftrag angenommen hat (danach Fehlermeldung statt Hängen). */
+const PRINT_TIMEOUT = 180000;
+
 const PRINT_CSP = "default-src 'none'; img-src app:; style-src 'unsafe-inline'";
 
 /** Antwort des app://-Protokolls für /print/<Kennung>/… oder null (nicht zuständig). */
@@ -74,7 +77,15 @@ export async function printPages(origin, pages, { printer = '', toPdf = false } 
         margins: { marginType: 'none' },
         pageSize: 'A4',
       });
-    await new Promise((resolve, reject) =>
+    // ohne (passenden) Drucker gar nicht erst versuchen – Chromium meldet das sonst nicht immer
+    const printers = await win.webContents.getPrintersAsync();
+    if (!printers.length) throw new Error('no printer');
+    if (printer && !printers.some((p) => p.name === printer)) throw new Error('invalid deviceName');
+    let timer = 0;
+    const timeout = new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Zeitüberschreitung beim Drucken')), PRINT_TIMEOUT);
+    });
+    const printing = new Promise((resolve, reject) =>
       win.webContents.print(
         {
           silent: true,
@@ -87,6 +98,11 @@ export async function printPages(origin, pages, { printer = '', toPdf = false } 
           success ? resolve() : reject(new Error(failureReason || 'Drucken fehlgeschlagen')),
       ),
     );
+    try {
+      await Promise.race([printing, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
     return null;
   } finally {
     jobs.delete(token);
