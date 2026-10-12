@@ -16,6 +16,7 @@ import { closeMenu, showMenu } from './ui/menu.js';
 import { downloadBytes, pickFiles, showDialog, toast, withBusy } from './ui/dialogs.js';
 import { idbDelete, idbList, idbPut } from './storage/idb.js';
 import { EditMode } from './ui/edit-mode.js';
+import { FormLayer } from './ui/form-layer.js';
 import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
 import { SignatureTool } from './ui/signature-panel.js';
@@ -103,6 +104,7 @@ export class App {
     this.previewJob = null;
     this.edit = new EditMode(this);
     this.org = new OrganizeMode(this);
+    this.forms = new FormLayer(this);
     this.fontsPanel = new FontsPanel(this);
     this.build();
     this.loadFonts();
@@ -194,6 +196,7 @@ export class App {
             if (pv.visible) {
               this.queueRender(pv);
               if (this.edit.active) this.edit.drawBoxes(pv);
+              this.forms.draw(pv);
             } else {
               pv.lastSeen = performance.now();
               pv.clearDetail();
@@ -568,6 +571,7 @@ export class App {
   }
   async bytesForSave() {
     if (!this.session) return null;
+    await this.forms.flush();
     await this.edit.finishEdit();
     await this.edit.idle();
     if (this._syncP) await this._syncP;
@@ -669,6 +673,33 @@ export class App {
     const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
     if (!window.open(url, '_blank')) downloadBytes(bytes, this.file.name);
   }
+  /**
+   * Schnelldruck (Desktop-App): lädt eine PDF unabhängig vom geöffneten Dokument; die Seiten
+   * holt der Hauptprozess einzeln als Druckbilder (`printPage`) und gibt sie mit `printClose` frei.
+   */
+  async printOpen(bytes) {
+    const renderer = new PdfRenderer();
+    try {
+      await renderer.load(bytes);
+    } catch (err) {
+      renderer.destroy();
+      throw err;
+    }
+    this.printJobs ||= new Map();
+    const id = (this.printSeq = (this.printSeq || 0) + 1);
+    this.printJobs.set(id, renderer);
+    return { id, pages: renderer.doc.numPages };
+  }
+  printPage(id, n, dpi) {
+    const renderer = this.printJobs && this.printJobs.get(id);
+    if (!renderer) throw new Error('Druckauftrag nicht gefunden');
+    return renderer.printImage(n, dpi);
+  }
+  printClose(id) {
+    const renderer = this.printJobs && this.printJobs.get(id);
+    if (renderer) renderer.destroy();
+    if (this.printJobs) this.printJobs.delete(id);
+  }
   props() {
     const doc = this.session.doc;
     const info = this.session.pageInfo(this.cur);
@@ -759,6 +790,7 @@ export class App {
     this.updateHist();
     this.edit.afterSync();
     this.org.afterSync();
+    this.forms.refresh();
   }
   sigOf(index) {
     const node = this.session.page(index).node;
@@ -769,6 +801,7 @@ export class App {
       info.rotate,
       info.w,
       info.h,
+      this.session.formRev(index),
     ].join('|');
   }
   rebuildPages() {
@@ -814,6 +847,7 @@ export class App {
     const scale = this.zoom * CSS_PX_PER_PT;
     for (const pv of this.pvs) pv.setGeometry(pv.infoRaw, scale);
     this.edit.layoutChanged();
+    this.forms.refresh();
   }
   /**
    * Ist die Vorschau von `pv` aktuell? Gleiche Seite und gleiche Pixelgröße genügen – oberhalb von
@@ -1260,6 +1294,7 @@ export class App {
     }
     if (this.session && this.fit && name !== 'organize')
       requestAnimationFrame(() => this.setZoom(null, this.fit, true));
+    if (this.session) this.forms.refresh();
   }
   panel(title, withBack = true) {
     $('#lpHead').innerHTML =
@@ -1308,7 +1343,8 @@ export class App {
       ),
     );
   }
-  finishEdit() {
+  async finishEdit() {
+    await this.forms.flush();
     return this.edit.finishEdit();
   }
   toast(message, kind) {

@@ -2,6 +2,7 @@
  * Einstiegspunkt.
  */
 import { App } from './app.js';
+import { warmUpRenderer } from './render/pdf-renderer.js';
 import { installDesktopBridge } from './platform/desktop-bridge.js';
 import { StreamTooLargeError } from './pdf/pdf-objects.js';
 import { toast } from './ui/dialogs.js';
@@ -12,6 +13,7 @@ window.addEventListener('DOMContentLoaded', () => {
   } catch {}
   window.pdfEditor = new App(document.getElementById('app'));
   installDesktopBridge(window.pdfEditor);
+  warmUpRenderer();
 });
 
 // Eine Bearbeitung scheitert an einer Seite mit unzulässig großem Inhalt: verständlich melden,

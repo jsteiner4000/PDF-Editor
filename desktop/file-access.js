@@ -201,3 +201,27 @@ export function pdfPathsFromArgv(argv, cwd = process.cwd()) {
       }
     });
 }
+
+/**
+ * Druckauftrag aus der Kommandozeile: `--pdfix-print=<Datei>` (Windows-Verb „Drucken“, z. B.
+ * Outlook-Schnelldruck oder Explorer-Kontextmenü) und optional `--pdfix-printer=<Drucker>`
+ * (Verb „Drucken auf“). Liefert { path, printer } oder null.
+ */
+export function printRequestFromArgv(argv, cwd = process.cwd()) {
+  let file = null;
+  let printer = '';
+  for (const arg of argv.slice(1)) {
+    const fileMatch = /^--pdfix-print=(.+)$/i.exec(arg || '');
+    if (fileMatch) file = fileMatch[1].replace(/^"|"$/g, '');
+    const printerMatch = /^--pdfix-printer=(.*)$/i.exec(arg || '');
+    if (printerMatch) printer = printerMatch[1].replace(/^"|"$/g, '');
+  }
+  if (!file || !isPdfPath(file)) return null;
+  const abs = path.resolve(cwd, file);
+  try {
+    if (!statSync(abs).isFile()) return null;
+  } catch {
+    return null;
+  }
+  return { path: abs, printer };
+}

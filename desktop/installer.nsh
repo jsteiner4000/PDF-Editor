@@ -68,10 +68,14 @@
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\DefaultIcon" "" "$INSTDIR\${APP_EXECUTABLE_FILENAME},0"
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\open" "FriendlyAppName" "PDFix"
       WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+      ; Drucken ohne Fenster (Outlook-Schnelldruck, Explorer „Drucken“ / „Drucken auf“)
+      WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\print\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--pdfix-print=%1"'
+      WriteRegStr HKCU "Software\Classes\${PDFE_PROGID}\shell\printto\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--pdfix-print=%1" "--pdfix-printer=%2"'
       WriteRegStr HKCU "Software\Classes\.pdf\OpenWithProgids" "${PDFE_PROGID}" ""
       WriteRegStr HKCU "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}" "FriendlyAppName" "PDFix"
       WriteRegStr HKCU "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\SupportedTypes" ".pdf" ""
       WriteRegStr HKCU "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\shell\open\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+      WriteRegStr HKCU "Software\Classes\Applications\${APP_EXECUTABLE_FILENAME}\shell\print\command" "" '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "--pdfix-print=%1"'
       WriteRegStr HKCU "${PDFE_CAPS}" "ApplicationName" "PDFix"
       WriteRegStr HKCU "${PDFE_CAPS}" "ApplicationDescription" "PDF-Dateien bearbeiten: Texte, Bilder und Seiten."
       WriteRegStr HKCU "${PDFE_CAPS}\FileAssociations" ".pdf" "${PDFE_PROGID}"

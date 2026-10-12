@@ -13,10 +13,12 @@
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FileAccess, FileAccessError, pdfPathsFromArgv } from './file-access.js';
+import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } from './file-access.js';
+import { printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS } from './menu.js';
 import { loadWindowState, trackWindowState, MIN_SIZE } from './window-state.js';
 
@@ -54,7 +56,9 @@ app.setName(APP_NAME);
 if (process.platform === 'win32') app.setAppUserModelId('de.jsteiner.pdfeditor');
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  // codeCache: Chromium legt den übersetzten Programmcode (V8) ab – ab dem zweiten Start lädt die
+  // App schneller. Gilt nur für eigene Skriptdateien, deshalb wird das Skript als /app.js geliefert.
+  { scheme: SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } },
 ]);
 
 if (!app.requestSingleInstanceLock()) {
@@ -70,6 +74,15 @@ function start() {
   let files = null;
   let rendererReady = false;
   const pendingPaths = pdfPathsFromArgv(process.argv);
+  // Schnelldruck (Windows-Verb „Drucken“): ohne sichtbares Fenster drucken und wieder beenden,
+  // sofern der Nutzer währenddessen nichts anderes öffnet
+  const firstPrint = printRequestFromArgv(process.argv);
+  let printOnly = !!firstPrint && !pendingPaths.length;
+  let printQueue = Promise.resolve();
+  let printCount = 0; // nur für Tests (PDF_EDITOR_PRINT_TO_PDF)
+  const pendingPrints = firstPrint ? [withBytes(firstPrint)] : [];
+  // Hängt der Start im reinen Druckmodus, beendet sich das unsichtbare Programm von selbst
+  if (printOnly) setTimeout(() => !rendererReady && endPrintOnly(), 60000);
   let docState = { hasDocument: false, name: '', dirty: false };
   let allowClose = false;
   let closing = false;
@@ -84,12 +97,12 @@ function start() {
    * Befehl an die Web-App; mit `wait` wird auf die Antwort gewartet (optional mit Zeitlimit).
    * Menübefehle (`fromMenu`) ignoriert die Web-App, solange einer ihrer Dialoge offen ist.
    */
-  function command(name, { wait = false, timeout = 0, fromMenu = false } = {}) {
+  function command(name, { wait = false, timeout = 0, fromMenu = false, data = undefined } = {}) {
     if (!win || win.isDestroyed() || rendererGone) {
       return wait ? Promise.reject(new Error('renderer-gone')) : Promise.resolve(null);
     }
     if (!wait) {
-      win.webContents.send('app:command', { command: name, fromMenu });
+      win.webContents.send('app:command', { command: name, fromMenu, data });
       return Promise.resolve(null);
     }
     const replyId = randomUUID();
@@ -103,7 +116,7 @@ function start() {
         else resolve(msg.result);
       });
       replies.get(replyId).timer = timer;
-      win.webContents.send('app:command', { command: name, replyId });
+      win.webContents.send('app:command', { command: name, replyId, data });
     });
   }
 
@@ -111,10 +124,72 @@ function start() {
     const entry = files.grant(filePath);
     app.addRecentDocument(filePath);
     if (!win) return;
+    if (printOnly) {
+      printOnly = false;
+      win.show();
+    }
     if (win.isMinimized()) win.restore();
     win.focus();
     if (rendererReady) win.webContents.send('app:open-file', entry);
     else pendingPaths.push(filePath);
+  }
+
+  /**
+   * Schnelldruck einer Datei (nacheinander, falls Outlook mehrere Anhänge schickt). Fehler
+   * erscheinen als Meldung; im reinen Druckmodus beendet sich das Programm danach.
+   */
+  function quickPrint(job) {
+    const run = printQueue.then(async () => {
+      let printId = null;
+      try {
+        const data = await job.bytes;
+        const info = await command('printOpen', { wait: true, timeout: 120000, data });
+        if (!info || !info.pages) throw new Error('Die Datei enthält keine druckbaren Seiten.');
+        printId = info.id;
+        if (info.pages > MAX_PRINT_PAGES)
+          throw new Error(
+            `Die Datei hat zu viele Seiten für den Schnelldruck (höchstens ${MAX_PRINT_PAGES}).`,
+          );
+        // seitenweise (keine riesige Einzelnachricht); bei vielen Seiten etwas geringere Auflösung
+        const dpi = info.pages > 20 ? 150 : 200;
+        const pages = [];
+        for (let n = 1; n <= info.pages; n++)
+          pages.push(
+            await command('printPage', { wait: true, timeout: 60000, data: { id: printId, n, dpi } }),
+          );
+        const toPdf = !app.isPackaged && process.env.PDF_EDITOR_PRINT_TO_PDF;
+        const pdf = await printPages(ORIGIN, pages, { printer: job.printer, toPdf: !!toPdf });
+        if (toPdf && pdf) {
+          printCount++;
+          writeFileSync(printCount === 1 ? toPdf : toPdf.replace(/(\.pdf)?$/i, `-${printCount}.pdf`), pdf);
+        }
+        if (!printOnly) command('printed', { data: path.basename(job.path) });
+      } catch (err) {
+        const options = {
+          type: 'error',
+          title: APP_NAME,
+          message: `„${path.basename(job.path)}“ konnte nicht gedruckt werden.`,
+          detail: printErrorText(err, job.printer),
+          buttons: ['OK'],
+          noLink: true,
+        };
+        await (printOnly || !win ? dialog.showMessageBox(options) : dialog.showMessageBox(win, options));
+      } finally {
+        if (printId !== null) command('printClose', { data: printId });
+      }
+    });
+    printQueue = run;
+    // Reiner Druckmodus: beenden, wenn die Warteschlange leer ist (nicht nach dem ersten Auftrag)
+    run.then(() => {
+      if (printQueue === run) endPrintOnly();
+    });
+  }
+
+  function endPrintOnly() {
+    if (printOnly && win && !win.isDestroyed()) {
+      allowClose = true;
+      win.destroy();
+    }
   }
 
   function updateTitle() {
@@ -219,9 +294,11 @@ function start() {
         devTools: !app.isPackaged,
       },
     });
-    if (state.maximized) win.maximize();
+    if (state.maximized && !printOnly) win.maximize();
     trackWindowState(win);
-    win.once('ready-to-show', () => win.show());
+    win.once('ready-to-show', () => {
+      if (!printOnly) win.show();
+    });
     // Seitentitel nicht übernehmen – den Titel setzt updateTitle()
     win.on('page-title-updated', (e) => e.preventDefault());
 
@@ -255,6 +332,7 @@ function start() {
     });
     win.on('unresponsive', async () => {
       if (!win || rendererGone) return;
+      if (printOnly) return endPrintOnly();
       const { response } = await dialog.showMessageBox(win, {
         type: 'warning',
         title: APP_NAME,
@@ -307,6 +385,8 @@ function start() {
       clearTimeout(done.timer);
       done({ error: 'renderer-gone' });
     }
+    // unsichtbares Druckprogramm: keine Rückfrage an ein verstecktes Fenster, einfach beenden
+    if (printOnly) return endPrintOnly();
     const name = docState.hasDocument ? docState.name : '';
     docState = { hasDocument: false, name: '', dirty: false };
     updateTitle();
@@ -411,6 +491,7 @@ function start() {
       const last = pendingPaths.pop();
       pendingPaths.length = 0;
       if (last) openPath(last);
+      while (pendingPrints.length) quickPrint(pendingPrints.shift());
     });
     ipcMain.on('app:command-reply', (event, msg) => {
       if (!fromMainFrame(event) || !msg) return;
@@ -427,15 +508,23 @@ function start() {
   function hardenSession() {
     const ses = session.defaultSession;
     let html = null;
+    let script = null;
     let csp = null;
     protocol.handle(SCHEME, (request) => {
       const url = new URL(request.url);
-      if (url.host !== 'pdf-editor' || !['/', '/index.html'].includes(url.pathname))
+      if (url.host !== 'pdf-editor') return new Response('Nicht gefunden', { status: 404 });
+      const printPage = printResponse(url);
+      if (printPage) return printPage;
+      if (!html) ({ html, script, csp } = splitEditor(readFileSync(EDITOR_HTML, 'utf8')));
+      if (url.pathname === '/app.js')
+        return new Response(script, {
+          headers: {
+            'content-type': 'text/javascript; charset=utf-8',
+            'x-content-type-options': 'nosniff',
+          },
+        });
+      if (!['/', '/index.html'].includes(url.pathname))
         return new Response('Nicht gefunden', { status: 404 });
-      if (!html) {
-        html = readFileSync(EDITOR_HTML, 'utf8');
-        csp = contentSecurityPolicy(html);
-      }
       return new Response(html, {
         headers: {
           'content-type': 'text/html; charset=utf-8',
@@ -517,9 +606,21 @@ function start() {
   });
 
   app.on('second-instance', (_event, argv, workingDirectory) => {
+    const printJob = printRequestFromArgv(argv, workingDirectory);
+    if (printJob) {
+      // sofort lesen: Outlook löscht die temporäre Kopie, sobald dieser Prozess endet
+      const job = withBytes(printJob);
+      if (rendererReady) quickPrint(job);
+      else pendingPrints.push(job);
+      return;
+    }
     const last = pdfPathsFromArgv(argv, workingDirectory).pop();
     if (last) openPath(last);
     else if (win) {
+      if (printOnly) {
+        printOnly = false;
+        win.show();
+      }
       if (win.isMinimized()) win.restore();
       win.focus();
     }
@@ -549,17 +650,58 @@ function start() {
   });
 }
 
+/** Höchstzahl der Seiten für den Schnelldruck (größere Dateien: in PDFix öffnen und drucken). */
+const MAX_PRINT_PAGES = 500;
+
+/** Druckauftrag mit sofort begonnenem Lesen der Datei (`bytes`: Promise<Uint8Array>). */
+function withBytes(job) {
+  const bytes = (async () => {
+    const stat = await fs.stat(job.path);
+    if (stat.size > 512 * 1024 * 1024) throw new Error('Die Datei ist zu groß zum Schnelldruck.');
+    const data = await fs.readFile(job.path);
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  })();
+  bytes.catch(() => {}); // Fehler meldet quickPrint
+  return { ...job, bytes };
+}
+
+/** Verständlicher Grund für einen fehlgeschlagenen Schnelldruck. */
+function printErrorText(err, printer) {
+  const reason = String((err && err.message) || err || '');
+  if (/ENOENT/.test(reason)) return 'Die Datei wurde nicht gefunden.';
+  if (/invalid printer|invalid devicename|printer.*not|no printer/i.test(reason))
+    return printer
+      ? `Der Drucker „${printer}“ wurde nicht gefunden.`
+      : 'Es ist kein Standarddrucker eingerichtet.';
+  if (/cancel/i.test(reason)) return 'Der Druckauftrag wurde abgebrochen.';
+  if (/password|encrypt/i.test(reason))
+    return 'Die Datei ist kennwortgeschützt. Bitte in PDFix öffnen und von dort drucken.';
+  if (/^Die Datei/.test(reason)) return reason;
+  return 'Bitte die Datei in PDFix öffnen und über „Drucken“ ausgeben.';
+}
+
 /**
- * Content-Security-Policy: Skripte nur mit passendem Hash (das eingebettete Bundle),
- * pdf.js-Worker als blob:, WebAssembly (pdf.js-Bilddecoder) erlaubt, sonst nichts Fremdes.
+ * Trennt das eingebettete Bundle aus dist/PDF-Editor.html heraus: Die Seite lädt es als
+ * app://pdf-editor/app.js (nur so greift der V8-Code-Cache). Die Content-Security-Policy erlaubt
+ * genau diese eine Skriptdatei – per Hash geprüft (Subresource Integrity) –, den pdf.js-Worker als
+ * blob: und WebAssembly (pdf.js-Bilddecoder), sonst nichts Fremdes.
  */
-function contentSecurityPolicy(html) {
-  const hashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-    (m) => `'sha256-${createHash('sha256').update(m[1], 'utf8').digest('base64')}'`,
-  );
+function splitEditor(source) {
+  const scripts = [...source.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  if (scripts.length !== 1) throw new Error('dist/PDF-Editor.html: genau ein Skript erwartet');
+  const script = scripts[0][1];
+  const hash = `sha384-${createHash('sha384').update(script, 'utf8').digest('base64')}`;
+  const html =
+    source.slice(0, scripts[0].index) +
+    `<script src="/app.js" integrity="${hash}"></script>` +
+    source.slice(scripts[0].index + scripts[0][0].length);
+  return { html, script, csp: contentSecurityPolicy(hash) };
+}
+
+function contentSecurityPolicy(hash) {
   return [
     "default-src 'none'",
-    `script-src ${hashes.join(' ')} 'wasm-unsafe-eval'`,
+    `script-src '${hash}' 'wasm-unsafe-eval'`,
     'worker-src blob:',
     "style-src 'unsafe-inline'",
     'img-src data: blob:',

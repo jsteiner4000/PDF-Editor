@@ -16,6 +16,7 @@ import {
   StringToken,
 } from './content-stream.js';
 import { withoutActiveContent } from './active-content.js';
+import { applyFieldValue, readPageFields, restoreChanges } from './form-fields.js';
 import {
   MAX_CONTENT_BYTES,
   MAX_CONTENT_GLYPHS,
@@ -229,6 +230,7 @@ export function blockToEditLines(block, dx = 0, dy = 0) {
  *   - `{ kind: 'content', label, before: [snap], after: [snap], page }` – Seiteninhalt
  *   - `{ kind: 'pages', label, before, after, beforeSnaps, afterSnaps }` – Seitenreihenfolge
  *   - `{ kind: 'multi', label, entries }` – aus `batch()` zusammengefasst
+ *   - `{ kind: 'form', label, changes, pages }` – Formularfelder (siehe form-fields.js)
  *   Ein Snapshot (`snap()`) merkt sich Contents, Resources und Rotate einer Seite.
  * `version`/`savedVersion` ergeben `dirty`.
  */
@@ -259,6 +261,9 @@ export class PdfSession {
     this.idents = new WeakMap();
     this.uidSeq = 0;
     this.modelSeq = 0;
+    /** Änderungszähler der Formularfelder je Seite (Seiten-Ref), Teil der Seitensignatur. */
+    this.formRevs = new Map();
+    this.formFonts = {};
     for (const [ref, obj] of this.ctx.enumerateIndirectObjects())
       if (
         obj instanceof PDFDict &&
@@ -595,7 +600,10 @@ export class PdfSession {
     this.version++;
   }
   applyEntry(entry, direction) {
-    if (entry.kind === 'content')
+    if (entry.kind === 'form') {
+      restoreChanges(entry.changes, direction);
+      this.bumpForm(entry.pages);
+    } else if (entry.kind === 'content')
       (direction === 'undo' ? entry.before : entry.after).forEach((i) => this.restoreSnap(i));
     else if (entry.kind === 'multi')
       (direction === 'undo' ? entry.entries.slice().reverse() : entry.entries).forEach((n) =>
@@ -605,6 +613,47 @@ export class PdfSession {
       this.setPageOrder(direction === 'undo' ? entry.before : entry.after);
       (direction === 'undo' ? entry.beforeSnaps : entry.afterSnaps || []).forEach((i) => this.restoreSnap(i));
     }
+  }
+  /** Ausfüllbare Formularfelder der Seite `index` (siehe readPageFields). */
+  formFields(index) {
+    try {
+      return readPageFields(this.doc, this.page(index).node);
+    } catch (err) {
+      console.warn('Formularfelder', err);
+      return [];
+    }
+  }
+  /** Änderungsstand der Formularfelder einer Seite (für die Seitensignatur). */
+  formRev(index) {
+    return this.formRevs.get(this.page(index).ref.toString()) || 0;
+  }
+  bumpForm(pages) {
+    for (const key of pages) this.formRevs.set(key, (this.formRevs.get(key) || 0) + 1);
+  }
+  /**
+   * Füllt ein Formularfeld aus (Eintrag aus `formFields`). Alle Seiten mit Widgets desselben
+   * Felds werden neu dargestellt. Liefert true, wenn sich etwas geändert hat.
+   */
+  setFormValue(entry, value, label = 'Formularfeld ausgefüllt') {
+    return this.exclusive(() => {
+      const changes = applyFieldValue(this.doc, entry, value, this.formFonts);
+      if (!changes.length) return false;
+      const touched = new Set(changes.map((c) => c.dict));
+      const pages = [];
+      for (let k = 0; k < this.numPages; k++) {
+        const annots = this.ctx.lookup(this.page(k).node.get(pdfName('Annots')));
+        if (!(annots instanceof PDFArray)) continue;
+        if (
+          annots
+            .asArray()
+            .some((ref) => touched.has(this.ctx.lookup(ref)) || this.ctx.lookup(ref) === entry.widget)
+        )
+          pages.push(this.page(k).ref.toString());
+      }
+      this.bumpForm(pages);
+      this.push({ kind: 'form', label, changes, pages });
+      return true;
+    });
   }
   undo() {
     const entry = this.hist.undo.pop();

@@ -17,11 +17,11 @@ async function call(channel, ...args) {
   return reply ? reply.value : undefined;
 }
 
-ipcRenderer.on('app:command', async (_event, { command, replyId, fromMenu }) => {
+ipcRenderer.on('app:command', async (_event, { command, replyId, fromMenu, data }) => {
   let result = null;
   let error = null;
   try {
-    result = commandHandler ? await commandHandler(command, !!fromMenu) : null;
+    result = commandHandler ? await commandHandler(command, !!fromMenu, data) : null;
   } catch (err) {
     error = String((err && err.message) || err);
   }

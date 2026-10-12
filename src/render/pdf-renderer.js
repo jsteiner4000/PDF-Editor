@@ -19,6 +19,16 @@ function getPdfWorker() {
 }
 
 /**
+ * Startet den pdf.js-Worker vorab (nach dem Start der App, wenn der Browser Zeit hat): Das
+ * Übersetzen seines Quelltexts liegt dann nicht mehr auf dem Weg zum ersten geöffneten Dokument.
+ */
+export function warmUpRenderer() {
+  const start = () => getPdfWorker().promise.catch(() => {});
+  if (window.requestIdleCallback) requestIdleCallback(start, { timeout: 1000 });
+  else setTimeout(start, 200);
+}
+
+/**
  * Höchstzahl der Pixel eines Vorschau-Canvas (ganze Seite). Darüber wird die Seite verkleinert
  * gerendert und vom Browser hochskaliert; die Schärfe im sichtbaren Ausschnitt liefert dann der
  * Detail-Canvas (siehe DetailRenderer).
@@ -45,6 +55,7 @@ export class PdfRenderer {
       useSystemFonts: true,
       verbosity: 0,
       enableXfa: false,
+      enableHWA: true,
     }).promise;
     if (gen !== this.gen) {
       doc.destroy();
@@ -93,6 +104,39 @@ export class PdfRenderer {
     const viewport = page.getViewport({ scale: deviceScale, offsetX: -region.x, offsetY: -region.y });
     return this._paint(page, viewport, region.width, region.height, opts);
   }
+  /**
+   * Seite `n` (ab 1) zum Drucken: PNG mit `dpi` (höchstens `maxPx` Pixel), Anmerkungen wie beim
+   * Drucken (Druck-Flag). Querformat-Seiten werden hochkant gedreht, damit sie das Papier füllen.
+   */
+  async printImage(n, dpi = 200, maxPx = 16e6) {
+    const doc = this.doc;
+    if (!doc || n < 1 || n > doc.numPages) throw new Error('Seite nicht vorhanden');
+    const page = await doc.getPage(n);
+    let viewport = page.getViewport({ scale: dpi / 72 });
+    const px = viewport.width * viewport.height;
+    if (px > maxPx) viewport = page.getViewport({ scale: (dpi / 72) * Math.sqrt(maxPx / px) });
+    let canvas = await this._paint(page, viewport, viewport.width, viewport.height, { intent: 'print' });
+    page.cleanup();
+    if (canvas.width > canvas.height) {
+      const turned = document.createElement('canvas');
+      turned.width = canvas.height;
+      turned.height = canvas.width;
+      const ctx = turned.getContext('2d', { alpha: false });
+      ctx.translate(turned.width, 0);
+      ctx.rotate(Math.PI / 2);
+      ctx.drawImage(canvas, 0, 0);
+      canvas.width = canvas.height = 0;
+      canvas = turned;
+    }
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    canvas.width = canvas.height = 0;
+    return new Uint8Array(await blob.arrayBuffer());
+  }
+  destroy() {
+    this.gen++;
+    if (this.doc) this.doc.destroy();
+    this.doc = null;
+  }
   async _paint(page, viewport, width, height, opts) {
     const canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.floor(width));
@@ -100,7 +144,12 @@ export class PdfRenderer {
     const ctx = canvas.getContext('2d', { alpha: false });
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    const task = page.render({ canvasContext: ctx, viewport, annotationMode: AnnotationMode.ENABLE });
+    const task = page.render({
+      canvasContext: ctx,
+      viewport,
+      annotationMode: AnnotationMode.ENABLE,
+      intent: opts.intent || 'display',
+    });
     if (opts.onTask) opts.onTask(task);
     try {
       await task.promise;

@@ -48,6 +48,7 @@ src/
     matrix.js             2D-Matrizen
     path-geometry.js      Geometrie von Pfaden: Teilpfade, Abstände, Bearbeiten, Serialisieren
     session.js            PdfSession: Seitenmodelle, Änderungen, Rückgängig/Wiederholen, Speichern
+    form-fields.js        Formularfelder (AcroForm) lesen und ausfüllen, Erscheinungsbild, Feldbaum-Reparatur
     page-numbers.js       Seitenzahlen und Kopf-/Fußzeilen erkennen und anpassen
   fonts/
     font-manager.js       Schriftfamilien, Schriftbibliothek, Schriftwahl beim Schreiben
@@ -68,6 +69,7 @@ src/
     page-view.js          Seitenansicht (Vorschau- und Detail-Canvas) und Koordinatenumrechnung
     zoom-gestures.js      Strg+Mausrad, Touchpad-Pinch, Hand-Werkzeug (Leertaste/mittlere Maustaste)
     edit-mode.js          Modus „PDF bearbeiten“ (Auswahl, Ziehen, Griffe, Text, Bilder)
+    form-layer.js         Formularfelder auf der Seite ausfüllen (Eingabeelemente über den Widgets)
     text-editor.js        Inline-Texteditor
     snap-guides.js        Hilfslinien/Einrasten (auch an Punkten und Kanten)
     gesture.js            Zeigergesten (Pointer-Capture, Abbruch, verpasstes Loslassen)
@@ -81,9 +83,10 @@ desktop/                  Desktop-App (Electron-Hauptprozess)
   main.js                 Fenster, Schema app://, CSP, Sicherheit, IPC, Schließen-Rückfrage
   preload.cjs             eng begrenzte Bridge für den Renderer (window.pdfEditorDesktop)
   file-access.js          Dateizugriff nur auf vom Nutzer gewählte Dateien (Kennungen statt Pfade)
+  quick-print.js          Schnelldruck ohne Fenster (Windows-Verb „Drucken“, Outlook-Schnelldruck)
   menu.js                 natives Menü (Deutsch)
   window-state.js         Fenstergröße/-position merken
-  installer.nsh           NSIS-Ergänzung: optionale Zuordnung .pdf („Öffnen mit“)
+  installer.nsh           NSIS-Ergänzung: optionale Zuordnung .pdf („Öffnen mit“, „Drucken“)
 electron-builder.yml      Paketierung (NSIS-Installer, Portable, Linux-Verzeichnis zum Testen)
 .github/workflows/release.yml  Windows-Build in GitHub Actions (Tags v*, manuell)
 scripts/build.mjs         Build (esbuild) → dist/PDF-Editor.html
@@ -160,6 +163,17 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   `webUtils.getPathForFile` im Preload); Kommandozeile, Doppelklick, „Öffnen mit“; Single-Instance
   (eine zweite Datei öffnet im laufenden Fenster). Schreiben atomar (temporäre Datei, dann
   umbenennen).
+- **Start**: Das Bundle wird aus `dist/PDF-Editor.html` herausgelöst und als `app://pdf-editor/app.js`
+  geliefert (Integrität per SHA-384), damit Chromium den V8-Code-Cache nutzt (Schema-Privileg
+  `codeCache`) – ab dem dritten Start ist die Oberfläche spürbar früher bereit. Der pdf.js-Worker
+  startet im Leerlauf vorab (`warmUpRenderer`), nicht erst beim ersten Öffnen.
+- **Schnelldruck**: Der Installer trägt für die ProgID die Verben `print` und `printto` ein
+  (`--pdfix-print=<Datei>`, `--pdfix-printer=<Drucker>`). PDFix rendert die Seiten mit pdf.js
+  (200 dpi, Druck-Anmerkungen, Querformat gedreht), stellt sie unter
+  `app://pdf-editor/print/<Kennung>/` bereit und druckt sie in einem unsichtbaren Fenster ohne
+  JavaScript still auf den Standard- bzw. genannten Drucker. Läuft PDFix noch nicht, beendet es
+  sich danach wieder; sonst bleibt das offene Dokument unberührt. `PDF_EDITOR_PRINT_TO_PDF=<Pfad>`
+  schreibt für Tests eine PDF statt zu drucken.
 - **Fenster**: Größe/Position werden gemerkt, Mindestgröße 900 × 600, Titel
   `Datei.pdf (Bearbeitet) – PDFix`, Rückfrage bei ungespeicherten Änderungen als nativer
   Dialog (Speichern / Nicht speichern / Abbrechen).
@@ -195,7 +209,7 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
 | ------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Nur lokale Inhalte        | eigenes Schema `app://`; http(s), ws(s), ftp und file werden blockiert                                          |
 | Kein Node im Renderer     | `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`                                             |
-| Content-Security-Policy   | `default-src 'none'`, Skript nur per SHA-256-Hash, Worker nur `blob:`                                           |
+| Content-Security-Policy   | `default-src 'none'`, nur das eine Skript `app.js` per SHA-384-Hash (SRI), Worker nur `blob:`                   |
 | `webSecurity`             | an (Standard), keine `allowRunningInsecureContent`, keine Experimente                                           |
 | Berechtigungen            | alle Anfragen und Prüfungen abgelehnt (auch Geräte)                                                             |
 | Navigation / neue Fenster | gesperrt; Ausnahme: PDF-Vorschau aus dem Hauptfenster (`blob:app://…`, ohne Preload, ohne Menü, nur PDF-Inhalt) |

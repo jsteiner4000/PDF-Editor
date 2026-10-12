@@ -23,6 +23,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PDFDocument } from 'pdf-lib';
 import { idle, clientPoint, findBlock, extractText } from './helpers.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -378,6 +379,84 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     await app
       .evaluate(({ dialog }) => (dialog.showMessageBox = async () => ({ response: 1 })))
       .catch(() => {});
+    await app.close().catch(() => {});
+  }
+});
+
+test('Desktop-App: Schnelldruck (Windows-Verb „Drucken“, z. B. Outlook) ohne Fenster', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pdf-editor-print-'));
+  const pdf = path.join(dir, 'ausdruck.pdf');
+  copyFileSync(path.join(ROOT, 'tests', 'fixtures', 'dokument.pdf'), pdf);
+  const pages = (await PDFDocument.load(readFileSync(pdf))).getPageCount();
+
+  // 1. Programm läuft nicht: druckt (hier in eine PDF) und beendet sich wieder
+  const out = path.join(dir, 'gedruckt.pdf');
+  const env = {
+    ...process.env,
+    PDF_EDITOR_USER_DATA: path.join(dir, 'userdata'),
+    PDF_EDITOR_PRINT_TO_PDF: out,
+  };
+  const child = spawn(ELECTRON, [ROOT, ...extraArgs, `--pdfix-print=${pdf}`], {
+    env,
+    cwd: ROOT,
+    stdio: 'ignore',
+  });
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => (child.kill(), reject(new Error('Schnelldruck beendet sich nicht'))),
+      60_000,
+    );
+    child.on('exit', (code) => (clearTimeout(timer), resolve(code)));
+  });
+  expect(exitCode).toBe(0);
+  expect(existsSync(out)).toBe(true);
+  expect((await PDFDocument.load(readFileSync(out))).getPageCount()).toBe(pages);
+
+  // 1b. Mehrere Dateien kurz nacheinander (Outlook, mehrere Anhänge): alle werden gedruckt
+  const outMulti = path.join(dir, 'mehrere.pdf');
+  const envMulti = { ...env, PDF_EDITOR_PRINT_TO_PDF: outMulti };
+  const first = spawn(ELECTRON, [ROOT, ...extraArgs, `--pdfix-print=${pdf}`], {
+    env: envMulti,
+    cwd: ROOT,
+    stdio: 'ignore',
+  });
+  const firstExit = new Promise((resolve) => first.on('exit', resolve));
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const more = spawn(ELECTRON, [ROOT, ...extraArgs, `--pdfix-print=${pdf}`], {
+    env: envMulti,
+    cwd: ROOT,
+    stdio: 'ignore',
+  });
+  expect(await new Promise((resolve) => more.on('exit', resolve))).toBe(0);
+  expect(await firstExit).toBe(0);
+  expect(existsSync(outMulti)).toBe(true);
+  expect(existsSync(outMulti.replace(/\.pdf$/, '-2.pdf'))).toBe(true);
+
+  // 2. Programm läuft schon: druckt im Hintergrund, das geöffnete Dokument bleibt
+  const out2 = path.join(dir, 'gedruckt-2.pdf');
+  const env2 = { ...env, PDF_EDITOR_PRINT_TO_PDF: out2 };
+  const second = path.join(dir, 'layout.pdf');
+  copyFileSync(path.join(ROOT, 'tests', 'fixtures', 'layout.pdf'), second);
+  const app = await electron.launch({
+    executablePath: ELECTRON,
+    args: [ROOT, ...extraArgs, second],
+    env: env2,
+    cwd: ROOT,
+  });
+  try {
+    const page = await app.firstWindow();
+    await waitForDocument(page, 'layout.pdf');
+    const other = spawn(ELECTRON, [ROOT, ...extraArgs, `--pdfix-print=${pdf}`], {
+      env: env2,
+      cwd: ROOT,
+      stdio: 'ignore',
+    });
+    expect(await new Promise((resolve) => other.on('exit', resolve))).toBe(0);
+    await expect.poll(() => existsSync(out2), { timeout: 30_000 }).toBe(true);
+    await expect(page.locator('.toast', { hasText: 'an den Drucker gesendet' })).toBeVisible();
+    expect(await page.evaluate(() => window.pdfEditor.file.name)).toBe('layout.pdf');
+    expect(app.windows().length).toBe(1);
+  } finally {
     await app.close().catch(() => {});
   }
 });

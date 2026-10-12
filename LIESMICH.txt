@@ -10,7 +10,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.1.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.2.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -21,13 +21,19 @@ ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
 Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
 „Immer“.
 
-Ohne Installation: „PDFix-2.1.0-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDFix-2.2.0-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
 Falls Windows warnt („Der Computer wurde durch Windows geschützt“): Das
 Programm ist nicht digital signiert. „Weitere Informationen“ > „Trotzdem
 ausführen“.
+
+Drucken ohne Öffnen (Outlook-Schnelldruck): Ist PDFix das Standardprogramm für
+PDF-Dateien, druckt es Anhänge über Outlooks „Schnelldruck“ und über
+Rechtsklick > „Drucken“ im Explorer direkt auf dem Standarddrucker – ohne
+Fenster. Klappt das nicht (kein Drucker, geschützte Datei), erscheint eine
+Meldung.
 
 Neue Version: einfach den neuen Installer ausführen – Einstellungen, eigene
 Schriften und „Zuletzt geöffnet“ bleiben erhalten.
@@ -47,6 +53,21 @@ Desktop-App: außerdem per Doppelklick bzw. „Öffnen mit“ oder durch Ziehen 
 PDF auf das Programmsymbol. Läuft PDFix schon, öffnet sich die Datei
 im vorhandenen Fenster. Der Fenstertitel zeigt den Dateinamen, „(Bearbeitet)“
 steht für ungespeicherte Änderungen.
+
+
+FORMULARE AUSFÜLLEN
+-------------------
+Formularfelder (Textfelder, Kästchen zum Ankreuzen, Optionsfelder,
+Auswahllisten) sind leicht blau hinterlegt und lassen sich direkt anklicken
+und ausfüllen. Ein Text wird übernommen, sobald man das Feld verlässt (Tab,
+Klick daneben) oder Enter drückt; Esc verwirft die Eingabe. Jede Änderung
+lässt sich mit Strg+Z rückgängig machen.
+Schreibgeschützte Felder – viele Formular-Apps sperren ein Protokoll nach dem
+Abschluss – lassen sich nur unter „PDF bearbeiten“ ändern. Der Schreibschutz
+bleibt in der Datei erhalten; andere Programme zeigen die Felder weiter als
+gesperrt.
+Eingetragene Werte sind Formularfelder, keine Seitenschrift: Sie werden
+deshalb über das Feld geändert, nicht über „Text bearbeiten“.
 
 
 TEXT BEARBEITEN

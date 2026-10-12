@@ -16,6 +16,8 @@
  * per Kommandozeile/Doppelklick übergebene Dateien öffnen, vor dem Schließen speichern.
  */
 
+import { toast } from '../ui/dialogs.js';
+
 const desktop = typeof window !== 'undefined' ? window.pdfEditorDesktop : undefined;
 
 /** true, wenn die Seite in der Desktop-App läuft. */
@@ -147,6 +149,14 @@ const COMMANDS = {
   zoomSelection: () => app.session && app.zoomToSelection(),
   zoomWidth: () => app.session && app.setZoom(null, 'width'),
   zoomPage: () => app.session && app.setZoom(null, 'page'),
+  /** Schnelldruck: PDF (Bytes vom Hauptprozess) laden, Seiten einzeln als PNG holen, schließen. */
+  printOpen: (data) => (data instanceof Uint8Array ? app.printOpen(data) : null),
+  printPage: (data) =>
+    data && Number.isInteger(data.n) && Number.isFinite(data.dpi)
+      ? app.printPage(data.id, data.n, Math.min(300, Math.max(72, data.dpi)))
+      : null,
+  printClose: (id) => app.printClose(id),
+  printed: (name) => toast(`„${String(name || '')}“ wurde an den Drucker gesendet.`),
   /** Vor dem Schließen: offene Textbearbeitung übernehmen und den echten Zustand liefern. */
   queryDirty: async () => {
     if (!app.session) return false;
@@ -182,11 +192,11 @@ export function installDesktopBridge(appInstance) {
       return file ? desktop.grantDroppedFile(file).then(toHandle) : Promise.resolve(null);
     };
 
-  desktop.onCommand(async (command, fromMenu) => {
+  desktop.onCommand(async (command, fromMenu, data) => {
     const run = COMMANDS[command];
     // Menübefehle nicht ausführen, solange ein Dialog der App offen ist (wie die Tastenkürzel)
     if (!run || (fromMenu && document.querySelector('.backdrop'))) return undefined;
-    return run();
+    return run(data);
   });
   // Strg+P: „Anzeigen und drucken“ (die Web-App kennt kein eigenes Kürzel dafür)
   window.addEventListener('keydown', (ev) => {
