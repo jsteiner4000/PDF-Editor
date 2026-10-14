@@ -8,7 +8,7 @@
  */
 import { icon } from '../ui/icons.js';
 import { escapeHtml, htmlToElement } from '../ui/dom.js';
-import { FONTS, LANGS, T, langsOf, sectionTitle, tx, uid } from './model.js';
+import { ACCESS_BLOCKS, FONTS, LANGS, T, langsOf, sectionTitle, tx, uid } from './model.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
 
@@ -18,7 +18,13 @@ const KIND_TITLE = {
   pin: 'Anschluss',
   hint: 'Hinweis',
   hub: 'Steuerung',
+  device: 'Gerät',
+  wifi: 'WLAN',
+  remote: 'Fernzugriff',
 };
+
+/** Vorschläge für Fernzugriff-Dienste (frei änderbar). */
+const SERVICES = ['DDNS', 'Portfreigabe', 'VPN', 'Hik-Connect', 'DMSS (Dahua)', 'Telenot compasX', 'Ajax PRO', 'TeamViewer', 'AnyDesk'];
 
 export class Inspector {
   constructor(studio, head, body) {
@@ -69,6 +75,9 @@ export class Inspector {
     else if (sel.kind === 'pin') this.pinForm(section, item);
     else if (sel.kind === 'hint') this.hintForm(section, item);
     else if (sel.kind === 'hub') this.hubForm(section);
+    else if (sel.kind === 'device') this.deviceForm(section, item);
+    else if (sel.kind === 'wifi') this.wifiForm(section, item);
+    else if (sel.kind === 'remote') this.remoteForm(section, item);
     if (keepFocus) {
       const again = this.body.querySelector(`[data-f="${keepFocus}"]`);
       if (again) again.focus();
@@ -294,6 +303,7 @@ export class Inspector {
     } else if (section.type === 'toc') {
       this.group('Inhaltsverzeichnis', this.note('Entsteht automatisch aus den Abschnitten der Projektmappe – mit Seitenzahlen.'));
     } else if (section.type === 'wiring') this.wiringForm(section);
+    else if (section.type === 'access') this.accessForm(section);
     this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(section.id), true]);
   }
 
@@ -420,7 +430,13 @@ export class Inspector {
       this.bi('Titel', box, 'title'),
       this.bi('Beschreibung', box, 'lines', { multiline: true, hint: 'Jede Zeile erscheint als eigene Zeile im Kasten.' }),
     );
-    const parents = s.boxes.filter((b) => b.id !== box.id && sideOf(b, byId) !== 'bottom' && b.parent !== box.id);
+    // als Baugruppe wählbar: keine untere, nicht sie selbst und keine ihrer Unterbaugruppen
+    const below = new Set([box.id]);
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const b of s.boxes) if (b.parent && below.has(b.parent) && !below.has(b.id)) below.add(b.id), (grew = true);
+    }
+    const parents = s.boxes.filter((b) => !below.has(b.id) && sideOf(b, byId) !== 'bottom');
     this.group(
       'Darstellung',
       this.field('Leitungsart', this.catChips(s, box.cat, (id) => studio.change('Leitungsart geändert', () => (box.cat = id), { inspector: true }))),
@@ -436,6 +452,14 @@ export class Inspector {
             box.side,
             (v) =>
               studio.change('Lage geändert', () => {
+                // Unterbaugruppen bleiben auf ihrer Seite, wenn die Baugruppe nach unten wandert
+                if (v === 'bottom')
+                  for (const child of s.boxes)
+                    if (child.parent === box.id) {
+                      child.parent = null;
+                      child.side = box.side === 'bottom' ? 'left' : box.side;
+                      child.y = null;
+                    }
                 box.side = v;
                 box.y = null;
                 box.fill = v === 'bottom';
@@ -550,6 +574,206 @@ export class Inspector {
     acts.prepend(order);
   }
 }
+
+/* ---------- Zugangsdaten ---------- */
+
+Object.assign(Inspector.prototype, {
+  /** Passwortfeld mit Auge zum Anzeigen. */
+  secret(label, obj, prop) {
+    const key = `s:${prop}:${this.studio.sel.id}`;
+    const input = this.input(obj[prop], (v) => this.studio.change(label + ' geändert', () => (obj[prop] = v), { key }), {
+      id: key,
+    });
+    input.type = 'password';
+    input.classList.add('mono');
+    input.autocomplete = 'new-password';
+    const wrap = htmlToElement('<span class="sd-secret"></span>');
+    const eye = htmlToElement(`<button type="button" class="btn ic" title="Anzeigen">${icon('eye', 's')}</button>`);
+    eye.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      input.type = input.type === 'password' ? 'text' : 'password';
+      eye.classList.toggle('on', input.type === 'text');
+    });
+    wrap.append(input, eye);
+    return this.field(label, wrap);
+  },
+
+  mono(label, obj, prop, opts = {}) {
+    const f = this.text(label, obj, prop, opts);
+    f.querySelector('input').classList.add('mono');
+    f.querySelector('input').spellcheck = false;
+    return f;
+  },
+
+  pair(a, b) {
+    const el = htmlToElement('<div class="sd-two"></div>');
+    el.append(a, b);
+    return el;
+  },
+
+  accessForm(s) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    this.group(
+      'Zugangsdaten',
+      this.bi('Überschrift', s, 'title'),
+      this.check(
+        'Passwörter und Schlüssel in der PDF zeigen',
+        s.showPasswords,
+        (v) => {
+          studio.change(v ? 'Passwörter sichtbar' : 'Passwörter ausgeblendet', () => (s.showPasswords = v));
+          studio.app.renderRibbon();
+        },
+        'Sonst erscheinen Punkte. Beim Erstellen der PDF fragt PDFix noch einmal nach.',
+      ),
+    );
+    const blocks = this.group('In der PDF');
+    for (const b of ACCESS_BLOCKS)
+      blocks.appendChild(
+        this.check(tx(b.title, 'de'), !!s.blocks[b.id], (v) =>
+          studio.change(`${tx(b.title, 'de')} ${v ? 'ein' : 'aus'}`, () => (s.blocks[b.id] = v), { inspector: true }),
+        ),
+      );
+    // wählbare Spalten je Tabelle (leere Spalten entfallen ohnehin)
+    const cols = this.group('Spalten');
+    for (const b of ACCESS_BLOCKS) {
+      if (!b.columns || !s.blocks[b.id]) continue;
+      const hidden = new Set(s.hide[b.id] || []);
+      const chips = htmlToElement('<div class="sd-chips multi"></div>');
+      for (const c of b.columns.filter((x) => !x.fixed)) {
+        const on = !hidden.has(c.key);
+        const chip = htmlToElement(
+          `<button type="button" aria-pressed="${on}" class="${on ? 'on' : ''}">${on ? icon('check', 's') : ''}${escapeHtml(tx(c.label, 'de'))}</button>`,
+        );
+        chip.addEventListener('click', () =>
+          studio.change(
+            'Spalten geändert',
+            () => {
+              const list = new Set(s.hide[b.id] || []);
+              if (list.has(c.key)) list.delete(c.key);
+              else list.add(c.key);
+              s.hide[b.id] = [...list];
+            },
+            { inspector: true },
+          ),
+        );
+        chips.appendChild(chip);
+      }
+      cols.append(htmlToElement(`<span class="sd-l">${escapeHtml(tx(b.title, 'de'))}</span>`), chips);
+    }
+    if (!cols.querySelector('.sd-chips')) cols.remove();
+    const devices = this.group(
+      `Geräte (${s.devices.length})`,
+      this.rows(s.devices, {
+        empty: 'Noch kein Gerät.',
+        render: (d) =>
+          `<span class="t">${escapeHtml(tx(d.name, lang) || 'Ohne Namen')}</span><small class="mono">${escapeHtml(d.ip || '')}</small>`,
+        onOpen: (d) => studio.select({ kind: 'device', id: d.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    devices.appendChild(this.addButton('Gerät', () => studio.addAccessItem('device')));
+    if (s.blocks.network) {
+      const n = s.network;
+      this.group(
+        'Netzwerk',
+        this.pair(this.mono('Subnetzmaske', n, 'subnet', { id: 'net-subnet', placeholder: '255.255.255.0' }), this.mono('Gateway', n, 'gateway', { id: 'net-gw', placeholder: '192.168.1.1' })),
+        this.pair(this.mono('DNS-Server', n, 'dns', { id: 'net-dns' }), this.mono('VLAN', n, 'vlan', { id: 'net-vlan' })),
+        this.mono('DHCP-Bereich', n, 'dhcp', { id: 'net-dhcp', placeholder: 'z. B. 192.168.1.100 – 192.168.1.199' }),
+        this.bi('Bemerkung', n, 'note', { id: 'net-note' }),
+      );
+    }
+    const wifi = this.group(
+      `WLAN (${s.wifi.length})`,
+      this.rows(s.wifi, {
+        empty: 'Noch kein WLAN.',
+        render: (w) => `<span class="t">${escapeHtml(w.ssid || 'Ohne Namen')}</span><small>${escapeHtml(w.security || '')}</small>`,
+        onOpen: (w) => studio.select({ kind: 'wifi', id: w.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    wifi.appendChild(this.addButton('WLAN', () => studio.addAccessItem('wifi')));
+    const remote = this.group(
+      `Fernzugriff (${s.remote.length})`,
+      this.rows(s.remote, {
+        empty: 'Noch kein Fernzugriff.',
+        render: (r) => `<span class="t">${escapeHtml(r.service || 'Ohne Namen')}</span><small class="mono">${escapeHtml(r.address || '')}</small>`,
+        onOpen: (r) => studio.select({ kind: 'remote', id: r.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    remote.appendChild(this.addButton('Fernzugriff', () => studio.addAccessItem('remote')));
+  },
+
+  /** Reihenfolge-Knöpfe und Löschen für Listeneinträge. */
+  itemActions(list, item) {
+    const studio = this.studio;
+    const index = list.indexOf(item);
+    const move = (dir) =>
+      studio.change(
+        'Reihenfolge geändert',
+        () => {
+          const j = index + dir;
+          [list[index], list[j]] = [list[j], list[index]];
+        },
+        { inspector: true },
+      );
+    const acts = this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
+    const order = htmlToElement(
+      `<div class="sd-order"><button type="button" class="btn ic" title="Nach oben"${index === 0 ? ' disabled' : ''}>${icon('up', 's')}</button><button type="button" class="btn ic" title="Nach unten"${index === list.length - 1 ? ' disabled' : ''}>${icon('down', 's')}</button></div>`,
+    );
+    const [up, down] = order.querySelectorAll('button');
+    up.addEventListener('click', () => move(-1));
+    down.addEventListener('click', () => move(1));
+    acts.prepend(order);
+  },
+
+  deviceForm(s, d) {
+    this.group(
+      'Zugang',
+      this.bi('Gerät', d, 'name', { placeholder: 'z. B. Rekorder (NVR)' }),
+      this.pair(this.mono('IP-Adresse', d, 'ip', { placeholder: '192.168.1.20' }), this.mono('Port / Web', d, 'web', { placeholder: '443 / https://…' })),
+      this.pair(this.mono('Benutzer', d, 'user', { placeholder: 'admin' }), this.secret('Passwort', d, 'password')),
+      this.bi('Bemerkung', d, 'note'),
+    );
+    this.group(
+      'Gerätedaten',
+      this.text('Hersteller / Typ', d, 'model', { placeholder: 'z. B. Hikvision DS-7608NXI' }),
+      this.pair(this.mono('Seriennummer', d, 'serial'), this.mono('MAC-Adresse', d, 'mac', { placeholder: 'AA:BB:CC:DD:EE:FF' })),
+      this.pair(this.mono('Firmware', d, 'firmware'), this.bi('Standort', d, 'location')),
+    );
+    this.itemActions(s.devices, d);
+  },
+
+  wifiForm(s, w) {
+    const studio = this.studio;
+    this.group(
+      'WLAN',
+      this.mono('WLAN-Name (SSID)', w, 'ssid'),
+      this.secret('Schlüssel', w, 'key'),
+      this.select(
+        'Verschlüsselung',
+        ['WPA2', 'WPA3', 'WPA2/WPA3', 'WPA', 'WEP', 'Offen'].map((v) => [v, v]),
+        w.security,
+        (v) => studio.change('Verschlüsselung geändert', () => (w.security = v)),
+      ),
+      this.bi('Bemerkung', w, 'note', { placeholder: 'z. B. Gäste-WLAN, 2,4 GHz' }),
+    );
+    this.itemActions(s.wifi, w);
+  },
+
+  remoteForm(s, r) {
+    const service = this.text('Dienst', r, 'service', { placeholder: 'z. B. DDNS, Hik-Connect, Portfreigabe' });
+    const list = htmlToElement(`<datalist id="sdServices">${SERVICES.map((v) => `<option value="${escapeHtml(v)}">`).join('')}</datalist>`);
+    service.querySelector('input').setAttribute('list', 'sdServices');
+    service.appendChild(list);
+    this.group(
+      'Fernzugriff',
+      service,
+      this.mono('Adresse / ID', r, 'address', { placeholder: 'z. B. kunde.ddns.net:8443 oder Geräte-ID' }),
+      this.pair(this.mono('Benutzer', r, 'user'), this.secret('Passwort', r, 'password')),
+      this.bi('Bemerkung', r, 'note'),
+    );
+    this.itemActions(s.remote, r);
+  },
+});
 
 function catOf(section, cat) {
   const found = section.categories.find((c) => c.id === cat);

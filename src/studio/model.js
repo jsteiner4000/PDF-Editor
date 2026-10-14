@@ -68,6 +68,14 @@ export const STRINGS = {
   technician: T('Techniker', 'Technician'),
   docNo: T('Dokument-Nr.', 'Document no.'),
   version: T('Version', 'Version'),
+  access: T('Zugangsdaten', 'Access data'),
+  continued: T('Fortsetzung', 'continued'),
+  setting: T('Einstellung', 'Setting'),
+  value: T('Wert', 'Value'),
+  secretsHidden: T(
+    'Passwörter und Schlüssel sind in dieser Fassung ausgeblendet.',
+    'Passwords and keys are hidden in this version.',
+  ),
 };
 
 /** Beschriftung `key` für die Sprache `lang`, Platzhalter {x} aus `vars`. */
@@ -199,6 +207,126 @@ export function exampleWiring() {
   return w;
 }
 
+/* ---------- Zugangsdaten ---------- */
+
+/**
+ * Tabellen der Zugangsdaten mit ihren Spalten: `w` = Breitenanteil, `mono` = Festbreitenschrift
+ * (IP, MAC, Passwörter), `secret` = wird ausgeblendet, wenn Passwörter nicht mit in die PDF sollen,
+ * `bi` = zweisprachiger Text, `fixed` = Spalte immer sichtbar.
+ */
+export const ACCESS_BLOCKS = [
+  {
+    id: 'devices',
+    list: 'devices',
+    title: T('Geräte-Zugänge', 'Device access'),
+    columns: [
+      { key: 'name', label: T('Gerät', 'Device'), w: 3, bi: true, bold: true, fixed: true },
+      { key: 'ip', label: T('IP-Adresse', 'IP address'), w: 2.3, mono: true },
+      { key: 'web', label: T('Port / Web', 'Port / web'), w: 2.2, mono: true },
+      { key: 'user', label: T('Benutzer', 'User'), w: 1.9, mono: true },
+      { key: 'password', label: T('Passwort', 'Password'), w: 2.1, mono: true, secret: true },
+      { key: 'note', label: T('Bemerkung', 'Remark'), w: 3, bi: true },
+    ],
+  },
+  {
+    id: 'hardware',
+    list: 'devices',
+    title: T('Gerätedaten', 'Device data'),
+    columns: [
+      { key: 'name', label: T('Gerät', 'Device'), w: 3, bi: true, bold: true, fixed: true },
+      { key: 'model', label: T('Hersteller / Typ', 'Make / model'), w: 3 },
+      { key: 'serial', label: T('Seriennummer', 'Serial number'), w: 2.4, mono: true },
+      { key: 'mac', label: T('MAC-Adresse', 'MAC address'), w: 2.7, mono: true },
+      { key: 'firmware', label: T('Firmware', 'Firmware'), w: 1.8, mono: true },
+      { key: 'location', label: T('Standort', 'Location'), w: 2.4, bi: true },
+    ],
+  },
+  {
+    id: 'network',
+    title: T('Netzwerk', 'Network'),
+    fields: [
+      { key: 'subnet', label: T('Subnetzmaske', 'Subnet mask'), mono: true },
+      { key: 'gateway', label: T('Gateway', 'Gateway'), mono: true },
+      { key: 'dns', label: T('DNS-Server', 'DNS server'), mono: true },
+      { key: 'dhcp', label: T('DHCP-Bereich', 'DHCP range'), mono: true },
+      { key: 'vlan', label: T('VLAN', 'VLAN'), mono: true },
+      { key: 'note', label: T('Bemerkung', 'Remark'), bi: true },
+    ],
+  },
+  {
+    id: 'wifi',
+    list: 'wifi',
+    title: T('WLAN', 'Wi-Fi'),
+    columns: [
+      { key: 'ssid', label: T('WLAN-Name (SSID)', 'Network name (SSID)'), w: 3, bold: true, fixed: true },
+      { key: 'key', label: T('Schlüssel', 'Key'), w: 3, mono: true, secret: true },
+      { key: 'security', label: T('Verschlüsselung', 'Security'), w: 2 },
+      { key: 'note', label: T('Bemerkung', 'Remark'), w: 3, bi: true },
+    ],
+  },
+  {
+    id: 'remote',
+    list: 'remote',
+    title: T('Fernzugriff', 'Remote access'),
+    columns: [
+      { key: 'service', label: T('Dienst', 'Service'), w: 2.6, bold: true, fixed: true },
+      { key: 'address', label: T('Adresse / ID', 'Address / ID'), w: 3.2, mono: true },
+      { key: 'user', label: T('Benutzer', 'User'), w: 1.9, mono: true },
+      { key: 'password', label: T('Passwort', 'Password'), w: 2.1, mono: true, secret: true },
+      { key: 'note', label: T('Bemerkung', 'Remark'), w: 3, bi: true },
+    ],
+  },
+];
+
+/** Neue Zugangsdaten: alle Bereiche außer „Netzwerk“ eingeschaltet, Passwörter ausgeblendet. */
+export function newAccess() {
+  return {
+    id: uid('s'),
+    type: 'access',
+    title: T('Zugangsdaten', 'Access data'),
+    showPasswords: false,
+    blocks: { devices: true, hardware: true, network: false, wifi: true, remote: true },
+    hide: { devices: [], hardware: ['location'], wifi: [], remote: [] },
+    devices: [],
+    network: { subnet: '', gateway: '', dns: '', dhcp: '', vlan: '', note: T('', '') },
+    wifi: [],
+    remote: [],
+  };
+}
+
+export const newDevice = () => ({
+  id: uid('d'),
+  name: T('', ''),
+  ip: '',
+  web: '',
+  user: '',
+  password: '',
+  note: T('', ''),
+  model: '',
+  serial: '',
+  mac: '',
+  firmware: '',
+  location: T('', ''),
+});
+
+export const newWifi = () => ({ id: uid('w'), ssid: '', key: '', security: 'WPA2', note: T('', '') });
+
+export const newRemote = () => ({ id: uid('r'), service: '', address: '', user: '', password: '', note: T('', '') });
+
+/** Kopie des Projekts ohne Passwörter/Schlüssel in Zugangsdaten, die sie nicht zeigen sollen. */
+export function withoutSecrets(project, show = null) {
+  const copy = JSON.parse(JSON.stringify({ ...project, images: undefined }));
+  copy.images = project.images;
+  for (const s of copy.sections) {
+    if (s.type !== 'access' || (show ?? s.showPasswords)) continue;
+    for (const block of ACCESS_BLOCKS)
+      for (const col of block.columns || [])
+        if (col.secret) for (const row of s[block.list] || []) row[col.key] = '';
+    s.secretsRemoved = true;
+  }
+  return copy;
+}
+
 /* ---------- Projekt ---------- */
 
 /** Vorlagen für neue Projekte. */
@@ -206,8 +334,8 @@ export const TEMPLATES = [
   {
     id: 'documentation',
     title: T('Anlagendokumentation', 'System documentation'),
-    desc: 'Deckblatt, Inhaltsverzeichnis, Anschlussplan – später Lageplan und Fotos',
-    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, newWiring()],
+    desc: 'Deckblatt, Inhaltsverzeichnis, Anschlussplan, Zugangsdaten',
+    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, newWiring(), newAccess()],
   },
   {
     id: 'wiring',
@@ -243,22 +371,163 @@ export function newProject(templateId = 'documentation', opts = {}) {
   };
 }
 
-/** Projekt nach dem Laden auf den aktuellen Stand bringen (fehlende Felder ergänzen). */
+/* ---------- Laden und Prüfen ---------- */
+
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const IMAGE_RE = /^data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+$/;
+const str_ = (v, max = 4000) => (typeof v === 'string' ? v.slice(0, max) : typeof v === 'number' ? String(v) : '');
+const bool = (v) => v === true;
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-5000, Math.min(5000, v)) : null);
+const toT = (v) =>
+  typeof v === 'string' ? T(str_(v), '') : v && typeof v === 'object' ? T(str_(v.de), str_(v.en)) : T('', '');
+const oneOf = (v, list, fallback) => (list.includes(v) ? v : fallback);
+
+/**
+ * Prüft ein geladenes Projekt (Entwurf oder aus einer PDF) und bringt es auf den aktuellen Stand:
+ * unbekannte Felder entfallen, Kennungen werden geprüft (sonst neu vergeben und Verweise
+ * nachgezogen), Texte sind Zeichenketten, Bilder nur eingebettete PNG/JPG/WebP/SVG. So gelangt aus
+ * einer fremden PDF nichts in die Oberfläche, was dort nicht hingehört.
+ */
 export function normalizeProject(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sections)) throw new Error('Kein PDFix-Projekt');
-  const base = newProject(raw.template || 'documentation');
-  const project = { ...base, ...raw, company: { ...base.company, ...(raw.company || {}) }, meta: { ...base.meta, ...(raw.meta || {}) } };
-  project.images = raw.images && typeof raw.images === 'object' ? raw.images : {};
-  project.sections = raw.sections.filter((s) => s && typeof s.type === 'string');
-  for (const s of project.sections) {
-    s.id ||= uid('s');
-    if (s.type === 'wiring') {
-      const d = newWiring();
-      for (const key of Object.keys(d)) if (s[key] === undefined) s[key] = d[key];
-      s.hub.pins ||= [];
-    }
+  const used = new Set();
+  const id = (v, prefix) => {
+    let out = typeof v === 'string' && ID_RE.test(v) && !used.has(v) ? v : uid(prefix);
+    while (used.has(out)) out = uid(prefix);
+    used.add(out);
+    return out;
+  };
+  const base = newProject('wiring');
+  const images = {};
+  for (const [key, img] of Object.entries(raw.images && typeof raw.images === 'object' ? raw.images : {})) {
+    if (!ID_RE.test(key) || !img || typeof img.data !== 'string' || !IMAGE_RE.test(img.data)) continue;
+    const w = num(img.w);
+    const h = num(img.h);
+    if (!(w > 0 && h > 0)) continue;
+    images[key] = { mime: str_(img.mime, 40), data: img.data, w, h };
+  }
+  const company = raw.company && typeof raw.company === 'object' ? raw.company : {};
+  const meta = raw.meta && typeof raw.meta === 'object' ? raw.meta : {};
+  const project = {
+    v: MODEL_VERSION,
+    id: id(raw.id, 'prj'),
+    template: oneOf(raw.template, TEMPLATES.map((t) => t.id), 'documentation'),
+    lang: oneOf(raw.lang, LANGS.map((l) => l.id), 'de'),
+    font: oneOf(raw.font, FONTS.map((f) => f.id), 'helvetica'),
+    title: toT(raw.title),
+    company: {
+      name: str_(company.name, 200),
+      tagline: toT(company.tagline),
+      logo: typeof company.logo === 'string' && images[company.logo] ? company.logo : null,
+    },
+    meta: Object.fromEntries(Object.keys(base.meta).map((k) => [k, str_(meta[k], 1000)])),
+    sections: [],
+    images,
+    created: num(raw.created) ?? Date.now(),
+    modified: typeof raw.modified === 'number' && Number.isFinite(raw.modified) ? raw.modified : Date.now(),
+  };
+  for (const s of raw.sections) {
+    if (!s || typeof s !== 'object') continue;
+    if (s.type === 'cover' || s.type === 'toc') project.sections.push({ id: id(s.id, 's'), type: s.type });
+    else if (s.type === 'wiring') project.sections.push(cleanWiring(s, id));
+    else if (s.type === 'access') project.sections.push(cleanAccess(s, id));
   }
   return project;
+}
+
+function cleanWiring(s, id) {
+  const d = newWiring();
+  const remap = new Map();
+  const boxId = (v) => {
+    const out = id(v, 'b');
+    if (typeof v === 'string') remap.set(v, out);
+    return out;
+  };
+  const categories = (Array.isArray(s.categories) ? s.categories : d.categories)
+    .filter((c) => c && typeof c === 'object')
+    .map((c) => ({ id: id(c.id, 'c'), name: toT(c.name), color: str_(c.color, 9) }));
+  const boxes = (Array.isArray(s.boxes) ? s.boxes : [])
+    .filter((b) => b && typeof b === 'object')
+    .map((b) => ({
+      ...newBox(),
+      id: boxId(b.id),
+      title: toT(b.title),
+      lines: toT(b.lines),
+      cat: str_(b.cat, 64),
+      side: oneOf(b.side, ['left', 'right', 'bottom'], 'left'),
+      badge: bool(b.badge),
+      bus: bool(b.bus),
+      parent: typeof b.parent === 'string' ? b.parent : null,
+      fill: bool(b.fill),
+      fillColor: b.fillColor ? str_(b.fillColor, 9) : null,
+      y: num(b.y),
+      h: num(b.h),
+      pinY: num(b.pinY),
+      pinGap: num(b.pinGap),
+    }));
+  // Verweise auf umbenannte Kennungen nachziehen; Unterbaugruppen eines unteren Kastens lösen
+  for (const b of boxes) {
+    b.parent = b.parent != null && remap.has(b.parent) ? remap.get(b.parent) : null;
+    const parent = boxes.find((x) => x.id === b.parent);
+    if (!parent || parent.side === 'bottom' || parent === b) b.parent = null;
+  }
+  const hub = s.hub && typeof s.hub === 'object' ? s.hub : {};
+  const pins = (Array.isArray(hub.pins) ? hub.pins : [])
+    .filter((p) => p && typeof p === 'object')
+    .map((p) => ({
+      id: id(p.id, 'p'),
+      name: str_(p.name, 40),
+      label: str_(p.label, 40),
+      func: toT(p.func),
+      box: typeof p.box === 'string' && remap.has(p.box) ? remap.get(p.box) : null,
+      terminal: toT(p.terminal),
+      note: toT(p.note),
+    }));
+  const badge = s.badge && typeof s.badge === 'object' ? s.badge : d.badge;
+  return {
+    id: id(s.id, 's'),
+    type: 'wiring',
+    system: toT(s.system),
+    categories: categories.length ? categories : d.categories,
+    badge: { label: str_(badge.label, 20), color: str_(badge.color, 9) || d.badge.color, text: toT(badge.text) },
+    hub: { name: toT(hub.name), short: toT(hub.short), model: toT(hub.model), note: toT(hub.note), pins },
+    boxes,
+    hints: (Array.isArray(s.hints) ? s.hints : [])
+      .filter((h) => h && typeof h === 'object')
+      .map((h) => ({ id: id(h.id, 'h'), cat: str_(h.cat, 64), title: toT(h.title), text: toT(h.text) })),
+  };
+}
+
+function cleanAccess(s, id) {
+  const d = newAccess();
+  const blocks = s.blocks && typeof s.blocks === 'object' ? s.blocks : {};
+  const hide = s.hide && typeof s.hide === 'object' ? s.hide : {};
+  const network = s.network && typeof s.network === 'object' ? s.network : {};
+  const list = (rows, make, prefix) =>
+    (Array.isArray(rows) ? rows : [])
+      .filter((r) => r && typeof r === 'object')
+      .map((r) => {
+        const out = make();
+        for (const [k, v] of Object.entries(out))
+          if (k === 'id') out.id = id(r.id, prefix);
+          else out[k] = typeof v === 'object' ? toT(r[k]) : str_(r[k], 500);
+        return out;
+      });
+  return {
+    id: id(s.id, 's'),
+    type: 'access',
+    title: toT(s.title || d.title),
+    showPasswords: bool(s.showPasswords),
+    blocks: Object.fromEntries(Object.keys(d.blocks).map((k) => [k, k in blocks ? bool(blocks[k]) : d.blocks[k]])),
+    hide: Object.fromEntries(
+      Object.keys(d.hide).map((k) => [k, Array.isArray(hide[k]) ? hide[k].filter((x) => typeof x === 'string').slice(0, 20) : d.hide[k]]),
+    ),
+    devices: list(s.devices, newDevice, 'd'),
+    network: Object.fromEntries(Object.entries(d.network).map(([k, v]) => [k, typeof v === 'object' ? toT(network[k]) : str_(network[k], 200)])),
+    wifi: list(s.wifi, newWifi, 'w'),
+    remote: list(s.remote, newRemote, 'r'),
+    ...(s.secretsRemoved ? { secretsRemoved: true } : {}),
+  };
 }
 
 /** Name eines Abschnitts für Listen und das Inhaltsverzeichnis. */
@@ -269,6 +538,7 @@ export function sectionTitle(section, lang = 'de') {
     const sys = tx(section.system, lang);
     return str('wiring', lang) + (sys ? ' ' + sys : '');
   }
+  if (section.type === 'access') return tx(section.title, lang) || str('access', lang);
   return section.type;
 }
 

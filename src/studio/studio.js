@@ -15,14 +15,20 @@ import { downloadBytes, pickFiles, showDialog, toast, withBusy } from '../ui/dia
 import { idbPut } from '../storage/idb.js';
 import { notifyDocumentState } from '../platform/desktop-bridge.js';
 import {
+  ACCESS_BLOCKS,
   FONTS,
   LANGS,
   exampleWiring,
+  newAccess,
   newBox,
+  newDevice,
   newHint,
   newPin,
   newProject,
+  newRemote,
+  newWifi,
   newWiring,
+  withoutSecrets,
   normalizeProject,
   sectionTitle,
   tx,
@@ -31,9 +37,10 @@ import {
 import { documentLabel, renderDocument } from './render.js';
 import { PAGE, typesetter } from './svg.js';
 import { DIAGRAM } from './wiring.js';
+import { blockHasData } from './access.js';
 import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
 import { ensureBarlow } from './fonts.js';
-import { canMakePdf, embedProject, makePdf, printHtml, readProject } from './export.js';
+import { canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
 import { Inspector } from './inspector.js';
 
 export { deleteDraft, listDrafts };
@@ -180,6 +187,7 @@ export class Studio {
   }
 
   async openDraft(id) {
+    if (this.project && this.project.id === id) return this.app.setView('studio');
     try {
       const raw = await loadDraft(id);
       if (!raw) throw new Error('fehlt');
@@ -190,7 +198,7 @@ export class Studio {
   }
 
   async open(project, sel = null) {
-    if (this.project && this.project.id !== project.id) await this.flush();
+    if (this.project) await this.flush();
     this.project = project;
     this.hist = { undo: [], redo: [] };
     this.snap = this.serialize();
@@ -218,8 +226,9 @@ export class Studio {
     }
   }
 
+  /** Stand für den Verlauf: ohne Bilder (getrennt gehalten) und ohne Änderungszeit. */
   serialize() {
-    return JSON.stringify({ ...this.project, images: undefined });
+    return JSON.stringify({ ...this.project, images: undefined, modified: undefined });
   }
 
   saveSoon(delay = 700) {
@@ -259,18 +268,22 @@ export class Studio {
     tab.title = name;
   }
 
-  /** Nach dem Öffnen einer PDF: enthält sie ein PDFix-Projekt, Weiterbearbeiten anbieten. */
+  /**
+   * Nach dem Öffnen einer PDF: enthält sie ein PDFix-Projekt, Weiterbearbeiten anbieten. Entpackt
+   * wird das Projekt erst beim Klick (mit Größengrenze).
+   */
   offerProject(session) {
-    const found = readProject(session.doc);
     const old = document.getElementById('sdOffer');
     if (old) old.remove();
-    if (!found) return;
+    if (!hasProject(session.doc)) return;
     const bar = htmlToElement(
       `<div class="sd-offer" id="sdOffer">${icon('binder', 's')}<span>Diese PDF wurde mit <b>Dokumentation erstellen</b> angelegt.</span><button class="btn primary">Weiterbearbeiten</button><button class="btn ic" title="Ausblenden">${icon('x', 's')}</button></div>`,
     );
     const [go, hide] = bar.querySelectorAll('button');
     hide.addEventListener('click', () => bar.remove());
     go.addEventListener('click', async () => {
+      const found = readProject(session.doc);
+      if (!found) return toast('Die Projektdaten in dieser PDF sind nicht lesbar.', 'err', 5000);
       if (found.changed) {
         const ok = await showDialog({
           title: 'Dokumentation weiterbearbeiten',
@@ -283,10 +296,47 @@ export class Studio {
         });
         if (!ok) return;
       }
+      if (found.project.sections.some((s) => s.secretsRemoved))
+        toast('Diese PDF wurde ohne Passwörter erstellt – sie fehlen im Projekt.', 'warn', 6000);
+      if (!(await this.openImported(found.project))) return;
       bar.remove();
-      await this.open(normalizeProject(JSON.parse(JSON.stringify(found.project))));
     });
     $('#center').appendChild(bar);
+  }
+
+  /**
+   * Projekt aus einer PDF öffnen, ohne einen neueren Stand zu überschreiben: Gibt es dasselbe
+   * Projekt als Entwurf (oder geöffnet) mit jüngerer Änderung, wird gefragt, welcher Stand gilt –
+   * der Stand der PDF öffnet dann als Kopie.
+   */
+  async openImported(project) {
+    let current = this.project && this.project.id === project.id ? this.project : null;
+    if (!current)
+      try {
+        const draft = await loadDraft(project.id);
+        current = draft ? normalizeProject(draft) : null;
+      } catch {}
+    if (current && (current.modified || 0) > (project.modified || 0)) {
+      const choice = await showDialog({
+        title: 'Neuerer Entwurf vorhanden',
+        icon: 'info',
+        body: 'Dieses Projekt wurde nach dem Erstellen der PDF weiterbearbeitet. Welchen Stand möchten Sie öffnen?',
+        buttons: [
+          { label: 'Abbrechen', value: null },
+          { label: 'Stand der PDF (als Kopie)', value: 'pdf' },
+          { label: 'Neueren Entwurf', primary: true, value: 'draft' },
+        ],
+      });
+      if (!choice) return false;
+      if (choice === 'draft') {
+        if (current === this.project) this.app.setView('studio');
+        else await this.open(current);
+        return true;
+      }
+      project = { ...project, id: uid('prj') };
+    }
+    await this.open(project);
+    return true;
   }
 
   /* ---------- Änderungen und Verlauf ---------- */
@@ -335,8 +385,8 @@ export class Studio {
   }
 
   restore(json) {
-    const images = this.project.images;
-    this.project = { ...JSON.parse(json), images };
+    const { images, created } = this.project;
+    this.project = { ...JSON.parse(json), images, created };
     this.snap = json;
     if (!this.selected()) this.sel = this.sel.section ? { kind: 'section', id: this.sel.section } : { kind: 'project' };
     this.project.modified = Date.now();
@@ -387,15 +437,57 @@ export class Studio {
     if (kind === 'pin') return s.hub.pins.find((p) => p.id === id) || null;
     if (kind === 'hint') return s.hints.find((h) => h.id === id) || null;
     if (kind === 'hub') return s.hub;
+    if (kind === 'device') return s.devices.find((d) => d.id === id) || null;
+    if (kind === 'wifi') return s.wifi.find((w) => w.id === id) || null;
+    if (kind === 'remote') return s.remote.find((r) => r.id === id) || null;
     return null;
   }
 
   select(sel, { reveal = false } = {}) {
     this.sel = sel;
+    // Werkzeugband passt sich der Art des gewählten Abschnitts an (wie Kontext-Reiter in Office)
+    const type = this.currentType();
+    if (type !== this.ribbonType) {
+      this.ribbonType = type;
+      if (this.visible) this.app.renderRibbon();
+    }
     this.inspector.render();
     this.renderSelection();
     this.renderSide();
     if (reveal) this.reveal();
+  }
+
+  /** Art des gewählten Abschnitts ('wiring', 'access', …) oder null. */
+  currentType() {
+    const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
+    const s = id && this.section(id);
+    return s ? s.type : null;
+  }
+
+  /** Zugangsdaten-Abschnitt für neue Einträge: der gewählte, sonst der erste (oder neu). */
+  accessSection() {
+    const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
+    const s = id && this.section(id);
+    if (s && s.type === 'access') return s;
+    const found = this.project.sections.find((x) => x.type === 'access');
+    if (found) return found;
+    const section = newAccess();
+    this.change('Zugangsdaten hinzugefügt', (p) => p.sections.push(section));
+    return section;
+  }
+
+  /** Neuer Eintrag in den Zugangsdaten: Gerät, WLAN oder Fernzugriff. */
+  addAccessItem(kind) {
+    const s = this.accessSection();
+    const item = kind === 'device' ? newDevice() : kind === 'wifi' ? newWifi() : newRemote();
+    const list = kind === 'device' ? 'devices' : kind;
+    const label = { device: 'Gerät', wifi: 'WLAN', remote: 'Fernzugriff' }[kind];
+    this.change(`${label} hinzugefügt`, () => {
+      s[list].push(item);
+      s.blocks[list] = true;
+    });
+    this.select({ kind, id: item.id, section: s.id }, { reveal: true });
+    this.inspector.focusFirst();
   }
 
   /** Wiring-Abschnitt für neue Baugruppen/Anschlüsse: der gewählte, sonst der erste. */
@@ -483,16 +575,34 @@ export class Studio {
   renderStarters(host) {
     for (const el of $$('.sd-page', host)) {
       const page = this.doc.pages[+el.dataset.index];
-      const section = page && page.kind === 'diagram' ? this.section(page.section) : null;
-      const empty = !!section && !section.boxes.length;
+      const section = page && (page.kind === 'diagram' || page.kind === 'access') ? this.section(page.section) : null;
+      const empty =
+        !!section &&
+        (section.type === 'wiring'
+          ? !section.boxes.length
+          : !section.devices.length && !section.wifi.length && !section.remote.length && !blockHasData(section, ACCESS_BLOCKS.find((b) => b.id === 'network')));
       let card = el.querySelector('.sd-start');
-      if (!empty) {
+      if (!empty || (card && card.dataset.type !== section.type)) {
         if (card) card.remove();
-        continue;
+        card = null;
+        if (!empty) continue;
       }
       if (card) continue;
+      if (section.type === 'access') {
+        card = htmlToElement(
+          `<div class="sd-start top" data-type="access"><b>Zugangsdaten erfassen</b><span>Geräte mit IP-Adresse und Anmeldung, WLAN und Fernzugriff eintragen. Was in die PDF kommt – Bereiche, Spalten, Passwörter –, wählst du rechts je Kunde.</span><div><button class="btn primary" data-k="device">${icon('device', 's')}Gerät</button><button class="btn outline" data-k="wifi">${icon('wifi', 's')}WLAN</button><button class="btn outline" data-k="remote">${icon('remote', 's')}Fernzugriff</button></div></div>`,
+        );
+        for (const b of card.querySelectorAll('button'))
+          b.addEventListener('click', () => {
+            this.select({ kind: 'section', id: section.id });
+            this.addAccessItem(b.dataset.k);
+          });
+        for (const type of ['pointerdown', 'dblclick']) card.addEventListener(type, (ev) => ev.stopPropagation());
+        el.appendChild(card);
+        continue;
+      }
       card = htmlToElement(
-        `<div class="sd-start"><b>Anschlussplan aufbauen</b><span>Zuerst die Baugruppen anlegen (links, rechts oder unten), dann die Anschlüsse der Steuerung zuordnen – der Plan zeichnet sich selbst.</span><div><button class="btn primary">${icon('module', 's')}Baugruppe</button><button class="btn outline">${icon('sparkle', 's')}Beispiel übernehmen</button></div></div>`,
+        `<div class="sd-start" data-type="wiring"><b>Anschlussplan aufbauen</b><span>Zuerst die Baugruppen anlegen (links, rechts oder unten), dann die Anschlüsse der Steuerung zuordnen – der Plan zeichnet sich selbst.</span><div><button class="btn primary">${icon('module', 's')}Baugruppe</button><button class="btn outline">${icon('sparkle', 's')}Beispiel übernehmen</button></div></div>`,
       );
       const [add, example] = card.querySelectorAll('button');
       add.addEventListener('click', () => {
@@ -533,6 +643,7 @@ export class Studio {
           (kind === 'pin' && (hit.kind === 'pin' || hit.kind === 'conn') && hit.id === id) ||
           (kind === 'pin' && hit.kind === 'conn' && this.pinInConn(hit, id)) ||
           (kind === 'hint' && hit.kind === 'hint' && hit.id === id) ||
+          ((kind === 'device' || kind === 'wifi' || kind === 'remote') && hit.kind === kind && hit.id === id) ||
           (kind === 'hub' && hit.kind === 'hub');
         if (!match) continue;
         const mark = this.markEl(hit.rect, 'sd-sel');
@@ -600,12 +711,12 @@ export class Studio {
 
   sectionItem(section) {
     const li = htmlToElement(
-      `<li class="sd-sec" draggable="true" tabindex="0" data-id="${section.id}"><span class="sd-thumb"></span><span class="tx"><b></b><small></small></span><button class="btn ic" title="Abschnitt">${icon('more', 's')}</button></li>`,
+      `<li class="sd-sec" draggable="true" tabindex="0" data-id="${escapeHtml(section.id)}"><span class="sd-thumb"></span><span class="tx"><b></b><small></small></span><button class="btn ic" title="Abschnitt">${icon('more', 's')}</button></li>`,
     );
     li.addEventListener('click', (ev) => {
       if (ev.target.closest('button')) return;
       this.select({ kind: 'section', id: section.id }, { reveal: true });
-      const first = $(`#sdPages .sd-page[data-section="${section.id}"]`);
+      const first = $(`#sdPages .sd-page[data-section="${CSS.escape(section.id)}"]`);
       if (first) $('#sdScroll').scrollTop = first.offsetTop - 24;
     });
     li.addEventListener('keydown', (ev) => {
@@ -655,7 +766,12 @@ export class Studio {
       [
         { label: 'Nach oben', icon: 'up', disabled: index === 0, run: () => this.moveSection(id, -1) },
         { label: 'Nach unten', icon: 'down', disabled: index === count - 1, run: () => this.moveSection(id, 1) },
-        { label: 'Duplizieren', icon: 'dup', run: () => this.duplicateSection(id) },
+        {
+          label: 'Duplizieren',
+          icon: 'dup',
+          disabled: ['cover', 'toc'].includes(this.section(id).type),
+          run: () => this.duplicateSection(id),
+        },
         '-',
         { label: 'Entfernen', icon: 'trash', run: () => this.removeSection(id) },
       ],
@@ -675,6 +791,26 @@ export class Studio {
   duplicateSection(id) {
     const copy = JSON.parse(JSON.stringify(this.section(id)));
     copy.id = uid('s');
+    // eigene Kennungen für alle Einträge (sonst teilen Original und Kopie Verlaufsschritte)
+    const remap = new Map();
+    const fresh = (item, prefix) => {
+      const next = uid(prefix);
+      remap.set(item.id, next);
+      item.id = next;
+    };
+    if (copy.type === 'wiring') {
+      copy.boxes.forEach((b) => fresh(b, 'b'));
+      for (const b of copy.boxes) if (b.parent) b.parent = remap.get(b.parent) || null;
+      for (const p of copy.hub.pins) {
+        fresh(p, 'p');
+        if (p.box) p.box = remap.get(p.box) || null;
+      }
+      copy.hints.forEach((h) => fresh(h, 'h'));
+    } else if (copy.type === 'access') {
+      copy.devices.forEach((d) => fresh(d, 'd'));
+      copy.wifi.forEach((w) => fresh(w, 'w'));
+      copy.remote.forEach((r) => fresh(r, 'r'));
+    }
     this.change(
       'Abschnitt dupliziert',
       (p) => p.sections.splice(p.sections.findIndex((s) => s.id === id) + 1, 0, copy),
@@ -699,13 +835,14 @@ export class Studio {
         { label: 'Deckblatt', icon: 'fitp', disabled: has('cover'), run: () => this.addSection('cover') },
         { label: 'Inhaltsverzeichnis', icon: 'list', disabled: has('toc'), run: () => this.addSection('toc') },
         { label: 'Anschlussplan', icon: 'wiring', run: () => this.addSection('wiring') },
+        { label: 'Zugangsdaten', icon: 'key', run: () => this.addSection('access') },
       ],
       anchor,
     );
   }
 
   addSection(type) {
-    const section = type === 'wiring' ? newWiring() : { id: uid('s'), type };
+    const section = type === 'wiring' ? newWiring() : type === 'access' ? newAccess() : { id: uid('s'), type };
     this.change(
       'Abschnitt hinzugefügt',
       (p) => {
@@ -780,6 +917,10 @@ export class Studio {
     } else if (kind === 'hint') {
       this.sel = { kind: 'section', id: section };
       this.change('Hinweis gelöscht', () => (s.hints = s.hints.filter((h) => h.id !== id)), { inspector: true });
+    } else if (kind === 'device' || kind === 'wifi' || kind === 'remote') {
+      const list = kind === 'device' ? 'devices' : kind;
+      this.sel = { kind: 'section', id: section };
+      this.change('Eintrag gelöscht', () => (s[list] = s[list].filter((x) => x.id !== id)), { inspector: true });
     }
     this.renderSelection();
   }
@@ -802,6 +943,16 @@ export class Studio {
     }
   }
 
+  /** Passwörter/Schlüssel eines Zugangsdaten-Abschnitts in der PDF zeigen oder ausblenden. */
+  toggleSecrets(section) {
+    this.change(
+      section.showPasswords ? 'Passwörter ausgeblendet' : 'Passwörter sichtbar',
+      () => (section.showPasswords = !section.showPasswords),
+      { inspector: true },
+    );
+    this.app.renderRibbon();
+  }
+
   /* ---------- Sprache und Schrift ---------- */
 
   setLang(lang) {
@@ -822,12 +973,20 @@ export class Studio {
     const lang = LANGS.find((l) => l.id === this.project.lang) || LANGS[0];
     const font = FONTS.find((f) => f.id === this.project.font) || FONTS[0];
     const hasWiring = this.project.sections.some((s) => s.type === 'wiring');
+    this.ribbonType = this.currentType();
+    const access = this.ribbonType === 'access' ? this.section(this.sel.section || this.sel.id) : null;
+    const context = access
+      ? `<button class="rb c1" data-act="device" title="Gerät mit Zugang hinzufügen">${icon('device')}Gerät</button>
+<button class="rb c6" data-act="wifi" title="WLAN hinzufügen">${icon('wifi')}WLAN</button>
+<button class="rb c2" data-act="remote" title="Fernzugriff hinzufügen (DDNS, Cloud, Portfreigabe)">${icon('remote')}Fernzugriff</button>
+<button class="rb c4${access.showPasswords ? ' on' : ''}" data-act="secrets" aria-pressed="${!!access.showPasswords}" title="Passwörter und Schlüssel in der PDF zeigen">${icon('key')}Passwörter ${access.showPasswords ? 'sichtbar' : 'ausgeblendet'}</button>`
+      : `<button class="rb c1" data-act="box" title="Baugruppe zum Anschlussplan hinzufügen">${icon('module')}Baugruppe</button>
+<button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
+<button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>`;
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
 <span class="rb-sep"></span>
-<button class="rb c1" data-act="box" title="Baugruppe zum Anschlussplan hinzufügen">${icon('module')}Baugruppe</button>
-<button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
-<button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>
+${context}
 <span class="rb-sep"></span>
 <button class="rb c3" data-act="logo" title="Firmenlogo hochladen">${icon('image')}Logo</button>
 <button class="rb c4" data-act="lang" title="Sprache des Dokuments">${icon('globe')}${escapeHtml(lang.label)}${icon('chev', 's caret')}</button>
@@ -840,6 +999,8 @@ export class Studio {
         else if (act === 'box') this.addBox();
         else if (act === 'pin') this.addPin();
         else if (act === 'hint') this.addHint();
+        else if (act === 'device' || act === 'wifi' || act === 'remote') this.addAccessItem(act);
+        else if (act === 'secrets') this.toggleSecrets(access);
         else if (act === 'logo') this.pickLogo();
         else if (act === 'lang')
           showMenu(
@@ -920,6 +1081,8 @@ export class Studio {
     else if (item.kind === 'pin') this.select({ kind: 'pin', id: item.id, section });
     else if (item.kind === 'hint') this.select({ kind: 'hint', id: item.id, section });
     else if (item.kind === 'hub') this.select({ kind: 'hub', section });
+    else if (item.kind === 'device' || item.kind === 'wifi' || item.kind === 'remote')
+      this.select({ kind: item.kind, id: item.id, section });
     else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
     else if (item.kind === 'project') this.select({ kind: 'project' });
     else this.select({ kind: 'section', id: section });
@@ -1017,7 +1180,7 @@ export class Studio {
       this.removeSelected();
     } else if (!inField && key === 'escape') {
       const { kind, section } = this.sel;
-      if (kind === 'box' || kind === 'pin' || kind === 'hint' || kind === 'hub') this.select({ kind: 'section', id: section });
+      if (section && kind !== 'section') this.select({ kind: 'section', id: section });
     } else if (!inField && this.sel.kind === 'box' && (key === 'arrowup' || key === 'arrowdown')) {
       ev.preventDefault();
       const s = this.section(this.sel.section);
@@ -1042,13 +1205,59 @@ export class Studio {
     return (documentLabel(this.project) || 'Dokumentation').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() + '.pdf';
   }
 
-  async buildPdf() {
+  /** Enthalten Zugangsdaten Passwörter oder Schlüssel? */
+  hasSecrets() {
+    return this.project.sections.some(
+      (s) =>
+        s.type === 'access' &&
+        ACCESS_BLOCKS.some(
+          (b) =>
+            b.columns &&
+            s.blocks[b.id] &&
+            (s[b.list] || []).some((row) => b.columns.some((c) => c.secret && String(row[c.key] || '').trim())),
+        ),
+    );
+  }
+
+  /** Vor dem Erstellen: Passwörter in diese PDF übernehmen? null = nichts zu entscheiden. */
+  async askSecrets() {
+    if (!this.hasSecrets()) return null;
+    const shown = this.project.sections.some((s) => s.type === 'access' && s.showPasswords);
+    const choice = await showDialog({
+      title: 'Passwörter in die PDF?',
+      icon: 'key',
+      body: 'Die Zugangsdaten enthalten Passwörter bzw. WLAN-Schlüssel. <b>Ohne Passwörter</b> erscheinen dort Punkte – und die Passwörter werden auch nicht unsichtbar in der PDF gespeichert.',
+      buttons: [
+        { label: 'Abbrechen', value: 'cancel' },
+        { label: 'Ohne Passwörter', value: 'hide', primary: !shown },
+        { label: 'Mit Passwörtern', value: 'show', primary: shown },
+      ],
+      cancelValue: 'cancel',
+    });
+    return choice || 'cancel';
+  }
+
+  /** Projekt mit Passwörtern sichtbar (`show` = true) bzw. ausgeblendet; null = wie eingestellt. */
+  withSecrets(show) {
+    if (show == null) return this.project;
+    return {
+      ...this.project,
+      sections: this.project.sections.map((s) => (s.type === 'access' ? { ...s, showPasswords: show } : s)),
+    };
+  }
+
+  /**
+   * Erzeugt die PDF. `showSecrets`: Passwörter zeigen (true/false) oder wie im Abschnitt
+   * eingestellt (null). Ausgeblendete Passwörter fehlen auch im eingebetteten Projekt.
+   */
+  async buildPdf(showSecrets = null) {
     if (this.project.font === 'barlow') await ensureBarlow();
-    const doc = renderDocument(this.project);
+    const source = this.withSecrets(showSecrets);
+    const doc = renderDocument(source);
     const ts = typesetter(this.project);
     const html = printHtml({ pages: doc.pages, font: this.project.font, lang: ts.lang }, doc.label);
     const raw = await makePdf(html);
-    return embedProject(raw, this.project, {
+    return embedProject(raw, withoutSecrets(source), {
       title: doc.label,
       author: [this.project.company.name, this.project.meta.technician].filter(Boolean).join(', '),
       subject: [this.project.meta.customer, this.project.meta.site].filter(Boolean).join(', '),
@@ -1064,6 +1273,9 @@ export class Studio {
       toast('Im Druckdialog „Als PDF speichern“ wählen.', '', 5000);
       return this.print();
     }
+    const secrets = await this.askSecrets();
+    if (secrets === 'cancel') return false;
+    const show = secrets == null ? null : secrets === 'show';
     const name = this.fileName();
     let handle = null;
     if (window.showSaveFilePicker) {
@@ -1077,7 +1289,7 @@ export class Studio {
       }
     }
     try {
-      const bytes = await withBusy(() => this.buildPdf(), 100);
+      const bytes = await withBusy(() => this.buildPdf(show), 100);
       if (handle) {
         const writable = await handle.createWritable();
         await writable.write(bytes);
@@ -1099,9 +1311,12 @@ export class Studio {
   async print() {
     if (!this.project) return;
     await this.flush();
+    const secrets = await this.askSecrets();
+    if (secrets === 'cancel') return;
+    const show = secrets == null ? null : secrets === 'show';
     if (canMakePdf()) {
       try {
-        const bytes = await withBusy(() => this.buildPdf(), 100);
+        const bytes = await withBusy(() => this.buildPdf(show), 100);
         const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
         if (!window.open(url, '_blank')) downloadBytes(bytes, this.fileName());
       } catch (err) {
@@ -1111,9 +1326,10 @@ export class Studio {
       return;
     }
     // Browser: Druckfassung in einem unsichtbaren Rahmen drucken
-    const doc = renderDocument(this.project);
+    const doc = renderDocument(this.withSecrets(show));
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
+    frame.sandbox = 'allow-same-origin allow-modals'; // keine Skripte in der Druckfassung
     frame.srcdoc = printHtml({ pages: doc.pages, font: this.project.font, lang: typesetter(this.project).lang }, doc.label);
     frame.addEventListener('load', () => {
       try {

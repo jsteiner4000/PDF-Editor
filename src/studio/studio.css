@@ -311,6 +311,9 @@
   line-height: 1.5;
   text-wrap: pretty;
 }
+.sd-start.top {
+  top: 17%;
+}
 .sd-start b {
   color: var(--ink);
   font-size: 14px;
@@ -488,6 +491,45 @@
   color: var(--ink);
   font-weight: 600;
   box-shadow: inset 0 0 0 1.5px var(--acc);
+}
+.fld.mono,
+.sd-row small.mono {
+  font-family: Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12.5px;
+}
+.sd-secret {
+  position: relative;
+  display: block;
+}
+.sd-secret .fld {
+  padding-right: 36px;
+}
+.sd-secret .btn {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 30px;
+  height: 30px;
+  color: var(--ink3);
+}
+.sd-secret .btn.on {
+  color: var(--acc);
+}
+.sd-chips.multi button {
+  padding: 0 10px;
+}
+.sd-chips.multi button svg.i {
+  width: 13px;
+  height: 13px;
+  margin-left: -3px;
+}
+.sd-chips.multi button.on {
+  color: var(--acc);
+  box-shadow: inset 0 0 0 1.5px var(--acc-line);
+  background: var(--acc-soft);
+}
+.sd-l + .sd-chips {
+  margin-bottom: 10px;
 }
 .sd-check {
   display: flex;

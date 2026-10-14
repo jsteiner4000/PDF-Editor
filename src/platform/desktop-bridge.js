@@ -170,8 +170,11 @@ const COMMANDS = {
     if (app.studio.project) await app.studio.flush(); // letzten Stand des Entwurfs sichern
     if (!app.session) return false;
     await app.finishEdit();
-    return !!(app.session && app.session.dirty);
+    // Name für die Rückfrage: die PDF, auch wenn gerade die Dokumentation sichtbar ist
+    return app.session && app.session.dirty ? { dirty: true, name: app.file ? app.file.name : '' } : false;
   },
+  /** Rückfrage beim Beenden: die PDF speichern (nicht „PDF erstellen“ der Dokumentation). */
+  saveDocument: () => (app.session ? app.saveDocument() : false),
 };
 
 /**

@@ -421,17 +421,29 @@ export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
     heading(ts.label('hints'));
     y -= 12; // Karte beginnt 10 pt unter der Grundlinie der Überschrift
     for (const hint of hints) {
-      const lines = hintLines(ts, hint);
-      const h = hintHeight(lines);
-      if (y + h > bottom && y > top + 30) flush();
+      let lines = hintLines(ts, hint);
       const c = catColor(section, hint.cat);
-      svg += rect(PAGE.left, y, 511.276, h, { fill: C.card }) + rect(PAGE.left, y, 4, h, { fill: c });
-      svg += text(56, y + 14, ts.inline(hint.title), { size: 9.8, weight: 700, fill: c });
-      lines.forEach((l, i) => {
-        svg += text(56, y + 30 + 12 * i, l.text, { size: 9, fill: l.sec ? C.muted : C.body, italic: l.sec });
-      });
-      hits.push({ kind: 'hint', id: hint.id, rect: [PAGE.left, y, 511.276, h] });
-      y += h + 8;
+      const title = ts.inline(hint.title);
+      // passt die Karte nicht mehr auf die Seite: neue Seite; länger als eine Seite: aufteilen
+      if (y + hintHeight(lines) > bottom && y > top + 30) flush();
+      for (let part = 0; lines.length; part++) {
+        const room = Math.floor((bottom - y - 39) / 12) + 1;
+        if (room < 2 && y > top) {
+          flush();
+          continue;
+        }
+        const chunk = lines.slice(0, Math.max(1, room));
+        lines = lines.slice(chunk.length);
+        const h = hintHeight(chunk);
+        svg += rect(PAGE.left, y, 511.276, h, { fill: C.card }) + rect(PAGE.left, y, 4, h, { fill: c });
+        svg += text(56, y + 14, part ? `${title} (${ts.label('continued')})` : title, { size: 9.8, weight: 700, fill: c });
+        chunk.forEach((l, i) => {
+          svg += text(56, y + 30 + 12 * i, l.text, { size: 9, fill: l.sec ? C.muted : C.body, italic: l.sec });
+        });
+        hits.push({ kind: 'hint', id: hint.id, rect: [PAGE.left, y, 511.276, h] });
+        y += h + 8;
+        if (lines.length) flush();
+      }
     }
   }
   if (svg) pages.push({ svg, hits });

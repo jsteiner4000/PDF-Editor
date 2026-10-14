@@ -74,7 +74,10 @@ export function typesetter(project) {
   };
 }
 
-/** SVG-Text. `o`: size, weight, italic, fill, anchor ('start' | 'middle' | 'end'). */
+/** Festbreitenschrift für IP-Adressen, MAC-Adressen und Passwörter (l/1, O/0 gut unterscheidbar). */
+export const MONO = 'Consolas, "Liberation Mono", "Courier New", monospace';
+
+/** SVG-Text. `o`: size, weight, italic, fill, anchor ('start' | 'middle' | 'end'), family. */
 export function text(x, y, value, o = {}) {
   if (value == null || value === '') return '';
   const attrs = [
@@ -85,6 +88,7 @@ export function text(x, y, value, o = {}) {
     o.italic ? 'font-style="italic"' : '',
     `fill="${o.fill || C.navy}"`,
     o.anchor && o.anchor !== 'start' ? `text-anchor="${o.anchor}"` : '',
+    o.family ? `font-family="${esc(o.family)}"` : '',
   ];
   // mehrere Leerzeichen bleiben stehen (SVG fasst sie sonst zusammen): ab dem zweiten geschützt
   const spaced = String(value).replace(/ {2,}/g, (m) => ' ' + '\u00a0'.repeat(m.length - 1));

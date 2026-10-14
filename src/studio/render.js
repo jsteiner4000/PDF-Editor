@@ -7,6 +7,7 @@
  */
 import { C, PAGE, esc, line, n, rect, text, typesetter } from './svg.js';
 import { DIAGRAM, layoutWiring, legendSvg, terminalPages, wiringDiagramSvg } from './wiring.js';
+import { accessPages } from './access.js';
 import { sectionTitle } from './model.js';
 
 const LOGO_BOX = { x: 378.276, y: 42, w: 175, h: 44.144 };
@@ -138,10 +139,29 @@ function coverBody(project, ts) {
 
 /* ---------- Inhaltsverzeichnis ---------- */
 
+const TOC_TOP = 150;
+const TOC_BOTTOM = 770;
+
+/** Verzeichnis auf Seiten verteilt: [[eintrag, …], …] (Unterpunkte bleiben beim Hauptpunkt). */
+function tocChunks(entries) {
+  const pages = [[]];
+  let y = TOC_TOP;
+  for (const e of entries) {
+    const h = e.sub ? 18 : 24;
+    if (y + h > TOC_BOTTOM && pages[pages.length - 1].length) {
+      pages.push([]);
+      y = TOC_TOP;
+    }
+    pages[pages.length - 1].push(e);
+    y += h;
+  }
+  return pages;
+}
+
 function tocBody(ts, entries) {
   let s = '';
   const hits = [];
-  let y = 150;
+  let y = TOC_TOP;
   for (const e of entries) {
     const size = e.sub ? 9.5 : 10.5;
     const x = e.sub ? 60 : PAGE.left;
@@ -207,18 +227,52 @@ export function renderDocument(project) {
           tocSub: i === 0 ? ts.label('wiringTerminals') : null,
         }),
       );
+    } else if (section.type === 'access') {
+      const title = ts.inline(section.title) || ts.label('access');
+      const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
+      accessPages(section, ts).forEach((p, i) =>
+        pages.push({
+          section: section.id,
+          kind: 'access',
+          title,
+          subtitle,
+          make: () => p,
+          toc: i === 0 ? { title, id: section.id, plain: true } : null,
+        }),
+      );
     }
   }
 
-  // Inhaltsverzeichnis: alle Abschnitte nach Deckblatt und Verzeichnis
-  const entries = [];
-  pages.forEach((p, i) => {
-    if (p.toc) {
-      entries.push({ ...p.toc, page: i + 1 });
-      entries.push({ title: ts.label('wiringOverview'), page: i + 1, sub: true });
-    } else if (p.tocSub) entries.push({ title: p.tocSub, page: i + 1, sub: true });
-  });
-  for (const i of tocAt) pages[i].make = () => tocBody(ts, entries);
+  // Inhaltsverzeichnis: alle Abschnitte; braucht es mehrere Seiten, verschieben sich die
+  // Seitenzahlen danach – deshalb so lange neu zählen, bis die Zahl der Verzeichnisseiten passt
+  const collect = () => {
+    const out = [];
+    pages.forEach((p, i) => {
+      if (p.toc) {
+        out.push({ ...p.toc, page: i + 1 });
+        if (!p.toc.plain) out.push({ title: ts.label('wiringOverview'), page: i + 1, sub: true });
+      } else if (p.tocSub) out.push({ title: p.tocSub, page: i + 1, sub: true });
+    });
+    return out;
+  };
+  for (let round = 0; round < 4 && tocAt.length; round++) {
+    const needed = tocChunks(collect()).length;
+    const have = pages.filter((p) => p.kind === 'toc' && p.section === pages[tocAt[0]].section).length;
+    if (needed === have) break;
+    const first = tocAt[0];
+    if (needed > have) pages.splice(first + have, 0, ...Array.from({ length: needed - have }, () => ({ ...pages[first], make: null })));
+    else pages.splice(first + needed, have - needed);
+  }
+  if (tocAt.length) {
+    const chunks = tocChunks(collect());
+    let k = 0;
+    pages.forEach((p) => {
+      if (p.kind === 'toc') {
+        const chunk = chunks[Math.min(k++, chunks.length - 1)] || [];
+        p.make = () => tocBody(ts, chunk);
+      }
+    });
+  }
 
   const total = pages.length;
   return {

@@ -253,14 +253,17 @@ function start() {
     // Renderer abgestürzt: Der Dokumentzustand ist verloren, Speichern ist nicht mehr möglich.
     if (rendererGone) return true;
     let dirty = docState.dirty;
+    let name = docState.name;
     try {
-      dirty = !!(await command('queryDirty', { wait: true, timeout: 5000 }));
+      const reply = await command('queryDirty', { wait: true, timeout: 5000 });
+      dirty = !!(reply && (reply === true || reply.dirty));
+      if (reply && typeof reply.name === 'string' && reply.name) name = reply.name;
     } catch {}
     if (!dirty) return true;
     const { response } = await dialog.showMessageBox(win, {
       type: 'warning',
       title: APP_NAME,
-      message: `Möchten Sie die Änderungen an „${docState.name || 'Dokument'}“ speichern?`,
+      message: `Möchten Sie die Änderungen an „${name || 'Dokument'}“ speichern?`,
       detail: 'Ihre Änderungen gehen verloren, wenn Sie sie nicht speichern.',
       buttons: ['Speichern', 'Nicht speichern', 'Abbrechen'],
       defaultId: 0,
@@ -270,7 +273,7 @@ function start() {
     if (response === 2) return false;
     if (response === 1) return true;
     try {
-      return (await command('save', { wait: true })) === true;
+      return (await command('saveDocument', { wait: true })) === true;
     } catch {
       return false;
     }

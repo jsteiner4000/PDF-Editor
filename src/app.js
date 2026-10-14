@@ -165,7 +165,7 @@ export class App {
     on('bFile', 'click', (n) => this.fileMenu(n.currentTarget));
     on('bClose', 'click', (ev) => {
       ev.stopPropagation();
-      this.close();
+      this.closeDocument();
     });
     on('tHome', 'click', () => this.showStart());
     on('prjTab', 'click', () => this.showStudio());
@@ -253,6 +253,8 @@ export class App {
       this.detail.schedule();
     });
     window.addEventListener('keydown', (ev) => this.onKey(ev));
+    // Entwurf von „Dokumentation erstellen“ beim Verlassen sofort sichern
+    window.addEventListener('pagehide', () => this.studio.flush());
     window.addEventListener('beforeunload', (n) => {
       if (this.session && this.session.dirty) {
         n.preventDefault();
@@ -599,8 +601,13 @@ export class App {
     this.session = null;
     this.file = null;
   }
+  /** Schließen (Menü): was gerade sichtbar ist – Dokumentation oder PDF. */
   async close() {
     if (this.view === 'studio') return this.studio.close();
+    return this.closeDocument();
+  }
+  /** Die geöffnete PDF schließen (Rückfrage bei Änderungen). */
+  async closeDocument() {
     if (this.session) {
       await this.edit.finishEdit();
       if (await this.confirmDiscard()) {
@@ -823,8 +830,13 @@ export class App {
     if (this.strippedNote) toast('Aktive Inhalte entfernt: ' + this.strippedNote + '.', '', 6000);
     this.strippedNote = null;
   }
+  /** Speichern (Schaltfläche, Strg+S, Menü): in „Dokumentation erstellen“ heißt das PDF erstellen. */
   async save() {
     if (this.view === 'studio') return this.studio.exportPdf();
+    return this.saveDocument();
+  }
+  /** Die geöffnete PDF speichern – unabhängig vom sichtbaren Bereich (Rückfrage beim Beenden). */
+  async saveDocument() {
     if (!this.session) return false;
     if (!this.file.handle) return this.saveAs();
     try {

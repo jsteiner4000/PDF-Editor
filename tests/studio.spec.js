@@ -161,3 +161,140 @@ test('PDF erstellen: Projekt eingebettet, beim Öffnen weiterbearbeiten', async 
     await context.close();
   }
 });
+
+test('Zugangsdaten: Passwörter je PDF ein- oder ausgeblendet – ausgeblendet auch nicht eingebettet', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.exposeFunction('__pdfixMakePdf', async (html) => {
+      const printer = await context.newPage();
+      try {
+        await printer.setContent(html);
+        return Buffer.from(await printer.pdf({ preferCSSPageSize: true, printBackground: true })).toString('base64');
+      } finally {
+        await printer.close();
+      }
+    });
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Zugangsdaten$/ }) }).click();
+    await page.locator('.rb[data-act="device"]').click();
+    await page.locator('#sdIBody input').first().fill('Rekorder (NVR)');
+    const field = (label) => page.locator('.sd-f', { hasText: label }).locator('input').first();
+    await field('IP-Adresse').fill('192.168.10.20');
+    await field('Benutzer').fill('admin');
+    await field('Passwort').fill('Geheim#2026');
+    await expect(page.locator('#studio .sd-page').nth(3)).toContainText('192.168.10.20');
+    await expect(page.locator('#studio .sd-page').nth(3)).not.toContainText('Geheim#2026');
+
+    const build = (show) =>
+      page.evaluate(async (show) => {
+        const bytes = await window.pdfEditor.studio.buildPdf(show);
+        let s = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+        return s;
+      }, show);
+    const hidden = Buffer.from(await build(false), 'latin1');
+    const shown = Buffer.from(await build(true), 'latin1');
+    const textOf = async (bytes) => (await extractText(bytes)).join('\n');
+    expect(await textOf(hidden)).not.toContain('Geheim#2026');
+    expect(await textOf(hidden)).toContain('Passwörter und Schlüssel sind in dieser Fassung ausgeblendet.');
+    expect(await textOf(shown)).toContain('Geheim#2026');
+    // eingebettetes Projekt: ohne Passwort, wenn ausgeblendet
+    const project = async (bytes) => {
+      const doc = await PDFDocument.load(bytes);
+      const stream = doc.context.lookup(doc.catalog.get(PDFName.of('PDFixProject')));
+      const { decodePDFRawStream } = await import('pdf-lib');
+      return JSON.parse(new TextDecoder().decode(decodePDFRawStream(stream).decode()));
+    };
+    const access = (p) => p.sections.find((s) => s.type === 'access').devices[0];
+    expect(access(await project(hidden)).password).toBe('');
+    expect(access(await project(shown)).password).toBe('Geheim#2026');
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Seitenumbruch: langes Inhaltsverzeichnis und überlanger Hinweis bleiben über der Fußzeile', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    const result = await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      st.change('Test', (p) => {
+        const wiring = p.sections.find((s) => s.type === 'wiring');
+        wiring.hints.push({ id: 'long', cat: 'sig', title: { de: 'Langer Hinweis', en: '' }, text: { de: 'Zeile mit etwas Text. '.repeat(600), en: '' } });
+        for (let i = 0; i < 14; i++) p.sections.push({ ...JSON.parse(JSON.stringify(wiring)), id: 'w' + i, hints: [] });
+      });
+      st.renderPages();
+      const doc = st.doc;
+      const bottoms = doc.pages.map((pg) => Math.max(0, ...pg.hits.filter((h) => h.kind !== 'legend').map((h) => h.rect[1] + h.rect[3])));
+      const toc = doc.pages.filter((pg) => pg.kind === 'toc').length;
+      const hintParts = doc.pages.flatMap((pg) => pg.hits.filter((h) => h.id === 'long')).length;
+      return { pages: doc.pages.length, toc, maxBottom: Math.max(...bottoms), hintParts };
+    });
+    expect(result.toc).toBe(2);
+    expect(result.hintParts).toBeGreaterThan(1);
+    expect(result.maxBottom).toBeLessThanOrEqual(770);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Sicherheit: präparierte Projektdaten in einer PDF gelangen nicht als HTML in die Oberfläche', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    const doc = await PDFDocument.create();
+    doc.addPage([595, 842]);
+    const evil = '"><img src=x onerror="window.__pwned=1">';
+    const project = {
+      id: evil,
+      lang: '"><b>x</b>',
+      font: 'barlow',
+      title: { de: 'Test', en: '' },
+      company: { name: 'Firma', logo: 'l1' },
+      images: { l1: { data: 'javascript:alert(1)', w: 10, h: 10 } },
+      meta: {},
+      sections: [{ id: evil, type: 'wiring', boxes: [{ id: evil, side: 'top', title: { de: evil } }], hub: { pins: [] } }],
+    };
+    const stream = doc.context.flateStream(new TextEncoder().encode(JSON.stringify(project)), { Type: 'PDFixProject' });
+    doc.catalog.set(PDFName.of('PDFixProject'), doc.context.register(stream));
+    const bytes = await doc.save();
+    await page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      await window.pdfEditor.openBytes(bytes, 'evil.pdf', null);
+    }, Buffer.from(bytes).toString('base64'));
+    await page.locator('#sdOffer .btn.primary').click();
+    await page.locator('#showDialog, .dlg .btn.primary').first().click(); // „verändert“-Rückfrage bestätigen
+    await expect(page.locator('#studio')).toBeVisible();
+    await page.waitForTimeout(300);
+    const state = await page.evaluate(() => {
+      const p = window.pdfEditor.studio.project;
+      return {
+        pwned: !!window.__pwned,
+        imgs: document.querySelectorAll('#studio img[src="x"]').length,
+        id: p.id,
+        sectionId: p.sections[0].id,
+        side: p.sections[0].boxes[0].side,
+        lang: p.lang,
+        logo: p.company.logo,
+      };
+    });
+    expect(state.pwned).toBe(false);
+    expect(state.imgs).toBe(0);
+    expect(state.id).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(state.sectionId).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(state.side).toBe('left');
+    expect(state.lang).toBe('de');
+    expect(state.logo).toBe(null);
+    // Box-Titel erscheint als Text, nicht als Element
+    await expect(page.locator('#studio .sd-page').first()).toContainText('<img src=x');
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
