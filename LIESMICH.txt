@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.6.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.7.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -269,6 +269,12 @@ nachgezeichnet.
   (dafür Bild ab/Bild auf). Beim Schreiben in einem Text oder Eingabefeld
   bleibt sie ein Leerzeichen; auf einer ausgewählten Schaltfläche oder einem
   Menüeintrag löst sie diesen wie gewohnt aus.
+
+
+DARSTELLUNG
+-----------
+Menü „Datei“ > „Einstellungen …“ (Strg+,): Hell, Dunkel oder „Wie System“
+(folgt der Windows-Einstellung). Dokumentseiten bleiben immer weiß wie Papier.
 
 
 SPEICHERN

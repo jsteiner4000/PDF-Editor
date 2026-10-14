@@ -17,6 +17,7 @@
  */
 
 import { toast } from '../ui/dialogs.js';
+import { readTheme } from '../ui/theme.js';
 
 const desktop = typeof window !== 'undefined' ? window.pdfEditorDesktop : undefined;
 
@@ -125,6 +126,7 @@ export function notifyDocumentState() {
       name: project || (session && app.file ? app.file.name : ''),
       dirty: !project && !!(session && session.dirty),
       stripActive: !!app.stripActive,
+      theme: readTheme(),
     });
   }, 0);
 }
@@ -149,6 +151,7 @@ const COMMANDS = {
   properties: () => app.session && app.props(),
   closeDocument: () => app.close(),
   stripActive: () => app.toggleStripActive(),
+  settings: () => app.settings(),
   undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),
   zoomIn: () => zoom(() => app.zoomStep(1), () => app.studio.zoomStep(1)),

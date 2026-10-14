@@ -45,6 +45,79 @@
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --r: 8px;
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  /* Akzent als Schrift/Symbol auf Flächen (im Dunkelmodus heller als die Akzentfläche) */
+  --acc-ink: #1f66e5;
+  --chip: #1b1e45;
+  --panel-glass: rgba(255, 255, 255, 0.96);
+  --hover-soft: rgba(255, 255, 255, 0.55);
+  --warn-ink: #6b4000;
+  --warn-line: #f0c77a;
+  --info-ink: #1b2f86;
+  --toast: #1b2129;
+  --scrim: rgba(16, 24, 40, 0.32);
+  --busy: rgba(244, 245, 247, 0.55);
+  --scroll: #c7ccd4;
+  --scroll-h: #a9b0ba;
+  --page-ring: rgba(16, 24, 40, 0.06);
+}
+/* Dunkelmodus: dieselbe kühle Grau-Familie, abgedunkelt. Dokumentseiten bleiben weiß wie Papier. */
+:root[data-theme='dark'] {
+  --brand-ink: #e3e6ff;
+  --ink: #e6e9ee;
+  --ink2: #b8c0cb;
+  --ink3: #8e98a6;
+  --line: #2b313a;
+  --line2: #3b434e;
+  --bg: #15181d;
+  --canvas: #0e1014;
+  --panel: #1d2128;
+  --hover: #272c35;
+  --press: #313843;
+  --acc: #2f6fe8;
+  --acc-h: #3a78ee;
+  --acc-soft: #1c2a44;
+  --acc-line: #3f63a6;
+  --acc-ink: #84adff;
+  --t1: #1b2a46;
+  --t1-ink: #8fb5ff;
+  --t2: #143130;
+  --t2-ink: #5fd6cf;
+  --t3: #3a1b2f;
+  --t3-ink: #ff8fcc;
+  --t4: #2b2046;
+  --t4-ink: #bb98ff;
+  --t5: #382d13;
+  --t5-ink: #efc25c;
+  --t6: #182a3e;
+  --t6-ink: #82b6ea;
+  --ok: #5fcf8e;
+  --ok-soft: #15301f;
+  --warn: #f0b04a;
+  --warn-soft: #382c13;
+  --err: #ff8075;
+  --err-soft: #3b1b19;
+  --sh1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --sh2: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --sh3: 0 18px 48px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --chip: #343a80;
+  --panel-glass: rgba(29, 33, 40, 0.95);
+  --hover-soft: rgba(255, 255, 255, 0.05);
+  --warn-ink: #f3cf8b;
+  --warn-line: #6b5322;
+  --info-ink: #aac6ff;
+  --toast: #2c333e;
+  --scrim: rgba(0, 0, 0, 0.55);
+  --busy: rgba(14, 16, 20, 0.6);
+  --scroll: #3e4652;
+  --scroll-h: #56606e;
+  --page-ring: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+/* bis das Skript die Darstellung gesetzt hat: kein heller Blitz bei dunklem System */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) body {
+    background: #15181d;
+  }
 }
 * {
   box-sizing: border-box;
@@ -91,7 +164,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 4px;
   color: var(--ink2);
-  background: #fff;
+  background: var(--panel);
 }
 
 /* ---------- App-Rahmen ---------- */
@@ -220,14 +293,14 @@ kbd {
 }
 .btn.outline {
   border-color: var(--line2);
-  background: #fff;
+  background: var(--panel);
 }
 .btn.outline:hover {
   background: var(--hover);
 }
 .btn.on {
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .btn .caret {
   margin-left: -2px;
@@ -373,14 +446,14 @@ kbd {
 }
 .rb.on {
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
   font-weight: 600;
 }
 .rb svg.i {
   color: var(--rb-ink, var(--ink2));
 }
 .rb.on svg.i {
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .rb .caret {
   margin-left: -3px;
@@ -543,7 +616,7 @@ kbd {
   height: 32px;
   border: 1px solid var(--line2);
   border-radius: 7px;
-  background: #fff;
+  background: var(--panel);
   padding: 0 9px;
   min-width: 0;
 }
@@ -570,7 +643,7 @@ select.fld {
   border: 1px solid var(--line2);
   border-radius: 7px;
   overflow: hidden;
-  background: #fff;
+  background: var(--panel);
 }
 .seg button {
   width: 34px;
@@ -590,7 +663,7 @@ select.fld {
 }
 .seg button.on {
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .seg button:disabled {
   opacity: 0.35;
@@ -602,7 +675,7 @@ select.fld {
   border: 1px solid var(--line2);
   border-radius: 7px;
   padding: 3px;
-  background: #fff;
+  background: var(--panel);
   cursor: pointer;
 }
 .color::-webkit-color-swatch-wrapper {
@@ -626,7 +699,7 @@ select.fld {
   justify-content: flex-start;
   height: 40px;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
   border-radius: 9px;
   margin-bottom: 6px;
 }
@@ -637,7 +710,7 @@ select.fld {
 .big.on {
   border-color: var(--acc);
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .note {
   border-radius: 9px;
@@ -648,17 +721,17 @@ select.fld {
 }
 .note.warn {
   background: var(--warn-soft);
-  color: #6b4000;
+  color: var(--warn-ink);
 }
 .note.info {
   background: var(--acc-soft);
-  color: #1b2f86;
+  color: var(--info-ink);
 }
 .note .btn {
   height: 28px;
   margin-top: 6px;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: var(--panel);
+  border: 1px solid var(--line2);
 }
 .kv {
   display: grid;
@@ -735,7 +808,7 @@ select.fld {
   position: relative;
   background: #fff;
   box-shadow:
-    0 0 0 1px rgba(16, 24, 40, 0.06),
+    0 0 0 1px var(--page-ring),
     var(--sh2);
   flex: none;
 }
@@ -1149,9 +1222,9 @@ select.fld {
 .te-warn {
   position: absolute;
   z-index: 9;
-  background: #fff;
-  border: 1px solid #f0c77a;
-  color: #6b4000;
+  background: var(--panel);
+  border: 1px solid var(--warn-line);
+  color: var(--warn-ink);
   border-radius: 8px;
   box-shadow: var(--sh2);
   padding: 7px 10px;
@@ -1163,7 +1236,7 @@ select.fld {
   height: 26px;
   margin-top: 5px;
   border: 1px solid var(--line2);
-  background: #fff;
+  background: var(--panel);
 }
 
 /* ---------- Schwebende Seitennavigation ---------- */
@@ -1175,7 +1248,7 @@ select.fld {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.96);
+  background: var(--panel-glass);
   backdrop-filter: blur(6px);
   border: 1px solid var(--line);
   border-radius: 11px;
@@ -1292,7 +1365,7 @@ body.editing #nav {
   box-shadow: 0 0 0 2px var(--acc);
 }
 .th.cur .tn {
-  color: var(--acc);
+  color: var(--acc-ink);
   font-weight: 600;
 }
 
@@ -1362,7 +1435,7 @@ body.editing #nav {
   position: relative;
 }
 .ocard:hover {
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--hover-soft);
 }
 .ocard .tc {
   background: #fff;
@@ -1509,7 +1582,7 @@ body.editing #nav {
 }
 .hs-item.on {
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--acc);
 }
@@ -1619,7 +1692,7 @@ body.editing #nav {
   bottom: 8px;
   padding: 2px 6px;
   border-radius: 4px;
-  background: var(--brand-ink);
+  background: var(--chip);
   color: #fff;
   font-size: 10.5px;
   font-weight: 600;
@@ -1650,7 +1723,7 @@ body.editing #nav {
   display: grid;
   place-items: center;
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .drop.over .tpl-thumb {
   border-color: var(--acc);
@@ -1879,7 +1952,7 @@ button.feat:focus-visible {
 .menu {
   position: fixed;
   z-index: 100;
-  background: #fff;
+  background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--sh3);
@@ -1943,14 +2016,14 @@ button.feat:focus-visible {
 .backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(16, 24, 40, 0.32);
+  background: var(--scrim);
   z-index: 200;
   display: grid;
   place-items: center;
   animation: fade 0.12s;
 }
 .dlg {
-  background: #fff;
+  background: var(--panel);
   border-radius: 14px;
   box-shadow: var(--sh3);
   width: min(460px, 92vw);
@@ -2002,6 +2075,108 @@ button.feat:focus-visible {
   align-items: center;
   margin: 8px 0;
 }
+/* ---------- Einstellungen ---------- */
+.set-h {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.set-h ~ .set-h {
+  margin-top: 18px;
+}
+.themes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.theme {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  padding: 8px 8px 9px;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink2);
+  font-weight: 550;
+  cursor: pointer;
+  transition:
+    background 0.15s var(--ease),
+    border-color 0.15s var(--ease);
+}
+.theme:hover {
+  background: var(--hover);
+}
+.theme:active {
+  transform: translateY(1px);
+}
+.theme[aria-checked='true'] {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 1px var(--acc);
+  background: var(--acc-soft);
+  color: var(--ink);
+}
+.theme:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+/* Vorschau: Kopfzeile mit Akzent, darunter eine weiße Seite */
+.shot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f2f3f5;
+  box-shadow: inset 0 0 0 1px rgba(31, 35, 41, 0.12);
+}
+.shot i {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 22%;
+  background: #fff;
+  border-bottom: 1px solid #e2e5e9;
+}
+.shot i::after {
+  content: '';
+  position: absolute;
+  right: 8%;
+  top: 28%;
+  width: 20%;
+  height: 44%;
+  border-radius: 2px;
+  background: #1f66e5;
+}
+.shot b {
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  top: 34%;
+  bottom: 0;
+  border-radius: 2px 2px 0 0;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(31, 35, 41, 0.22);
+}
+.shot.dark {
+  background: #0e1014;
+}
+.shot.dark i {
+  background: #1d2128;
+  border-color: #2b313a;
+}
+.shot.system {
+  background: linear-gradient(90deg, #f2f3f5 50%, #0e1014 50%);
+}
+.shot.system i {
+  background: linear-gradient(90deg, #fff 50%, #1d2128 50%);
+  border-bottom: 0;
+}
+.set-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--ink3);
+}
 @keyframes fade {
   from {
     opacity: 0;
@@ -2026,7 +2201,7 @@ button.feat:focus-visible {
   pointer-events: none;
 }
 .toast {
-  background: #1b2129;
+  background: var(--toast);
   color: #fff;
   padding: 9px 14px;
   border-radius: 9px;
@@ -2049,7 +2224,7 @@ button.feat:focus-visible {
   z-index: 400;
   display: grid;
   place-items: center;
-  background: rgba(244, 245, 247, 0.55);
+  background: var(--busy);
 }
 .spin {
   width: 30px;
@@ -2069,7 +2244,7 @@ button.feat:focus-visible {
   border-radius: 10px;
   padding: 10px 11px;
   margin-bottom: 8px;
-  background: #fff;
+  background: var(--panel);
 }
 .fontrow .fn {
   font-weight: 600;
@@ -2100,7 +2275,7 @@ button.feat:focus-visible {
 }
 .badge.part {
   background: var(--acc-soft);
-  color: var(--acc);
+  color: var(--acc-ink);
 }
 .badge.warn {
   background: var(--warn-soft);
@@ -2111,7 +2286,7 @@ button.feat:focus-visible {
   padding: 0 8px;
   font-size: 12px;
   border: 1px solid var(--line2);
-  background: #fff;
+  background: var(--panel);
   margin-top: 4px;
 }
 ::-webkit-scrollbar {
@@ -2119,13 +2294,13 @@ button.feat:focus-visible {
   height: 12px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c7ccd4;
+  background: var(--scroll);
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a9b0ba;
+  background: var(--scroll-h);
   background-clip: content-box;
   border: 3px solid transparent;
 }
@@ -2291,7 +2466,7 @@ select.ff:focus {
   box-sizing: border-box;
   border: 1.5px solid var(--acc);
   border-radius: 2px;
-  background: #fff;
+  background: var(--panel);
 }
 .fdh::before {
   content: '';
@@ -2389,7 +2564,7 @@ select.ff:focus {
   padding: 2px;
   border: 1px solid var(--line2);
   border-radius: 6px;
-  background: #fff;
+  background: var(--panel);
   cursor: pointer;
 }
 .fd-color input[type='color']:disabled {

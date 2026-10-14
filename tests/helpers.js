@@ -175,7 +175,7 @@ async function inkHash(page, png) {
 const LEGACY_LOOK = `:root{
   --ink:#1b2129; --ink2:#4c5561; --ink3:#7b8490; --line:#e3e6ea; --line2:#d3d7dd;
   --bg:#f4f5f7; --canvas:#e9ebef; --hover:#f1f3f6; --press:#e7eaef;
-  --acc:#213fbf; --acc-h:#1a33a0; --acc-soft:#e9edff; --acc-line:#8fa2f2;
+  --acc:#213fbf; --acc-h:#1a33a0; --acc-soft:#e9edff; --acc-line:#8fa2f2; --acc-ink:#213fbf;
   --t1:#e9edff; --t1-ink:#213fbf; --t2:#e3f4ef; --t2-ink:#12715a; --t3:#fdeee6; --t3-ink:#b44a15;
   --t4:#f1ebfd; --t4-ink:#6a3dc4; --t5:#fff4d6; --t5-ink:#8a6100; --t6:#e8f1fb; --t6-ink:#1f5f9f;
   --sh1:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.08);

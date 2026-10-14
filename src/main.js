@@ -6,6 +6,9 @@ import { warmUpRenderer } from './render/pdf-renderer.js';
 import { installDesktopBridge } from './platform/desktop-bridge.js';
 import { StreamTooLargeError } from './pdf/pdf-objects.js';
 import { toast } from './ui/dialogs.js';
+import { applyTheme } from './ui/theme.js';
+
+applyTheme();
 
 window.addEventListener('DOMContentLoaded', () => {
   try {

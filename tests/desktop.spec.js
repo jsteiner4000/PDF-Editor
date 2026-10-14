@@ -277,6 +277,14 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     await expect.poll(() => page.evaluate(() => window.pdfEditor.stripActive)).toBe(true);
     await expect.poll(async () => (await stripItem()).checked).toBe(true);
 
+    // Einstellungen im nativen Menü: Dunkel gilt auch für Titelleiste und Systemdialoge
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('settings').click());
+    await page.locator('.dlg .theme[data-v="dark"]').click();
+    await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark');
+    await page.locator('.dlg .theme[data-v="system"]').click();
+    await expect.poll(() => app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('system');
+    await page.locator('.dlg .btn.primary').click();
+
     // Schreibgeschützte Datei: klare Meldung ohne Pfad, Datei unverändert
     chmodSync(readonly, 0o444);
     const before = readFileSync(readonly);

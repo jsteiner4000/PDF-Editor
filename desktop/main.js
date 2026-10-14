@@ -11,7 +11,7 @@
  * blob:-URL), alle Berechtigungsanfragen abgelehnt, IPC-Absender werden geprüft, kein
  * Auto-Update, keine Telemetrie.
  */
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -493,6 +493,11 @@ function start() {
       updateTitle();
       const strip = menu && menu.getMenuItemById('stripActive');
       if (strip) strip.checked = !!state.stripActive;
+      // Darstellung der App auch für Titelleiste, Menü und Systemdialoge
+      if (['light', 'dark', 'system'].includes(state.theme) && nativeTheme.themeSource !== state.theme) {
+        nativeTheme.themeSource = state.theme;
+        if (win) win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#15181d' : '#f2f3f5');
+      }
     });
     ipcMain.on('app:ready', (event) => {
       if (!fromMainFrame(event)) return;

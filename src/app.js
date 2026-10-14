@@ -22,6 +22,7 @@ import { OrganizeMode } from './ui/organize-mode.js';
 import { FontsPanel } from './ui/fonts-panel.js';
 import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
+import { THEMES, readTheme, setTheme } from './ui/theme.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
 import { STUDIO_TEMPLATES, Studio, deleteDraft, listDrafts, templatePreview } from './studio/studio.js';
 
@@ -472,6 +473,7 @@ export class App {
         },
         { label: 'Im Browser anzeigen / Drucken', icon: 'print', disabled: !hasDoc, run: () => this.print() },
         { label: 'Dokumenteigenschaften', icon: 'info', disabled: !hasDoc, run: () => this.props() },
+        { label: 'Einstellungen …', icon: 'gear', key: 'Strg+,', run: () => this.settings() },
         '-',
         { label: 'Schließen', icon: 'close', disabled: !hasDoc, run: () => this.close() },
       ],
@@ -796,6 +798,43 @@ export class App {
       'warn',
       8000,
     );
+  }
+  /** Einstellungen: Darstellung (Hell, Dunkel, wie System) und Speichern. Änderungen gelten sofort. */
+  async settings() {
+    if (document.querySelector('.dlg .set')) return;
+    const current = readTheme();
+    const body = htmlToElement(`<div class="set">
+  <div class="set-h" id="setThemeH">Darstellung</div>
+  <div class="themes" role="radiogroup" aria-labelledby="setThemeH">${THEMES.map(
+    ([value, label]) =>
+      `<button type="button" class="theme" role="radio" data-v="${value}" aria-checked="${value === current}" tabindex="${value === current ? 0 : -1}"><span class="shot ${value}" aria-hidden="true"><i></i><b></b></span><span>${label}</span></button>`,
+  ).join('')}</div>
+  <p class="set-note">Dokumentseiten bleiben immer weiß – wie auf Papier.</p>
+  <div class="set-h">Speichern</div>
+  <label class="ck"><input type="checkbox" id="setStrip"${this.stripActive ? ' checked' : ''}><span>Aktive Inhalte beim Speichern entfernen<small>Skripte, Programmstarts und Anhänge gelangen so nicht in weitergegebene Dateien.</small></span></label>
+</div>`);
+    const options = [...body.querySelectorAll('.theme')];
+    const pick = (button) => {
+      for (const b of options) {
+        b.setAttribute('aria-checked', String(b === button));
+        b.tabIndex = b === button ? 0 : -1;
+      }
+      setTheme(button.dataset.v);
+      notifyDocumentState();
+    };
+    for (const b of options) {
+      b.addEventListener('click', () => pick(b));
+      b.addEventListener('keydown', (ev) => {
+        const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[ev.key];
+        if (!step) return;
+        ev.preventDefault();
+        const next = options[(options.indexOf(b) + step + options.length) % options.length];
+        next.focus();
+        pick(next);
+      });
+    }
+    body.querySelector('#setStrip').addEventListener('change', (ev) => this.toggleStripActive(ev.target.checked));
+    await showDialog({ title: 'Einstellungen', icon: 'gear', body, buttons: [{ label: 'Fertig', primary: true, value: true }] });
   }
   /**
    * Schalter „Aktive Inhalte beim Speichern entfernen“: JavaScript, Programmstarts und Anhänge
@@ -1638,6 +1677,11 @@ export class App {
     if (mod && key === 'o') {
       ev.preventDefault();
       this.openDialog();
+      return;
+    }
+    if (mod && key === ',') {
+      ev.preventDefault();
+      this.settings();
       return;
     }
     if (this.view === 'studio') {

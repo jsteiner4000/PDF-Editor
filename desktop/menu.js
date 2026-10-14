@@ -43,6 +43,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         cmd('stripActive', 'Aktive Inhalte beim Speichern entfernen', { type: 'checkbox', checked: true }),
         docItem('print', 'Anzeigen und drucken …', shown('CmdOrCtrl+P')),
         docItem('properties', 'Dokumenteigenschaften'),
+        cmd('settings', 'Einstellungen …', shown('CmdOrCtrl+,')),
         { type: 'separator' },
         docItem('closeDocument', 'Dokument schließen'),
         { type: 'separator' },
