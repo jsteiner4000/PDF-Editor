@@ -12,8 +12,10 @@ import { wrap } from './measure.js';
 
 export const SITE_TOP = 116;
 const BOTTOM = 770;
-const LEGEND_COL = 170;
 const LEGEND_ROW = 16;
+/** Feste Legendenhöhe (4 Zeilen): die Planfläche bleibt immer gleich groß, Symbole behalten ihre Stelle. */
+const LEGEND_ROWS = 4;
+const LEGEND_H = 24 + LEGEND_ROWS * LEGEND_ROW;
 
 /** Bildzeichen (24 × 24, weiße Linien auf der Farbfläche). */
 const GLYPHS = {
@@ -95,6 +97,14 @@ function backgroundSvg(bg, images, area) {
   );
 }
 
+/** Text auf `room` pt kürzen („…“). */
+function ellipsize(ts, value, size, room, weight = 400) {
+  if (ts.width(value, size, weight) <= room) return value;
+  let v = value;
+  while (v.length > 1 && ts.width(v + '…', size, weight) > room) v = v.slice(0, -1);
+  return v.trimEnd() + '…';
+}
+
 /** Verwendete Symbolarten für die Legende: [{ info, count }] in Reihenfolge des ersten Auftretens. */
 function usedKinds(site) {
   const map = new Map();
@@ -114,10 +124,7 @@ function usedKinds(site) {
  */
 export function sitePages(section, ts, images) {
   const kinds = usedKinds(section);
-  const cols = Math.max(1, Math.floor((PAGE.right - PAGE.left) / LEGEND_COL));
-  const legendRows = Math.ceil(kinds.length / cols);
-  const legendH = kinds.length ? 24 + legendRows * LEGEND_ROW : 0;
-  const area = { x: PAGE.left, y: SITE_TOP, w: PAGE.right - PAGE.left, h: BOTTOM - SITE_TOP - legendH - (legendH ? 8 : 0) };
+  const area = { x: PAGE.left, y: SITE_TOP, w: PAGE.right - PAGE.left, h: BOTTOM - SITE_TOP - LEGEND_H - 8 };
   const labels = symbolLabels(section);
 
   let svg = rect(area.x, area.y, area.w, area.h, { fill: '#fff' }) + backgroundSvg(section.bg, images, area);
@@ -149,18 +156,28 @@ export function sitePages(section, ts, images) {
     hits.push({ kind: 'sym', id: sym.id, rect: [x - r - 2, y - r - 2, 2 * r + 4, 2 * r + 4] });
     marks.push({ id: sym.id, x, y, r, tip, fov: !!tip });
   }
-  svg += cones + dots + names;
+  // Erfassungsbereiche enden am Planrand
+  if (cones)
+    svg += `<svg x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}" viewBox="${n(area.x)} ${n(area.y)} ${n(area.w)} ${n(area.h)}" overflow="hidden">${cones}</svg>`;
+  svg += dots + names;
 
   // Legende der verwendeten Symbole
   if (kinds.length) {
-    const top = BOTTOM - legendH + 12;
+    const cols = Math.min(6, Math.max(3, Math.ceil(kinds.length / LEGEND_ROWS)));
+    const colW = (area.w + 10) / cols;
+    const shown = kinds.slice(0, cols * LEGEND_ROWS);
+    const top = area.y + area.h + 8 + 12;
     svg += text(PAGE.left, top, ts.label('legend'), { size: 9.5, weight: 700 });
-    kinds.forEach(({ info, count }, i) => {
-      const x = PAGE.left + (i % cols) * LEGEND_COL;
+    shown.forEach(({ info, count }, i) => {
+      const x = PAGE.left + (i % cols) * colW;
       const y = top + 16 + Math.floor(i / cols) * LEGEND_ROW;
+      const tail = `  (${count})`;
+      const head = ellipsize(ts, `${info.code}  ${ts.inline(info.name)}`, 8.5, colW - 17 - 8 - ts.width(tail, 8.5, 400));
       svg += symbolSvg(info, x + 6, y - 3, 6, images);
-      svg += text(x + 17, y, `${info.code}  ${ts.inline(info.name)}  (${count})`, { size: 8.5, fill: C.body });
+      svg += text(x + 17, y, head + tail, { size: 8.5, fill: C.body });
     });
+    if (shown.length < kinds.length)
+      svg += text(PAGE.right, top, `+ ${kinds.length - shown.length}`, { size: 8.5, fill: C.muted, anchor: 'end' });
   }
   const pages = [{ kind: 'plan', svg, hits, site: { area, symbols: marks } }];
 

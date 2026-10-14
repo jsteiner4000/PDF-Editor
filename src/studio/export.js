@@ -10,7 +10,7 @@
 import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFString, decodePDFRawStream } from 'pdf-lib';
 import { assertDecodedSize } from '../pdf/stream-limit.js';
 import { barlowCss } from './fonts.js';
-import { MODEL_VERSION, normalizeProject } from './model.js';
+import { MODEL_VERSION, normalizeProject, pruneImages } from './model.js';
 import { PAGE } from './svg.js';
 
 const KEY = 'PDFixProject';
@@ -73,14 +73,17 @@ export function contentFingerprint(doc) {
   return `${doc.getPageCount()}.${(h >>> 0).toString(36)}`;
 }
 
-/** Ohne Verweis verwendete Bilder entfernen (Logo und spätere Fotos bleiben). */
-function pruneImages(project) {
-  const used = new Set();
-  const text = JSON.stringify({ ...project, images: undefined });
-  for (const id of Object.keys(project.images || {})) if (text.includes(`"${id}"`)) used.add(id);
-  const images = {};
-  for (const id of used) images[id] = project.images[id];
-  return { ...project, images };
+/** Das Dokument ist für die Erzeugung oder späteres Weiterbearbeiten zu groß (viele große Fotos). */
+export class TooLargeError extends Error {
+  constructor() {
+    super('Dokument zu groß');
+    this.name = 'TooLargeError';
+  }
+}
+
+/** Druckfassung prüfen, bevor die aufwendige Erzeugung beginnt. */
+export function assertPrintable(html) {
+  if (html.length > MAX_PROJECT_BYTES) throw new TooLargeError();
 }
 
 /**
@@ -90,6 +93,7 @@ function pruneImages(project) {
 export async function embedProject(bytes, project, info) {
   const doc = await PDFDocument.load(bytes, { updateMetadata: false });
   const json = JSON.stringify(pruneImages(project));
+  if (json.length > MAX_PROJECT_BYTES) throw new TooLargeError();
   const ctx = doc.context;
   const stream = ctx.flateStream(new TextEncoder().encode(json), {
     Type: KEY,

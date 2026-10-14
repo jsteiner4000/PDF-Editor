@@ -32,7 +32,11 @@ export function photoPages(section, ts, project) {
       const caption = ts
         .runs(photo.caption)
         .flatMap((r) => ts.wrap(r.text, 8.8, cellW - 4, r.sec ? 400 : 400, r.sec).map((t) => ({ text: t, sec: r.sec })))
-        .slice(0, 3);
+        .slice(0, 4);
+      if (caption.length > 3) {
+        caption.length = 3;
+        caption[2] = { ...caption[2], text: caption[2].text.replace(/\s*\S?$/, '') + '…' };
+      }
       const link = photo.link && links.get(photo.link);
       const meta = [section.showDate && photo.date ? formatDate(photo.date, ts.lang) : '', link ? `${link.label} ${link.name}` : '']
         .filter(Boolean)

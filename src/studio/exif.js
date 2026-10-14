@@ -34,7 +34,7 @@ function entries(view, tiff, ifd, little) {
 
 function toIso(value) {
   const m = /^(\d{4}):(\d{2}):(\d{2})/.exec(value || '');
-  if (!m || m[1] === '0000' || m[2] === '00' || m[3] === '00') return '';
+  if (!m || m[1] === '0000' || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) return '';
   return `${m[1]}-${m[2]}-${m[3]}`;
 }
 
@@ -80,5 +80,8 @@ export async function photoDate(file) {
     const iso = exifDate(head);
     if (iso) return iso;
   } catch {}
-  return file.lastModified ? new Date(file.lastModified).toISOString().slice(0, 10) : '';
+  if (!file.lastModified) return '';
+  const d = new Date(file.lastModified);
+  const two = (v) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
 }

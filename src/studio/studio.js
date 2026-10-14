@@ -42,6 +42,7 @@ import {
   newWiring,
   withoutSecrets,
   normalizeProject,
+  pruneImages,
   sectionTitle,
   tx,
   uid,
@@ -54,7 +55,7 @@ import { photoDate } from './exif.js';
 import { PdfRenderer } from '../render/pdf-renderer.js';
 import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
 import { ensureBarlow } from './fonts.js';
-import { canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
+import { TooLargeError, assertPrintable, canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
 import { Inspector } from './inspector.js';
 
 export { deleteDraft, listDrafts };
@@ -222,6 +223,8 @@ export class Studio {
     this.snap = this.serialize();
     this.sel = sel || { kind: 'project' };
     this.zoom = null;
+    this.armed = null;
+    this.updateArmHint();
     if (project.font === 'barlow') await ensureBarlow().catch(() => {});
     this.mount();
     this.updateTab();
@@ -232,6 +235,8 @@ export class Studio {
 
   async close() {
     await this.flush();
+    this.armed = null;
+    this.updateArmHint();
     this.project = null;
     this.doc = null;
     if (this.root) $('#sdPages').innerHTML = '';
@@ -260,7 +265,7 @@ export class Studio {
     this.saveTimer = 0;
     if (!this.project) return;
     try {
-      await saveDraft(this.project, { name: documentLabel(this.project), sub: this.subtitle() });
+      await saveDraft(pruneImages(this.project), { name: documentLabel(this.project), sub: this.subtitle() });
     } catch (err) {
       console.warn('Entwurf nicht gesichert', err);
     }
@@ -408,6 +413,7 @@ export class Studio {
     this.snap = json;
     if (!this.selected()) this.sel = this.sel.section ? { kind: 'section', id: this.sel.section } : { kind: 'project' };
     this.project.modified = Date.now();
+    this.checkArmed();
     this.changed();
     this.inspector.render();
     this.app.renderRibbon();
@@ -887,6 +893,17 @@ export class Studio {
       copy.devices.forEach((d) => fresh(d, 'd'));
       copy.wifi.forEach((w) => fresh(w, 'w'));
       copy.remote.forEach((r) => fresh(r, 'r'));
+    } else if (copy.type === 'site') {
+      copy.custom.forEach((c) => fresh(c, 'u'));
+      copy.symbols.forEach((y) => {
+        const to = y.kind.startsWith('custom:') && remap.get(y.kind.slice(7));
+        fresh(y, 'y');
+        if (to) y.kind = 'custom:' + to;
+      });
+    } else if (copy.type === 'photos') {
+      copy.items.forEach((p) => fresh(p, 'f'));
+    } else if (copy.type === 'chapters') {
+      copy.blocks.forEach((b) => fresh(b, 'k'));
     }
     this.change(
       'Abschnitt dupliziert',
@@ -900,9 +917,37 @@ export class Studio {
     const s = this.section(id);
     if (!s) return;
     this.sel = { kind: 'project' };
-    this.change(`${sectionTitle(s)} entfernt`, (p) => (p.sections = p.sections.filter((x) => x.id !== id)), {
-      inspector: true,
-    });
+    this.change(
+      `${sectionTitle(s)} entfernt`,
+      (p) => {
+        p.sections = p.sections.filter((x) => x.id !== id);
+        if (s.type === 'site') this.dropLinks(new Set(s.symbols.map((y) => y.id)));
+      },
+      { inspector: true },
+    );
+    this.checkArmed();
+  }
+
+  /** Fotos, die auf entfernte Symbole verweisen, lösen die Verknüpfung (im selben Verlaufsschritt). */
+  dropLinks(ids) {
+    for (const sec of this.project.sections)
+      if (sec.type === 'photos') for (const p of sec.items) if (ids.has(p.link)) p.link = null;
+  }
+
+  /** Eigenes Symbol samt der damit gesetzten Symbole entfernen. */
+  removeCustom(site, id) {
+    const kind = 'custom:' + id;
+    this.change(
+      'Eigenes Symbol entfernt',
+      () => {
+        this.dropLinks(new Set(site.symbols.filter((y) => y.kind === kind).map((y) => y.id)));
+        site.symbols = site.symbols.filter((y) => y.kind !== kind);
+        site.custom = site.custom.filter((c) => c.id !== id);
+        if (this.sel.kind === 'sym' && !this.selected()) this.sel = { kind: 'section', id: site.id };
+      },
+      { inspector: true },
+    );
+    this.checkArmed();
   }
 
   addSectionMenu(anchor) {
@@ -1015,7 +1060,14 @@ export class Studio {
       this.change('Baustein gelöscht', () => (s.blocks = s.blocks.filter((b) => b.id !== id)), { inspector: true });
     } else if (kind === 'sym') {
       this.sel = { kind: 'section', id: section };
-      this.change('Symbol gelöscht', () => (s.symbols = s.symbols.filter((y) => y.id !== id)), { inspector: true });
+      this.change(
+        'Symbol gelöscht',
+        () => {
+          s.symbols = s.symbols.filter((y) => y.id !== id);
+          this.dropLinks(new Set([id]));
+        },
+        { inspector: true },
+      );
     } else if (kind === 'photo') {
       this.sel = { kind: 'section', id: section };
       this.change('Foto entfernt', () => (s.items = s.items.filter((p) => p.id !== id)), { inspector: true });
@@ -1303,14 +1355,30 @@ ${context}
   updateArmHint() {
     let chip = $('#sdArm');
     if (!this.armed) return chip && chip.remove();
-    const site = this.wiringSite();
-    const info = site && symbolInfo(site, this.armed);
+    const info = this.armedInfo();
     if (!chip) {
       chip = htmlToElement(`<div class="sd-armed" id="sdArm" role="status"><span></span><button class="btn ic" title="Beenden (Esc)">${icon('x', 's')}</button></div>`);
       chip.querySelector('button').addEventListener('click', () => this.arm(this.armed));
       $('.sd-center').appendChild(chip);
     }
     chip.querySelector('span').textContent = `Klicke in den Plan, um „${info ? tx(info.name) : 'Symbol'}“ zu setzen`;
+  }
+
+  /** Angaben zur Symbolart, die gerade gesetzt wird (null, wenn es sie nicht mehr gibt). */
+  armedInfo() {
+    if (!this.armed || !this.project) return null;
+    for (const s of this.project.sections) {
+      const info = s.type === 'site' && symbolInfo(s, this.armed);
+      if (info) return info;
+    }
+    return null;
+  }
+
+  /** Platzieren beenden, wenn die Symbolart verschwunden ist (z. B. nach Rückgängig). */
+  checkArmed() {
+    if (!this.armed || this.armedInfo()) return;
+    this.armed = null;
+    this.updateArmHint();
   }
 
   /** Lageplan-Abschnitt, in den gesetzt wird: der gewählte, sonst der erste. */
@@ -1321,8 +1389,9 @@ ${context}
   }
 
   placeSymbol(hit) {
-    const s = this.wiringSite();
-    if (!s || !this.armed) return;
+    const s = this.section(hit.page.section);
+    if (!s || s.type !== 'site' || !this.armed) return;
+    if (!symbolInfo(s, this.armed)) return toast('Dieses eigene Symbol gehört zu einem anderen Lageplan.', 'warn', 4000);
     const a = hit.page.site.area;
     const sym = newSymbol(this.armed, Math.max(0, Math.min(1, (hit.x - a.x) / a.w)), Math.max(0, Math.min(1, (hit.y - a.y) / a.h)));
     this.change('Symbol gesetzt', () => s.symbols.push(sym));
@@ -1758,6 +1827,7 @@ ${context}
     if (doc.skipped.length) toast(`Leere Abschnitte nicht aufgenommen: ${doc.skipped.join(', ')}`, '', 5000);
     const ts = typesetter(this.project);
     const html = printHtml({ pages: doc.pages, font: this.project.font, lang: ts.lang }, doc.label);
+    assertPrintable(html);
     const raw = await makePdf(html);
     return embedProject(raw, withoutSecrets(source), {
       title: doc.label,
@@ -1805,7 +1875,7 @@ ${context}
       return true;
     } catch (err) {
       console.error('PDF erstellen', err);
-      toast('Die PDF konnte nicht erstellt werden.', 'err', 6000);
+      toast(failMessage(err), 'err', 6000);
       return false;
     }
   }
@@ -1823,7 +1893,7 @@ ${context}
         if (!window.open(url, '_blank')) downloadBytes(bytes, this.fileName());
       } catch (err) {
         console.error('Drucken', err);
-        toast('Die PDF konnte nicht erstellt werden.', 'err', 6000);
+        toast(failMessage(err), 'err', 6000);
       }
       return;
     }
@@ -1861,6 +1931,10 @@ function nextPinName(pins) {
  * Bild lesen: Rastergrafiken werden auf höchstens `max` px verkleinert (als PNG bzw. mit `jpeg`
  * als JPEG auf weißem Grund, kleiner für Fotos und Pläne), SVG bleibt unverändert.
  */
+/** Meldung, wenn die PDF nicht erzeugt werden konnte. */
+const failMessage = (err) =>
+  err instanceof TooLargeError ? 'Das Dokument ist zu groß. Bitte weniger oder kleinere Fotos verwenden.' : 'Die PDF konnte nicht erstellt werden.';
+
 async function readImage(file, { max = 1600, jpeg = false } = {}) {
   if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
     const text = await file.text();

@@ -70,7 +70,7 @@ export const STRINGS = {
   version: T('Version', 'Version'),
   access: T('Zugangsdaten', 'Access data'),
   continued: T('Fortsetzung', 'continued'),
-  site: T('Lageplan', 'Site plan'),
+  sitePlan: T('Lageplan', 'Site plan'),
   deviceList: T('Geräteliste', 'Device list'),
   nr: T('Nr.', 'No.'),
   type: T('Typ', 'Type'),
@@ -293,15 +293,15 @@ export function symbolInfo(site, kind) {
   return custom ? { code: custom.code || 'ES', name: custom.name, color: '#475569', glyph: null, image: custom.image } : null;
 }
 
-/** Nummern der Symbole: Kennung → „K 1“ (je Art fortlaufend in der Reihenfolge der Liste). */
+/** Nummern der Symbole: Kennung → „K 1“ (je Kürzel fortlaufend in der Reihenfolge der Liste). */
 export function symbolLabels(site) {
   const count = new Map();
   const out = new Map();
   for (const sym of site.symbols) {
     const info = symbolInfo(site, sym.kind);
     if (!info) continue;
-    const n = (count.get(sym.kind) || 0) + 1;
-    count.set(sym.kind, n);
+    const n = (count.get(info.code) || 0) + 1;
+    count.set(info.code, n);
     out.set(sym.id, `${info.code} ${n}`);
   }
   return out;
@@ -335,6 +335,16 @@ export function projectSymbols(project, lang = 'de') {
     }
   }
   return out;
+}
+
+/** Ohne Verweis verwendete Bilder entfernen (z. B. ersetzte Hintergründe, entfernte Fotos). */
+export function pruneImages(project) {
+  const used = new Set();
+  const text = JSON.stringify({ ...project, images: undefined });
+  for (const id of Object.keys(project.images || {})) if (text.includes(`"${id}"`)) used.add(id);
+  const images = {};
+  for (const id of used) images[id] = project.images[id];
+  return { ...project, images };
 }
 
 /** Hat ein Abschnitt keinen Inhalt? (leere Abschnitte bleiben in der fertigen PDF weg) */
@@ -646,6 +656,7 @@ const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-5000
 const toT = (v) =>
   typeof v === 'string' ? T(str_(v), '') : v && typeof v === 'object' ? T(str_(v.de), str_(v.en)) : T('', '');
 const oneOf = (v, list, fallback) => (list.includes(v) ? v : fallback);
+const hasImg = (images, key) => typeof key === 'string' && Object.hasOwn(images, key);
 
 /**
  * Prüft ein geladenes Projekt (Entwurf oder aus einer PDF) und bringt es auf den aktuellen Stand:
@@ -663,7 +674,7 @@ export function normalizeProject(raw) {
     return out;
   };
   const base = newProject('wiring');
-  const images = {};
+  const images = Object.create(null);
   for (const [key, img] of Object.entries(raw.images && typeof raw.images === 'object' ? raw.images : {})) {
     if (!ID_RE.test(key) || !img || typeof img.data !== 'string' || !IMAGE_RE.test(img.data)) continue;
     const w = num(img.w);
@@ -683,7 +694,7 @@ export function normalizeProject(raw) {
     company: {
       name: str_(company.name, 200),
       tagline: toT(company.tagline),
-      logo: typeof company.logo === 'string' && images[company.logo] ? company.logo : null,
+      logo: hasImg(images, company.logo) ? company.logo : null,
     },
     meta: Object.fromEntries(Object.keys(base.meta).map((k) => [k, str_(meta[k], 1000)])),
     sections: [],
@@ -700,6 +711,9 @@ export function normalizeProject(raw) {
     else if (s.type === 'photos') project.sections.push(cleanPhotos(s, id, images));
     else if (s.type === 'chapters') project.sections.push(cleanChapters(s, id, images));
   }
+  // Fotoverknüpfungen nur auf Symbole, die es gibt
+  const symbolIds = new Set(project.sections.flatMap((s) => (s.type === 'site' ? s.symbols.map((y) => y.id) : [])));
+  for (const s of project.sections) if (s.type === 'photos') for (const p of s.items) if (p.link && !symbolIds.has(p.link)) p.link = null;
   return project;
 }
 
@@ -767,21 +781,32 @@ function cleanWiring(s, id) {
 }
 
 const clamp = (v, lo, hi, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 function cleanSite(s, id, images) {
   const d = newSite();
   const bg = s.bg && typeof s.bg === 'object' ? s.bg : {};
+  const renamed = new Map();
   const custom = (Array.isArray(s.custom) ? s.custom : [])
-    .filter((c) => c && typeof c === 'object' && typeof c.image === 'string' && images[c.image])
-    .map((c) => ({ id: id(c.id, 'u'), image: c.image, name: toT(c.name), code: str_(c.code, 6) || 'ES' }));
-  const customIds = new Set(custom.map((c) => c.id));
+    .filter((c) => c && typeof c === 'object' && hasImg(images, c.image))
+    .map((c) => {
+      const out = { id: id(c.id, 'u'), image: c.image, name: toT(c.name), code: str_(c.code, 6).trim() || 'ES' };
+      if (typeof c.id === 'string' && !renamed.has(c.id)) renamed.set(c.id, out.id);
+      return out;
+    });
   const kinds = new Set(SYMBOLS.map((x) => x.id));
+  /** Symbolart prüfen; eigene Arten folgen ihrer (ggf. neu vergebenen) Kennung. */
+  const kindOf = (k) => {
+    if (typeof k !== 'string') return null;
+    if (kinds.has(k)) return k;
+    const to = k.startsWith('custom:') ? renamed.get(k.slice(7)) : null;
+    return to ? 'custom:' + to : null;
+  };
   const symbols = (Array.isArray(s.symbols) ? s.symbols : [])
-    .filter((y) => y && typeof y === 'object' && (kinds.has(y.kind) || (typeof y.kind === 'string' && customIds.has(y.kind.replace(/^custom:/, '')) && y.kind.startsWith('custom:'))))
+    .filter((y) => y && typeof y === 'object' && kindOf(y.kind))
     .map((y) => ({
       id: id(y.id, 'y'),
-      kind: y.kind,
+      kind: kindOf(y.kind),
       x: clamp(y.x, 0, 1, 0.5),
       y: clamp(y.y, 0, 1, 0.5),
       name: toT(y.name),
@@ -797,7 +822,7 @@ function cleanSite(s, id, images) {
     type: 'site',
     title: toT(s.title || d.title),
     bg: {
-      image: typeof bg.image === 'string' && images[bg.image] ? bg.image : null,
+      image: hasImg(images, bg.image) ? bg.image : null,
       rotate: oneOf(bg.rotate, [0, 90, 180, 270], 0),
       fit: oneOf(bg.fit, ['contain', 'cover'], 'contain'),
       fade: clamp(bg.fade, 0, 0.8, 0),
@@ -825,12 +850,12 @@ function cleanChapters(s, id, images) {
     else if (b.type === 'figure')
       blocks.push({
         ...base,
-        image: typeof b.image === 'string' && images[b.image] ? b.image : null,
+        image: hasImg(images, b.image) ? b.image : null,
         caption: toT(b.caption),
         width: oneOf(b.width, ['full', 'half'], 'full'),
       });
     else if (b.type === 'figsteps')
-      blocks.push({ ...base, image: typeof b.image === 'string' && images[b.image] ? b.image : null, caption: toT(b.caption), text: toT(b.text) });
+      blocks.push({ ...base, image: hasImg(images, b.image) ? b.image : null, caption: toT(b.caption), text: toT(b.text) });
     else if (b.type === 'code' || b.type === 'formula') blocks.push({ ...base, text: str_(b.text, 8000) });
     else if (b.type === 'table') {
       const cols = Math.max(1, Math.min(6, Array.isArray(b.head) ? b.head.length : 2));
@@ -853,7 +878,7 @@ function cleanChapters(s, id, images) {
 function cleanPhotos(s, id, images) {
   const d = newPhotos();
   const items = (Array.isArray(s.items) ? s.items : [])
-    .filter((p) => p && typeof p === 'object' && typeof p.image === 'string' && images[p.image])
+    .filter((p) => p && typeof p === 'object' && hasImg(images, p.image))
     .map((p) => ({
       id: id(p.id, 'f'),
       image: p.image,
@@ -912,7 +937,7 @@ export function sectionTitle(section, lang = 'de') {
     return str('wiring', lang) + (sys ? ' ' + sys : '');
   }
   if (section.type === 'access') return tx(section.title, lang) || str('access', lang);
-  if (section.type === 'site') return tx(section.title, lang) || str('site', lang);
+  if (section.type === 'site') return tx(section.title, lang) || str('sitePlan', lang);
   if (section.type === 'photos') return tx(section.title, lang) || str('photos', lang);
   if (section.type === 'chapters') return tx(section.title, lang) || str('chapters', lang);
   return section.type;

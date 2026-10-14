@@ -28,6 +28,7 @@ import {
   uid,
 } from './model.js';
 import { symbolIconSvg } from './site.js';
+import { thumbOf } from './thumbs.js';
 import { chapterLabels, referenceTargets } from './chapters.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
@@ -878,7 +879,7 @@ Object.assign(Inspector.prototype, {
           studio.change('Hintergrund geändert', () => (s.bg.fit = v), { inspector: true }),
         ),
       );
-      bg.appendChild(this.slider('Aufhellen', s.bg, 'fade', { min: 0, max: 80, scale: 0.01, unit: '%' }));
+      bg.appendChild(this.slider('Aufhellen', s.bg, 'fade', { min: 0, max: 80, scale: 100, unit: '%' }));
     }
     // Symbole
     const palette = htmlToElement('<div class="sd-symbols"></div>');
@@ -891,8 +892,14 @@ Object.assign(Inspector.prototype, {
       b.addEventListener('click', () => studio.arm(kind.id));
       palette.appendChild(b);
     }
-    const symbols = this.group('Symbole', palette, this.note('Symbol wählen, dann in den Plan klicken – so oft wie nötig. Esc beendet. Eigene Symbole oben im Werkzeugband.'));
-    void symbols;
+    this.group('Symbole', palette, this.note('Symbol wählen, dann in den Plan klicken – so oft wie nötig. Esc beendet. Eigene Symbole oben im Werkzeugband.'));
+    for (const c of s.custom) {
+      const code = this.text('Kürzel', c, 'code', { id: 'cc' + c.id, placeholder: 'ES', hint: 'Steht vor der Nummer, z. B. „ES 1“.' });
+      code.querySelector('input').maxLength = 6;
+      const remove = htmlToElement(`<div class="sd-acts" style="padding-top:8px"><button type="button" class="btn outline danger">${icon('trash', 's')}Entfernen</button></div>`);
+      remove.querySelector('button').addEventListener('click', () => studio.removeCustom(s, c.id));
+      this.group(`Eigenes Symbol · ${tx(c.name, lang) || c.code}`, this.bi('Bezeichnung', c, 'name', { id: 'cn' + c.id }), code, remove);
+    }
     this.group(
       `Im Plan (${s.symbols.length})`,
       this.rows(s.symbols, {
@@ -904,7 +911,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true }),
       }),
     );
-    this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true]);
   },
 
   symForm(s, y) {
@@ -981,13 +987,14 @@ Object.assign(Inspector.prototype, {
         empty: 'Noch kein Foto.',
         render: (p) => {
           const img = this.project.images[p.image];
-          return `${img ? `<img alt="" src="${escapeHtml(img.data)}" style="width:34px;height:26px;object-fit:cover;border-radius:3px;flex:none">` : ''}<span class="t">${escapeHtml(tx(p.caption, lang) || 'Ohne Unterschrift')}</span><small>${escapeHtml(p.date || '')}</small>`;
+          return `${img ? `<img alt="" data-img="${escapeHtml(p.image)}" style="width:34px;height:26px;object-fit:cover;border-radius:3px;flex:none;background:var(--line2)">` : ''}<span class="t">${escapeHtml(tx(p.caption, lang) || 'Ohne Unterschrift')}</span><small>${escapeHtml(p.date || '')}</small>`;
         },
         onOpen: (p) => studio.select({ kind: 'photo', id: p.id, section: s.id }, { reveal: true }),
       }),
     );
     list.appendChild(this.addButton('Fotos hinzufügen', () => studio.pickPhotos(s)));
-    this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true]);
+    for (const el of list.querySelectorAll('img[data-img]'))
+      thumbOf(this.project.images[el.dataset.img]).then((url) => url && el.isConnected && (el.src = url));
   },
 
   photoForm(s, p) {
@@ -1046,10 +1053,7 @@ Object.assign(Inspector.prototype, {
       }),
     );
     list.appendChild(this.addButton('Baustein', () => studio.blockMenu(list.lastChild, s)));
-    this.actions(
-      ['Suchen und Ersetzen', 'replace', () => studio.replaceDialog()],
-      ['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true],
-    );
+    this.actions(['Suchen und Ersetzen', 'replace', () => studio.replaceDialog()]);
   },
 
   /** Auswahl „Verweis einfügen“: fügt {ref:…} in das zuletzt bearbeitete Textfeld ein. */
