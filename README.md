@@ -61,6 +61,7 @@ src/
   studio/                 „Dokumentation erstellen“: Projekt (model.js), Seitensatz als SVG (render.js,
                           wiring.js: Anschlussplan), Arbeitsbereich (studio.js, inspector.js),
                           Lageplan (site.js), Fotos (photos.js, exif.js), Zugangsdaten (access.js),
+                          Anleitungen (chapters.js: Bausteine, Seitenumbruch, Nummern, Verweise),
                           Entwürfe (store.js, IndexedDB „pdfix-studio“), PDF mit Projekt (export.js)
   storage/idb.js          IndexedDB „pdf-editor“ v2 (eigene Schriften, zuletzt geöffnet, Unterschriften)
   signature/

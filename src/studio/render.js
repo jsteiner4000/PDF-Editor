@@ -10,6 +10,7 @@ import { DIAGRAM, layoutWiring, legendSvg, terminalPages, wiringDiagramSvg } fro
 import { accessPages } from './access.js';
 import { sitePages } from './site.js';
 import { photoPages } from './photos.js';
+import { chapterPages } from './chapters.js';
 import { isEmptySection, sectionTitle } from './model.js';
 
 const LOGO_BOX = { x: 378.276, y: 42, w: 175, h: 44.144 };
@@ -250,6 +251,20 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
           tocSub: i === 1 ? ts.label('deviceList') : null,
         }),
       );
+    } else if (section.type === 'chapters') {
+      const title = ts.inline(section.title) || ts.label('chapters');
+      const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
+      chapterPages(section, ts, project).forEach((p, i) =>
+        pages.push({
+          section: section.id,
+          kind: 'chapters',
+          title,
+          subtitle,
+          make: () => p,
+          heads: p.heads,
+          toc: i === 0 ? { title, id: section.id, plain: true } : null,
+        }),
+      );
     } else if (section.type === 'photos') {
       const title = ts.inline(section.title) || ts.label('photos');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
@@ -288,6 +303,7 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
         out.push({ ...p.toc, page: i + 1 });
         if (!p.toc.plain) out.push({ title: ts.label('wiringOverview'), page: i + 1, sub: true });
       } else if (p.tocSub) out.push({ title: p.tocSub, page: i + 1, sub: true });
+      if (p.heads) for (const h of p.heads) out.push({ title: h.title, page: i + 1, sub: true });
     });
     return out;
   };

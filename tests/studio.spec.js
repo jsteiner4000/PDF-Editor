@@ -574,3 +574,96 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
     await context.close();
   }
 });
+
+test('Anleitung: Vorlage, Bausteine, Nummern und Verweise, Seitenumbruch, Verzeichnis, Ersetzen', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('.tpl[data-tpl="manual"]').click();
+    await expect(page.locator('#prjTab')).toHaveClass(/on/);
+    const toc = page.locator('#studio .sd-page').nth(1);
+    await expect(toc).toContainText('1  Zu dieser Anleitung');
+    await expect(toc).toContainText('4  Störungen');
+
+    // Baustein über das Werkzeugband einfügen und einen Verweis auf Kapitel 2 setzen
+    await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Bedienungsanleitung$/ }) }).click();
+    await page.locator('.rb[data-act="block"]').click();
+    await page.locator('.menu .mi', { hasText: 'Absatz' }).click();
+    const ids = await page.evaluate(() => {
+      const s = window.pdfEditor.studio.project.sections.find((x) => x.type === 'chapters');
+      return { h2: s.blocks[2].id, count: s.blocks.length };
+    });
+    expect(ids.count).toBe(9);
+    const area = page.locator('#sdIBody textarea').first();
+    await area.fill('Siehe ');
+    await area.press('End');
+    await page.locator('#sdIBody select', { hasText: 'Verweis einfügen' }).selectOption(ids.h2);
+    await expect(page.locator('#studio .sd-page').nth(2)).toContainText('Siehe Abschnitt 2');
+
+    // Seitenumbruch: viele Absätze – nichts ragt in die Fußzeile, keine Überschrift allein am Seitenende
+    const result = await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'chapters');
+      st.change('Test', () => {
+        for (let i = 0; i < 12; i++) {
+          s.blocks.push({ id: 'hh' + i, type: 'h', level: 1, text: { de: 'Kapitel ' + i, en: '' } });
+          s.blocks.push({ id: 'pp' + i, type: 'p', text: { de: 'Zeile mit Text. '.repeat(300), en: '' } });
+        }
+      });
+      st.renderPages();
+      const pages = st.doc.pages.filter((p) => p.kind === 'chapters');
+      const kinds = new Map(s.blocks.map((b) => [b.id, b.type]));
+      const lastIsHeading = pages.slice(0, -1).some((p) => {
+        const last = p.hits.filter((h) => h.kind === 'block').at(-1);
+        return last && kinds.get(last.id) === 'h';
+      });
+      const bottom = Math.max(...pages.flatMap((p) => p.hits.map((h) => h.rect[1] + h.rect[3])));
+      const tocPages = st.doc.pages.filter((p) => p.kind === 'toc').length;
+      return { pages: pages.length, lastIsHeading, bottom, tocPages };
+    });
+    expect(result.pages).toBeGreaterThan(5);
+    expect(result.lastIsHeading).toBe(false);
+    expect(result.bottom).toBeLessThanOrEqual(770.5);
+    expect(result.tocPages).toBeGreaterThanOrEqual(1);
+
+    // Suchen und Ersetzen über alle Kapitel, rückgängig machbar
+    await page.keyboard.press('Control+h');
+    await page.locator('.dlg input[data-k="find"]').fill('Kapitel');
+    await page.locator('.dlg input[data-k="repl"]').fill('Teil');
+    await expect(page.locator('.sd-find-n')).toContainText('12 Treffer');
+    await page.locator('.dlg .btn.primary').click();
+    await expect(page.locator('#studio .sd-page', { hasText: 'Teil 3' }).first()).toBeVisible();
+    await page.keyboard.press('Control+z');
+    await expect(page.locator('#studio .sd-page', { hasText: 'Kapitel 3' }).first()).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Anleitung: Tabelle bearbeiten, Abbildung per Drag & Drop, Störungstabelle', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('.tpl[data-tpl="tech"]').click();
+    await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Technische Beschreibung$/ }) }).click();
+    await page.locator('.rb[data-act="block"]').click();
+    await page.locator('.menu .mi', { hasText: 'Störungstabelle' }).click();
+    const cell = page.locator('#sdIBody .sd-grid input').nth(3);
+    await cell.fill('Kein Strom');
+    await page.locator('#sdIBody .btn', { hasText: 'Zeile' }).first().click();
+    await page.locator('#sdIBody .sd-grid input').nth(7).fill('Sicherung prüfen');
+    const table = await page.evaluate(() => {
+      const s = window.pdfEditor.studio.project.sections.find((x) => x.type === 'chapters');
+      const b = s.blocks.at(-1);
+      return { head: b.head, rows: b.rows };
+    });
+    expect(table.head).toEqual(['Störung', 'Mögliche Ursache', 'Abhilfe']);
+    expect(table.rows[0][0]).toBe('Kein Strom');
+    expect(table.rows.length).toBe(2);
+    await expect(page.locator('#studio .sd-page', { hasText: 'Sicherung prüfen' }).first()).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});

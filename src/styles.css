@@ -1556,6 +1556,7 @@ body.editing #nav {
 }
 .tpl {
   display: block;
+  align-self: start;
   width: 176px;
   padding: 0;
   border: 0;

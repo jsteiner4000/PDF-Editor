@@ -8,13 +8,17 @@
  */
 import { icon } from '../ui/icons.js';
 import { escapeHtml, htmlToElement } from '../ui/dom.js';
+import { toast } from '../ui/dialogs.js';
 import {
   ACCESS_BLOCKS,
+  BLOCK_TYPES,
   FONTS,
   LANGS,
   PHOTO_LAYOUTS,
   SYMBOLS,
   T,
+  TONES,
+  STRINGS,
   langsOf,
   projectSymbols,
   sectionTitle,
@@ -24,6 +28,7 @@ import {
   uid,
 } from './model.js';
 import { symbolIconSvg } from './site.js';
+import { chapterLabels, referenceTargets } from './chapters.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
 
@@ -38,6 +43,7 @@ const KIND_TITLE = {
   remote: 'Fernzugriff',
   sym: 'Symbol',
   photo: 'Foto',
+  block: 'Baustein',
 };
 
 /** Vorschläge für Fernzugriff-Dienste (frei änderbar). */
@@ -70,6 +76,12 @@ export class Inspector {
     const item = studio.selected();
     const active = document.activeElement;
     const keepFocus = active && this.body.contains(active) ? active.dataset.f : null;
+    if (!this.focusTracked) {
+      this.focusTracked = true;
+      this.body.addEventListener('focusin', (ev) => {
+        if (/^(INPUT|TEXTAREA)$/.test(ev.target.tagName) && ev.target.type !== 'range' && ev.target.type !== 'color') this.lastField = ev.target;
+      });
+    }
     this.body.innerHTML = '';
     this.head.innerHTML = '';
     if (!item) {
@@ -92,6 +104,7 @@ export class Inspector {
     else if (sel.kind === 'pin') this.pinForm(section, item);
     else if (sel.kind === 'hint') this.hintForm(section, item);
     else if (sel.kind === 'hub') this.hubForm(section);
+    else if (sel.kind === 'block') this.blockForm(section, item);
     else if (sel.kind === 'sym') this.symForm(section, item);
     else if (sel.kind === 'photo') this.photoForm(section, item);
     else if (sel.kind === 'device') this.deviceForm(section, item);
@@ -324,6 +337,7 @@ export class Inspector {
     } else if (section.type === 'wiring') this.wiringForm(section);
     else if (section.type === 'access') this.accessForm(section);
     else if (section.type === 'site') this.siteForm(section);
+    else if (section.type === 'chapters') this.chaptersForm(section);
     else if (section.type === 'photos') this.photosForm(section);
     this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(section.id), true]);
   }
@@ -993,6 +1007,193 @@ Object.assign(Inspector.prototype, {
       ),
     );
     this.itemActions(s.items, p);
+  },
+});
+
+/* ---------- Anleitung / Technische Beschreibung ---------- */
+
+const blockPreview = (b, lang) => {
+  const first = (v) => String(tx(v, lang) || '').split('\n')[0];
+  if (b.type === 'h') return first(b.text);
+  if (b.type === 'p' || b.type === 'ul' || b.type === 'steps') return first(b.text);
+  if (b.type === 'callout') return first(b.title) || first(b.text);
+  if (b.type === 'figure' || b.type === 'figsteps') return first(b.caption);
+  if (b.type === 'table') return first(b.caption) || b.head.join(' · ');
+  return String(b.text || '').split('\n')[0];
+};
+
+Object.assign(Inspector.prototype, {
+  chaptersForm(s) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    const labels = chapterLabels(s);
+    this.group(
+      s.kind === 'tech' ? 'Technische Beschreibung' : 'Anleitung',
+      this.bi('Titel', s, 'title'),
+      this.check('Überschriften nummerieren', s.numbering, (v) => studio.change('Nummerierung geändert', () => (s.numbering = v))),
+    );
+    const list = this.group(
+      `Bausteine (${s.blocks.length})`,
+      this.rows(s.blocks, {
+        empty: 'Noch kein Baustein.',
+        render: (b) => {
+          const meta = BLOCK_TYPES.find((t) => t.id === (b.type === 'table' ? b.preset : b.type)) || BLOCK_TYPES[1];
+          const num = labels.get(b.id);
+          const lead = b.type === 'h' ? `<b class="pin">${escapeHtml(num ? num.label : '')}</b>` : `<small style="min-width:96px">${escapeHtml(meta.label)}</small>`;
+          return `${lead}<span class="t">${escapeHtml(blockPreview(b, lang))}</span>`;
+        },
+        onOpen: (b) => studio.select({ kind: 'block', id: b.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    list.appendChild(this.addButton('Baustein', () => studio.blockMenu(list.lastChild, s)));
+    this.actions(
+      ['Suchen und Ersetzen', 'replace', () => studio.replaceDialog()],
+      ['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true],
+    );
+  },
+
+  /** Auswahl „Verweis einfügen“: fügt {ref:…} in das zuletzt bearbeitete Textfeld ein. */
+  refSelect(s) {
+    const targets = referenceTargets(s, langsOf(this.project)[0]);
+    if (!targets.length) return null;
+    const select = document.createElement('select');
+    select.className = 'fld';
+    select.innerHTML = `<option value="">Verweis einfügen …</option>${targets.map((t) => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.text)}</option>`).join('')}`;
+    select.addEventListener('change', () => {
+      const field = this.lastField;
+      const id = select.value;
+      select.value = '';
+      if (!id) return;
+      if (!field || !field.isConnected) return toast('Zuerst in ein Textfeld klicken, dann den Verweis wählen.');
+      const token = `{ref:${id}}`;
+      const at = field.selectionStart ?? field.value.length;
+      field.value = field.value.slice(0, at) + token + field.value.slice(field.selectionEnd ?? at);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.focus();
+      field.setSelectionRange(at + token.length, at + token.length);
+    });
+    return this.field('Verweis', select, 'Fügt „Abschnitt 2.1“, „Abbildung 3“ … automatisch ein und aktualisiert sich.');
+  },
+
+  blockForm(s, b) {
+    const studio = this.studio;
+    const meta = BLOCK_TYPES.find((t) => t.id === (b.type === 'table' ? b.preset : b.type)) || BLOCK_TYPES[1];
+    const group = this.group(meta.label);
+    const textual = ['p', 'ul', 'steps', 'callout', 'figsteps', 'table'].includes(b.type);
+    if (b.type === 'h') {
+      group.append(
+        this.bi('Überschrift', b, 'text'),
+        this.seg('Ebene', [[1, 'Kapitel'], [2, 'Unterkapitel']], b.level, (v) =>
+          studio.change('Ebene geändert', () => (b.level = v), { inspector: true }),
+        ),
+      );
+    } else if (b.type === 'p') group.append(this.bi('Text', b, 'text', { multiline: true }));
+    else if (b.type === 'ul') group.append(this.bi('Punkte', b, 'text', { multiline: true, hint: 'Ein Punkt je Zeile.' }));
+    else if (b.type === 'steps') group.append(this.bi('Schritte', b, 'text', { multiline: true, hint: 'Ein Schritt je Zeile – die Nummern entstehen automatisch.' }));
+    else if (b.type === 'callout') {
+      group.append(
+        this.seg('Art', TONES.map((t) => [t.id, tx(STRINGS.tone[t.id], 'de')]), b.tone, (v) =>
+          studio.change('Art geändert', () => (b.tone = v), { inspector: true }),
+        ),
+        this.bi('Titel', b, 'title', { placeholder: tx(STRINGS.tone[b.tone], 'de'), hint: 'Leer lassen für die Standardbezeichnung.' }),
+        this.bi('Text', b, 'text', { multiline: true }),
+      );
+    } else if (b.type === 'figure' || b.type === 'figsteps') {
+      const img = b.image && this.project.images[b.image];
+      if (img) group.appendChild(htmlToElement(`<img class="sd-photo" alt="Abbildung" src="${escapeHtml(img.data)}">`));
+      const buttons = htmlToElement('<div class="sd-acts" style="padding:0 0 10px"></div>');
+      for (const [label, iconName, run] of [
+        [img ? 'Bild ersetzen …' : 'Bild wählen …', 'image', () => studio.pickBlockImage(b)],
+        ...(img ? [['Entfernen', 'trash', () => studio.change('Bild entfernt', () => (b.image = null), { inspector: true })]] : []),
+      ]) {
+        const btn = htmlToElement(`<button type="button" class="btn outline">${icon(iconName, 's')}${label}</button>`);
+        btn.addEventListener('click', run);
+        buttons.appendChild(btn);
+      }
+      group.append(buttons, this.bi('Bildunterschrift', b, 'caption'));
+      if (b.type === 'figure')
+        group.append(this.seg('Breite', [['full', 'Ganze Seite'], ['half', 'Halb']], b.width, (v) => studio.change('Breite geändert', () => (b.width = v), { inspector: true })));
+      else group.append(this.bi('Schritte', b, 'text', { multiline: true, hint: 'Ein Schritt je Zeile.' }));
+    } else if (b.type === 'table') {
+      group.append(this.bi('Beschriftung', b, 'caption', { hint: 'Mit Beschriftung wird die Tabelle nummeriert („Tabelle 2“).' }), this.tableGrid(b));
+    } else if (b.type === 'code') {
+      const f = this.text('Code', b, 'text', { multiline: true });
+      f.querySelector('textarea').classList.add('mono');
+      f.querySelector('textarea').spellcheck = false;
+      group.append(f);
+    } else if (b.type === 'formula') group.append(this.text('Formel', b, 'text', { multiline: true, hint: 'Sonderzeichen direkt tippen: · × ÷ ± √ ² ³ ≈ ≤ ≥ Ω µ' }));
+    if (textual) {
+      const ref = this.refSelect(s);
+      if (ref) group.append(ref);
+    }
+    this.itemActions(s.blocks, b);
+  },
+
+  /** Tabelle als Gitter von Eingabefeldern. */
+  tableGrid(b) {
+    const studio = this.studio;
+    const cols = b.head.length;
+    const grid = htmlToElement(`<div class="sd-grid" style="grid-template-columns:repeat(${cols},minmax(0,1fr)) 26px"></div>`);
+    const cell = (value, onInput, key, head = false) => {
+      const input = htmlToElement('<input class="fld" type="text" autocomplete="off">');
+      input.value = value;
+      input.dataset.f = key;
+      if (head) input.classList.add('head');
+      input.addEventListener('input', () => onInput(input.value));
+      input.addEventListener('keydown', (ev) => ev.key === 'Escape' && input.blur());
+      return input;
+    };
+    b.head.forEach((t, c) =>
+      grid.appendChild(cell(t, (v) => studio.change('Tabelle geändert', () => (b.head[c] = v), { key: `th:${b.id}:${c}` }), `th:${b.id}:${c}`, true)),
+    );
+    grid.appendChild(document.createElement('span'));
+    b.rows.forEach((row, r) => {
+      row.forEach((t, c) =>
+        grid.appendChild(cell(t, (v) => studio.change('Tabelle geändert', () => (b.rows[r][c] = v), { key: `td:${b.id}:${r}:${c}` }), `td:${b.id}:${r}:${c}`)),
+      );
+      const del = htmlToElement(`<button type="button" class="btn ic" title="Zeile löschen"${b.rows.length < 2 ? ' disabled' : ''}>${icon('x', 's')}</button>`);
+      del.addEventListener('click', () => studio.change('Zeile gelöscht', () => b.rows.splice(r, 1), { inspector: true }));
+      grid.appendChild(del);
+    });
+    const tools = htmlToElement('<div class="sd-acts" style="padding-top:8px"></div>');
+    for (const [label, run, disabled] of [
+      ['Zeile', () => studio.change('Zeile hinzugefügt', () => b.rows.push(Array(cols).fill('')), { inspector: true }), false],
+      [
+        'Spalte',
+        () =>
+          studio.change(
+            'Spalte hinzugefügt',
+            () => {
+              b.head.push(`Spalte ${cols + 1}`);
+              b.rows.forEach((r) => r.push(''));
+              b.weights.push(1);
+            },
+            { inspector: true },
+          ),
+        cols >= 6,
+      ],
+      [
+        'Spalte −',
+        () =>
+          studio.change(
+            'Spalte gelöscht',
+            () => {
+              b.head.pop();
+              b.rows.forEach((r) => r.pop());
+              b.weights.pop();
+            },
+            { inspector: true },
+          ),
+        cols <= 1,
+      ],
+    ]) {
+      const btn = htmlToElement(`<button type="button" class="btn outline"${disabled ? ' disabled' : ''}>${label.endsWith('−') ? '' : icon('plus', 's')}${label}</button>`);
+      btn.addEventListener('click', run);
+      tools.appendChild(btn);
+    }
+    const wrap = htmlToElement('<div></div>');
+    wrap.append(grid, tools);
+    return wrap;
   },
 });
 

@@ -19,8 +19,11 @@ import {
   FONTS,
   LANGS,
   exampleWiring,
+  BLOCK_TYPES,
   PHOTO_LAYOUTS,
   SYMBOLS,
+  newBlock,
+  starterChapters,
   newAccess,
   newBox,
   newCustomSymbol,
@@ -58,7 +61,9 @@ export { deleteDraft, listDrafts };
 
 /** Vorlagen auf der Startseite („Neu“). */
 export const STUDIO_TEMPLATES = [
-  { id: 'documentation', title: 'Anlagendokumentation', desc: 'Deckblatt, Inhalt und Anschlussplan' },
+  { id: 'documentation', title: 'Anlagendokumentation', desc: 'Lageplan, Anschlussplan, Zugangsdaten, Fotos' },
+  { id: 'manual', title: 'Bedienungsanleitung', desc: 'Kapitel, Schritte, Warnhinweise, Störungen' },
+  { id: 'tech', title: 'Technische Beschreibung', desc: 'Aufbau, Funktion, technische Daten' },
   { id: 'wiring', title: 'Anschlussplan', desc: 'Schaltbild, Klemmenplan und Hinweise' },
   { id: 'example', title: 'Zufallsgenerator', desc: 'Fertiger Plan zum Ausprobieren', tag: 'Beispiel' },
 ];
@@ -69,7 +74,7 @@ function templateProject(id) {
     project.sections = [exampleWiring()];
     return project;
   }
-  return newProject(id === 'wiring' ? 'wiring' : 'documentation');
+  return newProject(['wiring', 'manual', 'tech'].includes(id) ? id : 'documentation');
 }
 
 const previews = new Map();
@@ -79,9 +84,11 @@ export function templatePreview(id) {
   if (!previews.has(id)) {
     let svg = '';
     try {
-      const project = id === 'documentation' ? newProject('documentation') : templateProject('example');
+      const project = id === 'example' ? templateProject('example') : newProject(id);
       const doc = renderDocument(project);
-      svg = (doc.pages[id === 'example' ? 1 : 0] || doc.pages[0]).svg;
+      // Beispiel: Seite 2 (Klemmenplan); Anleitungen: erste Inhaltsseite; sonst Deckblatt bzw. Plan
+      const at = id === 'example' ? 1 : id === 'manual' || id === 'tech' ? 2 : 0;
+      svg = (doc.pages[at] || doc.pages[0]).svg;
     } catch (err) {
       console.warn('Vorschau der Vorlage', err);
     }
@@ -451,6 +458,7 @@ export class Studio {
     if (kind === 'device') return s.devices.find((d) => d.id === id) || null;
     if (kind === 'wifi') return s.wifi.find((w) => w.id === id) || null;
     if (kind === 'remote') return s.remote.find((r) => r.id === id) || null;
+    if (kind === 'block') return s.blocks.find((b) => b.id === id) || null;
     if (kind === 'sym') return s.symbols.find((y) => y.id === id) || null;
     if (kind === 'photo') return s.items.find((p) => p.id === id) || null;
     return null;
@@ -588,7 +596,7 @@ export class Studio {
   renderStarters(host) {
     for (const el of $$('.sd-page', host)) {
       const page = this.doc.pages[+el.dataset.index];
-      const section = page && ['diagram', 'access', 'site', 'photos'].includes(page.kind) ? this.section(page.section) : null;
+      const section = page && ['diagram', 'access', 'site', 'photos', 'chapters'].includes(page.kind) ? this.section(page.section) : null;
       const empty =
         !!section &&
         (section.type === 'wiring'
@@ -597,7 +605,9 @@ export class Studio {
             ? !section.symbols.length && !section.bg.image
             : section.type === 'photos'
               ? !section.items.length
-              : !section.devices.length && !section.wifi.length && !section.remote.length && !blockHasData(section, ACCESS_BLOCKS.find((b) => b.id === 'network')));
+              : section.type === 'chapters'
+                ? !section.blocks.length
+                : !section.devices.length && !section.wifi.length && !section.remote.length && !blockHasData(section, ACCESS_BLOCKS.find((b) => b.id === 'network')));
       let card = el.querySelector('.sd-start');
       if (!empty || (card && card.dataset.type !== section.type)) {
         if (card) card.remove();
@@ -605,6 +615,19 @@ export class Studio {
         if (!empty) continue;
       }
       if (card) continue;
+      if (section.type === 'chapters') {
+        card = htmlToElement(
+          `<div class="sd-start top" data-type="chapters"><b>Kapitel schreiben</b><span>Bausteine einfügen: Überschrift, Absatz, Handlungsschritte, Warnhinweis, Abbildung, Tabelle … Nummern, Verweise und Seitenumbrüche entstehen von selbst.</span><div><button class="btn primary" data-k="h">${icon('text', 's')}Überschrift</button><button class="btn outline" data-k="p">${icon('al', 's')}Absatz</button><button class="btn outline" data-k="steps">${icon('pnum', 's')}Schritte</button></div></div>`,
+        );
+        for (const b of card.querySelectorAll('button'))
+          b.addEventListener('click', () => {
+            this.select({ kind: 'section', id: section.id });
+            this.addBlock(section, b.dataset.k);
+          });
+        for (const type of ['pointerdown', 'dblclick']) card.addEventListener(type, (ev) => ev.stopPropagation());
+        el.appendChild(card);
+        continue;
+      }
       if (section.type === 'site' || section.type === 'photos') {
         const site = section.type === 'site';
         card = htmlToElement(
@@ -685,6 +708,7 @@ export class Studio {
           (kind === 'pin' && hit.kind === 'conn' && this.pinInConn(hit, id)) ||
           (kind === 'hint' && hit.kind === 'hint' && hit.id === id) ||
           ((kind === 'device' || kind === 'wifi' || kind === 'remote') && hit.kind === kind && hit.id === id) ||
+          (kind === 'block' && hit.kind === 'block' && hit.id === id) ||
           (kind === 'sym' && hit.kind === 'sym' && hit.id === id) ||
           (kind === 'photo' && hit.kind === 'photo' && hit.id === id) ||
           (kind === 'hub' && hit.kind === 'hub');
@@ -891,6 +915,9 @@ export class Studio {
         { label: 'Anschlussplan', icon: 'wiring', run: () => this.addSection('wiring') },
         { label: 'Zugangsdaten', icon: 'key', run: () => this.addSection('access') },
         { label: 'Fotodokumentation', icon: 'camera', run: () => this.addSection('photos') },
+        '-',
+        { label: 'Bedienungsanleitung (Kapitel)', icon: 'edit', run: () => this.addSection('manual') },
+        { label: 'Technische Beschreibung (Kapitel)', icon: 'edit', run: () => this.addSection('tech') },
       ],
       anchor,
     );
@@ -906,7 +933,9 @@ export class Studio {
             ? newSite()
             : type === 'photos'
               ? newPhotos()
-              : { id: uid('s'), type };
+              : type === 'manual' || type === 'tech'
+                ? starterChapters(type)
+                : { id: uid('s'), type };
     this.change(
       'Abschnitt hinzugefügt',
       (p) => {
@@ -981,6 +1010,9 @@ export class Studio {
     } else if (kind === 'hint') {
       this.sel = { kind: 'section', id: section };
       this.change('Hinweis gelöscht', () => (s.hints = s.hints.filter((h) => h.id !== id)), { inspector: true });
+    } else if (kind === 'block') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Baustein gelöscht', () => (s.blocks = s.blocks.filter((b) => b.id !== id)), { inspector: true });
     } else if (kind === 'sym') {
       this.sel = { kind: 'section', id: section };
       this.change('Symbol gelöscht', () => (s.symbols = s.symbols.filter((y) => y.id !== id)), { inspector: true });
@@ -1047,7 +1079,11 @@ export class Studio {
     const access = this.ribbonType === 'access' ? this.section(this.sel.section || this.sel.id) : null;
     const siteSection = this.ribbonType === 'site' ? this.section(this.sel.section || this.sel.id) : null;
     const photosSection = this.ribbonType === 'photos' ? this.section(this.sel.section || this.sel.id) : null;
-    const context = siteSection
+    const chaptersSection = this.ribbonType === 'chapters' ? this.section(this.sel.section || this.sel.id) : null;
+    const context = chaptersSection
+      ? `<button class="rb c1" data-act="block" title="Baustein einfügen">${icon('plus')}Baustein${icon('chev', 's caret')}</button>
+<button class="rb c5" data-act="replace" title="Suchen und Ersetzen (Strg+H)">${icon('replace')}Ersetzen</button>`
+      : siteSection
       ? `<button class="rb c1${this.armed ? ' on' : ''}" data-act="symbols" title="Symbol wählen und im Plan setzen">${icon('map')}Symbol${icon('chev', 's caret')}</button>
 <button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>
 <button class="rb c4" data-act="custom" title="Eigenes Symbol hochladen">${icon('plus')}Eigenes Symbol</button>`
@@ -1079,6 +1115,8 @@ ${context}
         else if (act === 'hint') this.addHint();
         else if (act === 'device' || act === 'wifi' || act === 'remote') this.addAccessItem(act);
         else if (act === 'secrets') this.toggleSecrets(access);
+        else if (act === 'block') this.blockMenu(btn, chaptersSection);
+        else if (act === 'replace') this.replaceDialog();
         else if (act === 'symbols') this.symbolMenu(btn, siteSection);
         else if (act === 'bg') this.backgroundMenu(btn, siteSection);
         else if (act === 'custom') this.addCustomSymbol(siteSection);
@@ -1180,7 +1218,7 @@ ${context}
     else if (item.kind === 'hub') this.select({ kind: 'hub', section });
     else if (item.kind === 'device' || item.kind === 'wifi' || item.kind === 'remote')
       this.select({ kind: item.kind, id: item.id, section });
-    else if (item.kind === 'sym' || item.kind === 'photo') this.select({ kind: item.kind, id: item.id, section });
+    else if (item.kind === 'sym' || item.kind === 'photo' || item.kind === 'block') this.select({ kind: item.kind, id: item.id, section });
     else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
     else if (item.kind === 'project') this.select({ kind: 'project' });
     else this.select({ kind: 'section', id: section });
@@ -1455,6 +1493,112 @@ ${context}
     this.arm('custom:' + custom.id);
   }
 
+  /* ---------- Anleitung: Bausteine, Bilder, Suchen und Ersetzen ---------- */
+
+  blockMenu(anchor, section) {
+    if (!section) return;
+    const items = BLOCK_TYPES.map((t) => ({ label: t.label, icon: t.icon, run: () => this.addBlock(section, t.id) }));
+    showMenu([...items.slice(0, 7), '-', ...items.slice(7)], anchor);
+  }
+
+  /** Baustein hinter dem gewählten (sonst am Ende) einfügen. */
+  addBlock(section, type) {
+    const block = newBlock(type);
+    const at = this.sel.kind === 'block' && this.sel.section === section.id ? section.blocks.findIndex((b) => b.id === this.sel.id) + 1 : section.blocks.length;
+    this.change('Baustein eingefügt', () => section.blocks.splice(at, 0, block));
+    this.select({ kind: 'block', id: block.id, section: section.id }, { reveal: true });
+    this.inspector.focusFirst();
+  }
+
+  async pickBlockImage(block, file = null) {
+    file ||= await pickFiles('image/png,image/jpeg,image/webp');
+    if (!file) return;
+    try {
+      const image = await withBusy(() => readImage(file, { max: 1800, jpeg: file.type !== 'image/png' }));
+      const id = uid('img');
+      this.project.images[id] = image;
+      this.change('Abbildung eingesetzt', () => (block.image = id), { inspector: true });
+    } catch {
+      toast('Das Bild konnte nicht gelesen werden.', 'err', 5000);
+    }
+  }
+
+  /** Alle Texte der Kapitel: [{ get, set }] (zweisprachige Texte, Tabellenzellen, Code, Formeln). */
+  textSlots() {
+    const out = [];
+    const field = (obj, key) => out.push({ get: () => obj[key], set: (v) => (obj[key] = v) });
+    const bi = (obj, key) => {
+      if (obj[key] && typeof obj[key] === 'object') {
+        field(obj[key], 'de');
+        field(obj[key], 'en');
+      }
+    };
+    for (const s of this.project.sections) {
+      if (s.type !== 'chapters') continue;
+      bi(s, 'title');
+      for (const b of s.blocks) {
+        for (const key of ['text', 'title', 'caption']) {
+          if (typeof b[key] === 'string') field(b, key);
+          else bi(b, key);
+        }
+        if (b.type === 'table') {
+          b.head.forEach((_, i) => field(b.head, i));
+          b.rows.forEach((r) => r.forEach((_, i) => field(r, i)));
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Ersetzt in allen Kapiteln; liefert die Zahl der Ersetzungen (ohne Ändern, wenn `dry`). */
+  replaceAll(find, replacement, { matchCase = false, dry = false } = {}) {
+    if (!find) return 0;
+    const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), matchCase ? 'g' : 'gi');
+    let count = 0;
+    const run = () => {
+      for (const slot of this.textSlots()) {
+        const value = slot.get();
+        if (typeof value !== 'string') continue;
+        const next = value.replace(re, () => (count++, replacement));
+        if (!dry && next !== value) slot.set(next);
+      }
+    };
+    if (dry) run();
+    else this.change('Ersetzt', run, { inspector: true });
+    return count;
+  }
+
+  async replaceDialog() {
+    if (!this.project) return;
+    const body = htmlToElement(`<div class="sd-find">
+<label class="dlg-row">Suchen <input class="fld" data-k="find" type="text" autocomplete="off"></label>
+<label class="dlg-row">Ersetzen durch <input class="fld" data-k="repl" type="text" autocomplete="off"></label>
+<label class="dlg-row ck"><input type="checkbox" data-k="case"> Groß-/Kleinschreibung beachten</label>
+<p class="sd-find-n" aria-live="polite"> </p></div>`);
+    const find = body.querySelector('[data-k=find]');
+    const repl = body.querySelector('[data-k=repl]');
+    const matchCase = body.querySelector('[data-k=case]');
+    const info = body.querySelector('.sd-find-n');
+    const update = () => {
+      const n = this.replaceAll(find.value, repl.value, { matchCase: matchCase.checked, dry: true });
+      info.textContent = find.value ? `${n} Treffer in den Kapiteln` : ' ';
+    };
+    for (const el of [find, repl, matchCase]) el.addEventListener('input', update);
+    setTimeout(() => find.focus(), 0);
+    const ok = await showDialog({
+      title: 'Suchen und Ersetzen',
+      icon: 'replace',
+      body,
+      buttons: [
+        { label: 'Abbrechen', value: false },
+        { label: 'Alle ersetzen', primary: true, value: true },
+      ],
+    });
+    if (!ok || !find.value) return;
+    const n = this.replaceAll(find.value, repl.value, { matchCase: matchCase.checked });
+    toast(n ? `${n} Stelle${n === 1 ? '' : 'n'} ersetzt` : 'Nichts gefunden');
+  }
+
   /* ---------- Fotos ---------- */
 
   async pickPhotos(section) {
@@ -1487,6 +1631,14 @@ ${context}
     const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
     const section = id && this.section(id);
     if (section && section.type === 'photos') return this.addPhotos(section, files);
+    if (section && section.type === 'chapters') {
+      const block = this.sel.kind === 'block' ? section.blocks.find((b) => b.id === this.sel.id) : null;
+      if (block && (block.type === 'figure' || block.type === 'figsteps')) return this.pickBlockImage(block, files[0]);
+      const fig = newBlock('figure');
+      this.change('Abbildung eingefügt', () => section.blocks.push(fig));
+      this.select({ kind: 'block', id: fig.id, section: section.id });
+      return this.pickBlockImage(fig, files[0]);
+    }
     if (section && section.type === 'site') return this.pickBackground(section, files[0]);
     toast('Bilder auf einen Lageplan (Hintergrund), die Fotodokumentation oder das Feld „Logo“ ziehen.');
   }
@@ -1499,6 +1651,9 @@ ${context}
     if (mod && key === 's') {
       ev.preventDefault();
       this.exportPdf();
+    } else if (mod && key === 'h') {
+      ev.preventDefault();
+      this.replaceDialog();
     } else if (mod && key === 'p') {
       ev.preventDefault();
       this.print();

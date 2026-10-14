@@ -77,6 +77,18 @@ export const STRINGS = {
   name: T('Bezeichnung', 'Designation'),
   photos: T('Fotodokumentation', 'Photo documentation'),
   photo: T('Foto', 'Photo'),
+  chapters: T('Anleitung', 'Manual'),
+  figure: T('Abbildung', 'Figure'),
+  table: T('Tabelle', 'Table'),
+  section: T('Abschnitt', 'Section'),
+  figurePending: T('Abbildung folgt', 'Figure to follow'),
+  refMissing: T('(Verweis fehlt)', '(missing reference)'),
+  tone: {
+    note: T('Hinweis', 'Note'),
+    warn: T('Achtung', 'Caution'),
+    danger: T('Vorsicht', 'Warning'),
+    open: T('Offen', 'Open'),
+  },
   setting: T('Einstellung', 'Setting'),
   value: T('Wert', 'Value'),
   secretsHidden: T(
@@ -337,7 +349,108 @@ export function isEmptySection(section) {
     );
   if (section.type === 'site') return !section.symbols.length && !section.bg.image;
   if (section.type === 'photos') return !section.items.length;
+  if (section.type === 'chapters') return !section.blocks.length;
   return false;
+}
+
+/* ---------- Anleitung / Technische Beschreibung ---------- */
+
+/** Bausteine eines Kapitels (`preset` = Tabelle mit vorbelegter Kopfzeile). */
+export const BLOCK_TYPES = [
+  { id: 'h', label: 'Überschrift', icon: 'text' },
+  { id: 'p', label: 'Absatz', icon: 'al' },
+  { id: 'ul', label: 'Aufzählung', icon: 'list' },
+  { id: 'steps', label: 'Handlungsschritte', icon: 'pnum' },
+  { id: 'callout', label: 'Hinweis / Warnung', icon: 'warn' },
+  { id: 'figure', label: 'Abbildung', icon: 'image' },
+  { id: 'figsteps', label: 'Abbildung mit Schritten', icon: 'pages' },
+  { id: 'table', label: 'Tabelle', icon: 'field' },
+  { id: 'faults', label: 'Störungstabelle', icon: 'field', table: true },
+  { id: 'parts', label: 'Positionsliste', icon: 'field', table: true },
+  { id: 'scope', label: 'Lieferumfang', icon: 'field', table: true },
+  { id: 'code', label: 'Codeblock', icon: 'edit' },
+  { id: 'formula', label: 'Formel', icon: 'text' },
+];
+
+/** Tonarten der Hinweiskästen (Farben wie im Anschlussplan). */
+export const TONES = [
+  { id: 'note', color: '#2e6e8e' },
+  { id: 'warn', color: '#b45309' },
+  { id: 'danger', color: '#b91c1c' },
+  { id: 'open', color: '#6b7280' },
+];
+
+/** Kopfzeilen und Spaltenbreiten der Tabellenvorlagen. */
+const TABLE_PRESETS = {
+  faults: { head: ['Störung', 'Mögliche Ursache', 'Abhilfe'], weights: [1.1, 1.4, 1.6] },
+  parts: { head: ['Pos.', 'Bezeichnung'], weights: [0.5, 4] },
+  scope: { head: ['Menge', 'Bezeichnung'], weights: [0.6, 4] },
+  table: { head: ['Spalte 1', 'Spalte 2'], weights: [1, 1] },
+};
+
+export function newBlock(type, extra = {}) {
+  const id = uid('k');
+  if (type === 'h') return { id, type, level: 1, text: T('', ''), ...extra };
+  if (type === 'p' || type === 'ul') return { id, type, text: T('', ''), ...extra };
+  if (type === 'steps') return { id, type, text: T('', ''), ...extra };
+  if (type === 'callout') return { id, type, tone: 'note', title: T('', ''), text: T('', ''), ...extra };
+  if (type === 'figure') return { id, type, image: null, caption: T('', ''), width: 'full', ...extra };
+  if (type === 'figsteps') return { id, type, image: null, caption: T('', ''), text: T('', ''), ...extra };
+  if (type === 'code') return { id, type, text: '', ...extra };
+  if (type === 'formula') return { id, type, text: '', ...extra };
+  const preset = TABLE_PRESETS[type] || TABLE_PRESETS.table;
+  return {
+    id,
+    type: 'table',
+    preset: type,
+    caption: T('', ''),
+    head: [...preset.head],
+    rows: [preset.head.map(() => '')],
+    weights: [...preset.weights],
+    ...extra,
+  };
+}
+
+export function newChapters(kind = 'manual') {
+  return {
+    id: uid('s'),
+    type: 'chapters',
+    kind,
+    title: kind === 'tech' ? T('Technische Beschreibung', 'Technical description') : T('Bedienungsanleitung', 'User manual'),
+    numbering: true,
+    blocks: [],
+  };
+}
+
+/** Startinhalt der Vorlagen „Bedienungsanleitung“ und „Technische Beschreibung“. */
+export function starterChapters(kind) {
+  const s = newChapters(kind);
+  const h = (de, en, level = 1) => newBlock('h', { level, text: T(de, en) });
+  const p = (de, en = '') => newBlock('p', { text: T(de, en) });
+  if (kind === 'tech') {
+    s.blocks = [
+      h('Aufgabe und Einsatz', 'Purpose and use'),
+      p('Hier beschreiben: wofür die Anlage gebaut wurde und wo sie eingesetzt wird.'),
+      h('Aufbau', 'Design'),
+      p('Hauptkomponenten und ihr Zusammenspiel.'),
+      newBlock('table', { preset: 'table', head: ['Komponente', 'Typ', 'Bemerkung'], rows: [['', '', '']], weights: [1.2, 1.2, 2] }),
+      h('Funktionsbeschreibung', 'Functional description'),
+      p('Ablauf und Betriebszustände.'),
+      newBlock('callout', { tone: 'open', title: T('Offene Punkte', 'Open items'), text: T('Noch zu klären oder nachzureichen.', '') }),
+    ];
+  } else {
+    s.blocks = [
+      h('Zu dieser Anleitung', 'About this manual'),
+      p('Kurz erklären, für wen die Anleitung ist und was sie beschreibt.'),
+      h('Sicherheitshinweise', 'Safety'),
+      newBlock('callout', { tone: 'danger', text: T('Hier die wichtigsten Warnhinweise nennen.', 'List the most important warnings here.') }),
+      h('Bedienung', 'Operation'),
+      newBlock('steps', { text: T('Erster Schritt\nZweiter Schritt\nDritter Schritt', '') }),
+      h('Störungen', 'Troubleshooting'),
+      newBlock('faults'),
+    ];
+  }
+  return s;
 }
 
 /* ---------- Zugangsdaten ---------- */
@@ -478,6 +591,18 @@ export const TEMPLATES = [
     ],
   },
   {
+    id: 'manual',
+    title: T('Bedienungsanleitung', 'User manual'),
+    desc: 'Deckblatt, Inhalt, Kapitel mit Schritten, Warnhinweisen und Störungstabelle',
+    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, starterChapters('manual')],
+  },
+  {
+    id: 'tech',
+    title: T('Technische Beschreibung', 'Technical description'),
+    desc: 'Aufgabe, Aufbau, Funktion, technische Daten und offene Punkte',
+    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, starterChapters('tech')],
+  },
+  {
     id: 'wiring',
     title: T('Anschlussplan', 'Wiring diagram'),
     desc: 'Blockschaltbild mit Leitungsarten, Klemmenplan und Hinweisen',
@@ -573,6 +698,7 @@ export function normalizeProject(raw) {
     else if (s.type === 'access') project.sections.push(cleanAccess(s, id));
     else if (s.type === 'site') project.sections.push(cleanSite(s, id, images));
     else if (s.type === 'photos') project.sections.push(cleanPhotos(s, id, images));
+    else if (s.type === 'chapters') project.sections.push(cleanChapters(s, id, images));
   }
   return project;
 }
@@ -683,6 +809,47 @@ function cleanSite(s, id, images) {
   };
 }
 
+const TABLE_IDS = new Set(['table', 'faults', 'parts', 'scope']);
+
+function cleanChapters(s, id, images) {
+  const d = newChapters(s.kind === 'tech' ? 'tech' : 'manual');
+  const cell = (v) => str_(v, 600);
+  const blocks = [];
+  for (const b of Array.isArray(s.blocks) ? s.blocks : []) {
+    if (!b || typeof b !== 'object') continue;
+    const base = { id: id(b.id, 'k'), type: b.type };
+    if (b.type === 'h') blocks.push({ ...base, level: oneOf(b.level, [1, 2], 1), text: toT(b.text) });
+    else if (b.type === 'p' || b.type === 'ul' || b.type === 'steps') blocks.push({ ...base, text: toT(b.text) });
+    else if (b.type === 'callout')
+      blocks.push({ ...base, tone: oneOf(b.tone, TONES.map((t) => t.id), 'note'), title: toT(b.title), text: toT(b.text) });
+    else if (b.type === 'figure')
+      blocks.push({
+        ...base,
+        image: typeof b.image === 'string' && images[b.image] ? b.image : null,
+        caption: toT(b.caption),
+        width: oneOf(b.width, ['full', 'half'], 'full'),
+      });
+    else if (b.type === 'figsteps')
+      blocks.push({ ...base, image: typeof b.image === 'string' && images[b.image] ? b.image : null, caption: toT(b.caption), text: toT(b.text) });
+    else if (b.type === 'code' || b.type === 'formula') blocks.push({ ...base, text: str_(b.text, 8000) });
+    else if (b.type === 'table') {
+      const cols = Math.max(1, Math.min(6, Array.isArray(b.head) ? b.head.length : 2));
+      const head = Array.from({ length: cols }, (_, i) => cell(Array.isArray(b.head) ? b.head[i] : ''));
+      const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 200).map((r) => Array.from({ length: cols }, (_, i) => cell(Array.isArray(r) ? r[i] : '')));
+      const weights = Array.from({ length: cols }, (_, i) => clamp(Array.isArray(b.weights) ? b.weights[i] : 1, 0.2, 10, 1));
+      blocks.push({ ...base, preset: TABLE_IDS.has(b.preset) ? b.preset : 'table', caption: toT(b.caption), head, rows, weights });
+    }
+  }
+  return {
+    id: id(s.id, 's'),
+    type: 'chapters',
+    kind: d.kind,
+    title: toT(s.title || d.title),
+    numbering: s.numbering !== false,
+    blocks,
+  };
+}
+
 function cleanPhotos(s, id, images) {
   const d = newPhotos();
   const items = (Array.isArray(s.items) ? s.items : [])
@@ -747,6 +914,7 @@ export function sectionTitle(section, lang = 'de') {
   if (section.type === 'access') return tx(section.title, lang) || str('access', lang);
   if (section.type === 'site') return tx(section.title, lang) || str('site', lang);
   if (section.type === 'photos') return tx(section.title, lang) || str('photos', lang);
+  if (section.type === 'chapters') return tx(section.title, lang) || str('chapters', lang);
   return section.type;
 }
 

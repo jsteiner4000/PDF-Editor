@@ -885,3 +885,29 @@
   box-shadow: 0 0 0 1px var(--line);
   margin-bottom: 10px;
 }
+
+/* Tabellen-Gitter und Code in den Eigenschaften */
+.sd-grid {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+}
+.sd-grid .fld {
+  height: 28px;
+  padding: 0 7px;
+  font-size: 12px;
+  width: 100%;
+}
+.sd-grid .fld.head {
+  font-weight: 600;
+  background: var(--bg);
+}
+.sd-grid .btn {
+  width: 26px;
+  height: 26px;
+}
+textarea.fld.mono {
+  font-size: 12px;
+  white-space: pre;
+  overflow-x: auto;
+}
