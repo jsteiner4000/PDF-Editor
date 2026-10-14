@@ -187,11 +187,20 @@ const LEGACY_LOOK = `:root{
 .tool[data-tool="formdesign"]{display:none}`;
 
 /**
+ * Raster wie in 1.0 für den Vergleich (nur Neubau): Kopfzeile 52 px, kein Werkzeugband – sonst ist
+ * der Dokumentbereich niedriger und „Ganze Seite“ sowie die Bildschirmfotos weichen ab.
+ */
+const LEGACY_FRAME = `#app:has(> #ribbon){grid-template-rows:52px 0 1fr !important}
+#ribbon{display:none !important}`;
+
+/**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).
  * Einzelne Elemente statt des ganzen Fensters, weil Ganzfenster-Aufnahmen im Headless-Chromium
  * nicht pixelstabil sind.
  */
-export async function screenshots(page, selectors = ['#top', '#left', '#right', '.page']) {
+// Die Kopfzeile ist seit 2.4 neu gestaltet (Reiter, Werkzeugband wie Acrobat/Office) und wird nicht
+// mehr mit 1.0 verglichen; für die übrigen Bereiche stellt LEGACY_LOOK das alte Raster nach.
+export async function screenshots(page, selectors = ['#left', '#right', '.page']) {
   // Maus aus dem Weg (Hover-Zustände) und Übergänge abklingen lassen
   await page.mouse.move(1, 999);
   await page.waitForTimeout(400);
@@ -365,6 +374,12 @@ export async function runBoth(browser, scenario) {
   const out = {};
   for (const build of Object.keys(BUILDS)) {
     const { page, context, errors } = await launch(browser, build);
+    if (build === 'neubau')
+      await page.evaluate((css) => {
+        const style = document.createElement('style');
+        style.textContent = css;
+        document.head.appendChild(style);
+      }, LEGACY_FRAME);
     try {
       out[build] = await scenario(page, build);
       out[build + 'Errors'] = errors;

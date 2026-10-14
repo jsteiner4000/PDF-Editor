@@ -1,0 +1,693 @@
+/* „Dokumentation erstellen“ – gleiche Farbwelt und Bausteine wie die übrige App (styles.css). */
+#app.view-studio #main {
+  display: none;
+}
+#studio {
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr) 316px;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+}
+#studio.hidden {
+  display: none;
+}
+
+/* Projektmappe */
+.sd-side,
+.sd-insp {
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.sd-side {
+  border-right: 1px solid var(--line);
+}
+.sd-insp {
+  border-left: 1px solid var(--line);
+}
+.sd-head,
+.sd-ihead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 46px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 650;
+  font-size: 13.5px;
+  flex: none;
+}
+.sd-head span {
+  flex: 1;
+}
+.sd-head .btn {
+  height: 30px;
+  width: 30px;
+}
+.sd-list {
+  overflow: auto;
+  padding: 8px 8px 24px;
+  flex: 1;
+}
+.sd-proj {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease);
+}
+.sd-proj .ti {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.sd-proj .tx,
+.sd-sec .tx {
+  min-width: 0;
+  flex: 1;
+}
+.sd-proj b,
+.sd-sec b {
+  display: block;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-proj small,
+.sd-sec small {
+  display: block;
+  color: var(--ink3);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.sd-proj:hover,
+.sd-sec:hover {
+  background: var(--hover);
+}
+.sd-proj.on,
+.sd-sec.on {
+  background: var(--acc-soft);
+}
+.sd-proj.on b,
+.sd-sec.on b {
+  color: var(--acc);
+}
+.sd-proj:focus-visible,
+.sd-sec:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+}
+.sd-secs {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--line);
+}
+.sd-sec {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 6px 7px 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease);
+}
+.sd-sec + .sd-sec {
+  margin-top: 2px;
+}
+.sd-thumb {
+  width: 38px;
+  height: 54px;
+  flex: none;
+  border-radius: 3px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px var(--line2),
+    var(--sh1);
+}
+.sd-thumb svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sd-sec .btn {
+  width: 28px;
+  height: 28px;
+  opacity: 0;
+}
+.sd-sec:hover .btn,
+.sd-sec.on .btn,
+.sd-sec .btn:focus-visible {
+  opacity: 1;
+}
+.sd-sec.dragging {
+  opacity: 0.45;
+}
+.sd-sec.drop-before::before,
+.sd-sec.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+.sd-sec.drop-before::before {
+  top: -2px;
+}
+.sd-sec.drop-after::after {
+  bottom: -2px;
+}
+
+/* Vorschau */
+.sd-center {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--canvas);
+}
+.sd-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  outline: none;
+}
+.sd-scroll.dragging,
+.sd-scroll.dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+.sd-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  padding: 28px 32px 110px;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.sd-page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(31, 35, 41, 0.06),
+    0 2px 6px rgba(31, 35, 41, 0.07),
+    0 14px 32px rgba(31, 35, 41, 0.09);
+  transition: box-shadow 0.16s var(--ease);
+}
+.sd-page.sd-cur {
+  box-shadow:
+    0 0 0 2px var(--acc-line),
+    0 2px 6px rgba(31, 35, 41, 0.07),
+    0 14px 32px rgba(31, 35, 41, 0.09);
+}
+.sd-svg,
+.sd-svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.sd-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sd-hov,
+.sd-sel {
+  position: absolute;
+  border-radius: 3px;
+}
+.sd-hov {
+  outline: 1.5px solid var(--acc-line);
+  outline-offset: 2px;
+}
+.sd-sel {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(31, 102, 229, 0.1);
+}
+.sd-grip {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 22px;
+  height: 6px;
+  margin-left: -11px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--acc);
+}
+.sd-pnum {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  text-align: center;
+  color: var(--ink3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.sd-nav {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid var(--line);
+  box-shadow: var(--sh2);
+  font-variant-numeric: tabular-nums;
+  z-index: 5;
+}
+.sd-nav .btn {
+  height: 30px;
+}
+.sd-nav .zv {
+  min-width: 64px;
+  justify-content: center;
+}
+
+/* Eigenschaften */
+.sd-ihead {
+  padding-left: 8px;
+}
+.sd-ihead .crumb {
+  padding-left: 6px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-ihead .crumb small {
+  display: block;
+  color: var(--ink3);
+  font-size: 11px;
+  font-weight: 500;
+}
+.sd-ibody {
+  overflow: auto;
+  padding: 2px 16px 28px;
+  flex: 1;
+}
+.sd-grp {
+  padding: 14px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.sd-grp h4 {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+.sd-f {
+  display: block;
+  margin-bottom: 10px;
+}
+.sd-f:last-child {
+  margin-bottom: 0;
+}
+.sd-l {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink2);
+  font-size: 12px;
+}
+.sd-f .fld {
+  width: 100%;
+}
+.sd-f textarea.fld {
+  height: auto;
+  min-height: 52px;
+  padding: 7px 9px;
+  resize: vertical;
+  line-height: 1.4;
+  font: inherit;
+}
+.sd-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.sd-bi {
+  position: relative;
+  display: block;
+}
+.sd-bi + .sd-bi {
+  margin-top: 6px;
+}
+.sd-bi::after {
+  content: attr(data-lang);
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--ink3);
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.sd-bi .fld {
+  padding-right: 34px;
+}
+.sd-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sd-two.narrow {
+  grid-template-columns: 1fr 72px;
+}
+.sd-two .sd-f {
+  margin-bottom: 10px;
+}
+.sd-seg {
+  display: flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.sd-seg button {
+  flex: 1;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink2);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.sd-seg button:hover {
+  color: var(--ink);
+}
+.sd-seg button.on {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh1);
+}
+.sd-seg button:focus-visible,
+.sd-chips button:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: 1px;
+}
+.sd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sd-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sd-chips button i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.sd-chips button.on {
+  background: var(--panel);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1.5px var(--acc);
+}
+.sd-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 10px;
+  cursor: pointer;
+}
+.sd-check input {
+  margin: 2px 0 0;
+  accent-color: var(--acc);
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.sd-check small {
+  display: block;
+  color: var(--ink3);
+  font-size: 11.5px;
+  margin-top: 1px;
+}
+.sd-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -8px;
+}
+.sd-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.1s var(--ease);
+}
+.sd-row:hover {
+  background: var(--hover);
+}
+.sd-row:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+}
+.sd-row .t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-row small {
+  color: var(--ink3);
+  font-size: 11.5px;
+}
+.sd-row .chev {
+  color: var(--ink3);
+  opacity: 0.7;
+}
+.sd-row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.sd-row .pin {
+  min-width: 34px;
+  font-variant-numeric: tabular-nums;
+}
+.sd-empty {
+  padding: 6px 8px;
+  color: var(--ink3);
+  font-size: 12px;
+}
+.sd-add {
+  margin: 6px 0 0 -6px;
+  height: 30px;
+  color: var(--acc);
+  font-weight: 600;
+}
+.sd-add:hover {
+  background: var(--acc-soft);
+}
+.sd-link {
+  height: 28px;
+  margin: -2px 0 8px -8px;
+  color: var(--ink2);
+  font-size: 12px;
+}
+.sd-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sd-cat {
+  display: grid;
+  grid-template-columns: 32px 1fr 30px;
+  gap: 6px;
+  align-items: center;
+}
+.sd-cat .btn {
+  width: 30px;
+  height: 30px;
+}
+.sd-color {
+  width: 32px;
+  height: 32px;
+  padding: 3px;
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  background: #fff;
+  cursor: pointer;
+}
+.sd-f .sd-color {
+  width: 100%;
+}
+.sd-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 84px;
+  padding: 10px 14px;
+  border: 1.5px dashed var(--line2);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink2);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.12s var(--ease),
+    background-color 0.12s var(--ease);
+}
+.sd-logo span {
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.sd-logo small {
+  display: block;
+  font-weight: 400;
+  color: var(--ink3);
+  font-size: 11.5px;
+}
+.sd-logo.has {
+  border-style: solid;
+  border-color: var(--line);
+  background: #fff;
+}
+.sd-logo img {
+  max-width: 100%;
+  max-height: 60px;
+  object-fit: contain;
+}
+.sd-logo:hover,
+.sd-logo.over {
+  border-color: var(--acc);
+  background: var(--acc-soft);
+}
+.sd-logo:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: 1px;
+}
+.sd-note {
+  margin: 12px 0 0;
+  color: var(--ink3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.sd-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 16px;
+}
+.sd-acts .btn {
+  height: 30px;
+}
+.sd-acts .btn.danger {
+  color: var(--err);
+}
+.sd-acts .btn.danger:hover {
+  background: var(--err-soft);
+  border-color: transparent;
+}
+.sd-order {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+}
+.sd-order .btn {
+  width: 30px;
+  height: 30px;
+}
+
+/* Hinweis in einer geöffneten PDF, die mit „Dokumentation erstellen“ angelegt wurde */
+.sd-offer {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 14px;
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh2);
+  white-space: nowrap;
+  color: var(--ink2);
+}
+.sd-offer > svg.i {
+  color: var(--t6-ink);
+}
+.sd-offer .btn.primary {
+  height: 30px;
+}
+.sd-offer .btn.ic {
+  width: 30px;
+  height: 30px;
+}
+#app.view-home .sd-offer {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  #studio {
+    grid-template-columns: 220px minmax(0, 1fr) 292px;
+  }
+}

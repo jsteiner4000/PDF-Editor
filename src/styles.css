@@ -1,20 +1,21 @@
 :root {
-  /* PDFix – Farbwelt aus Konzept 2 („Glas-Ebenen“): Mitternachtsblau für Text, Himmelblau als
-     Akzent (für weiße Schrift auf Schaltflächen etwas abgedunkelt: Kontrast ≥ 4,5 : 1),
-     Violett/Magenta/Minze nur sparsam (Wortmarke, Werkzeug-Symbole). */
-  --ink: #1b1e45;
-  --ink2: #4b4f72;
-  --ink3: #5f6483;
-  --line: #e3e5ef;
-  --line2: #d2d5e3;
-  --bg: #f3f4fa;
-  --canvas: #e8eaf3;
+  /* PDFix – Arbeitsoberfläche wie Acrobat/Office: kühle Neutraltöne aus einer Grau-Familie, ein
+     Akzent (Himmelblau, für weiße Schrift abgedunkelt: Kontrast ≥ 4,5 : 1). Mitternachtsblau,
+     Violett/Magenta/Minze nur in der Wortmarke und den Werkzeug-Symbolen. */
+  --brand-ink: #1b1e45;
+  --ink: #1f2329;
+  --ink2: #444c56;
+  --ink3: #5d6670;
+  --line: #e2e5e9;
+  --line2: #cfd4da;
+  --bg: #f2f3f5;
+  --canvas: #e7e9ec;
   --panel: #ffffff;
-  --hover: #f1f2f9;
-  --press: #e6e8f2;
+  --hover: #eef0f3;
+  --press: #e2e5e9;
   --acc: #1f66e5;
   --acc-h: #1a56c4;
-  --acc-soft: #eaf1ff;
+  --acc-soft: #e8f0fd;
   --acc-line: #8db6ff;
   --brand-blue: #2c7dff;
   --brand-violet: #8c34f2;
@@ -38,9 +39,10 @@
   --warn-soft: #fff3dc;
   --err: #b42318;
   --err-soft: #fdebea;
-  --sh1: 0 1px 2px rgba(27, 30, 69, 0.06), 0 1px 3px rgba(27, 30, 69, 0.08);
-  --sh2: 0 4px 12px rgba(27, 30, 69, 0.1), 0 2px 4px rgba(27, 30, 69, 0.06);
-  --sh3: 0 18px 48px rgba(27, 30, 69, 0.18), 0 4px 12px rgba(27, 30, 69, 0.08);
+  --sh1: 0 1px 2px rgba(31, 35, 41, 0.06), 0 1px 3px rgba(31, 35, 41, 0.08);
+  --sh2: 0 4px 12px rgba(31, 35, 41, 0.1), 0 2px 4px rgba(31, 35, 41, 0.06);
+  --sh3: 0 18px 48px rgba(31, 35, 41, 0.18), 0 4px 12px rgba(31, 35, 41, 0.08);
+  --ease: cubic-bezier(0.2, 0, 0, 1);
   --r: 8px;
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -95,18 +97,43 @@ kbd {
 /* ---------- App-Rahmen ---------- */
 #app {
   display: grid;
-  grid-template-rows: 52px 1fr;
+  grid-template-rows: 48px auto 1fr;
   height: 100%;
 }
 #top {
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 10px 0 14px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  background: var(--bg);
   position: relative;
   z-index: 30;
+}
+#top .btn {
+  height: 30px;
+}
+#top .btn.ic {
+  width: 30px;
+}
+#top .btn.primary {
+  height: 32px;
+}
+#main {
+  grid-row: 3;
+}
+/* feste Spalten: ausgeblendete Seitenleisten (Startseite) verschieben die Mitte nicht */
+#left {
+  grid-column: 1;
+}
+#center {
+  grid-column: 2;
+}
+#right {
+  grid-column: 3;
+}
+#rail {
+  grid-column: 4;
 }
 .brand {
   display: flex;
@@ -128,7 +155,7 @@ kbd {
 .wm {
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--ink);
+  color: var(--brand-ink);
 }
 .wm em {
   font-style: normal;
@@ -155,6 +182,10 @@ kbd {
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease),
+    box-shadow 0.12s var(--ease);
 }
 .btn:hover {
   background: var(--hover);
@@ -202,6 +233,14 @@ kbd {
   margin-left: -2px;
   opacity: 0.6;
 }
+/* Reiter wie in Acrobat: „Start“ und das geöffnete Dokument bzw. Projekt */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.tab,
 .doctab {
   display: flex;
   align-items: center;
@@ -209,10 +248,49 @@ kbd {
   height: 34px;
   padding: 0 8px 0 12px;
   border-radius: 8px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  max-width: 420px;
+  border: 0;
+  background: transparent;
+  color: var(--ink2);
+  max-width: 340px;
   min-width: 0;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.12s var(--ease),
+    box-shadow 0.12s var(--ease);
+}
+.tab {
+  padding: 0 12px;
+  font-weight: 550;
+}
+.tab:hover,
+.doctab:hover {
+  background: var(--hover);
+}
+.tab.on,
+.doctab.on {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh1);
+}
+.tab:focus-visible,
+.doctab:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: 1px;
+}
+.doctab .ti {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+.doctab .ti svg.i {
+  width: 15px;
+  height: 15px;
 }
 .doctab .nm {
   overflow: hidden;
@@ -227,9 +305,117 @@ kbd {
   background: var(--acc);
   flex: none;
 }
-.doctab .btn {
+.doctab .btn,
+#top .doctab .btn {
   width: 24px;
   height: 24px;
+}
+.doctab:not(.on) .btn {
+  opacity: 0;
+}
+.doctab:hover .btn,
+.doctab .btn:focus-visible {
+  opacity: 1;
+}
+
+/* Werkzeugband (wie das vereinfachte Menüband in Office): eine Zeile, Gruppen mit Trennlinien */
+#ribbon {
+  grid-row: 2;
+  padding: 0 8px 8px;
+  background: var(--bg);
+  position: relative;
+  z-index: 25;
+}
+.rb-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 46px;
+  padding: 0 6px;
+  background: var(--panel);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh1);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.rb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.rb:hover {
+  background: var(--hover);
+}
+.rb:active {
+  background: var(--press);
+}
+.rb:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+}
+.rb:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.rb.on {
+  background: var(--acc-soft);
+  color: var(--acc);
+  font-weight: 600;
+}
+.rb svg.i {
+  color: var(--rb-ink, var(--ink2));
+}
+.rb.on svg.i {
+  color: var(--acc);
+}
+.rb .caret {
+  margin-left: -3px;
+  opacity: 0.6;
+}
+.rb-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: var(--line);
+  flex: none;
+}
+.rb-grow {
+  flex: 1;
+}
+.rb-label {
+  color: var(--ink3);
+  font-size: 12px;
+  padding: 0 4px 0 6px;
+  flex: none;
+}
+.rb.c1 { --rb-ink: var(--t1-ink); }
+.rb.c2 { --rb-ink: var(--t2-ink); }
+.rb.c3 { --rb-ink: var(--t3-ink); }
+.rb.c4 { --rb-ink: var(--t4-ink); }
+.rb.c5 { --rb-ink: var(--t5-ink); }
+.rb.c6 { --rb-ink: var(--t6-ink); }
+/* Startseite: kein Werkzeugband, keine Dokument-Bedienelemente */
+#app.view-home #ribbon,
+#app.view-home #left,
+#app.view-home #right,
+#app.view-home #rail,
+#app.view-home #nav,
+#app.view-home #ctx {
+  display: none !important;
 }
 .grow {
   flex: 1;
@@ -1019,6 +1205,10 @@ body.editing #nav {
 #ctx .btn {
   white-space: nowrap;
 }
+#nav,
+#bZoom {
+  font-variant-numeric: tabular-nums;
+}
 #nav .pg {
   display: flex;
   align-items: center;
@@ -1238,166 +1428,407 @@ body.editing #nav {
   border-radius: 4px;
 }
 
-/* ---------- Startseite ---------- */
+/* ---------- Startseite (wie Acrobat-Start / Office-Start) ---------- */
 #home {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
   background: var(--bg);
+  border-top: 1px solid var(--line);
   z-index: 10;
-  overflow: auto;
+  overflow: hidden;
 }
-.hcard {
-  width: min(760px, 92vw);
-  padding: 12px 0 40px;
+.hs {
+  display: flex;
+  height: 100%;
+}
+.hs-nav {
+  flex: none;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 12px 16px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  overflow: auto;
 }
 .hhero {
   display: flex;
   align-items: center;
-  gap: 22px;
-  margin-bottom: 26px;
+  gap: 12px;
+  padding: 2px 8px 18px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
 }
 .hhero .mark {
-  width: 76px;
-  height: 76px;
+  width: 40px;
+  height: 40px;
+  flex: none;
   display: grid;
   place-items: center;
-  filter: drop-shadow(0 6px 14px rgba(44, 125, 255, 0.22));
+  filter: drop-shadow(0 3px 8px rgba(44, 125, 255, 0.22));
+}
+.hhero .mark img {
+  width: 40px;
+  height: 40px;
 }
 .hhero h1 {
   margin: 0;
-  font-size: 34px;
-  letter-spacing: -0.025em;
+  font-size: 21px;
+  letter-spacing: -0.02em;
   font-weight: 700;
   line-height: 1.1;
 }
 .hhero p {
-  margin: 4px 0 0;
-  color: var(--ink2);
-  font-size: 14px;
+  margin: 3px 0 0;
+  color: var(--ink3);
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-wrap: balance;
 }
-.drop {
-  border: 1.5px dashed var(--line2);
-  border-radius: 16px;
-  background: #fff;
-  padding: 34px;
+.hs-item {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 11px;
+  height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink2);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
 }
-.drop.over {
+.hs-item:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.hs-item.on {
+  background: var(--acc-soft);
+  color: var(--acc);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--acc);
+}
+.hs-item:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+}
+.hs-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+.hs-in {
+  max-width: 1120px;
+  padding: 30px 44px 64px;
+}
+.hs-greet {
+  margin: 0 0 26px;
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.hs-sec + .hs-sec {
+  margin-top: 36px;
+}
+.hs-sec > h3,
+.hs-head h3 {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.hs-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+.hs-new {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 176px);
+  gap: 22px 18px;
+}
+.tpl {
+  display: block;
+  width: 176px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tpl-thumb {
+  position: relative;
+  aspect-ratio: 210 / 297;
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh1);
+  transition:
+    box-shadow 0.16s var(--ease),
+    transform 0.16s var(--ease);
+}
+.tpl-thumb svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tpl:hover .tpl-thumb {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 2px var(--acc-line),
+    var(--sh2);
+}
+.tpl:active .tpl-thumb {
+  transform: translateY(0);
+}
+.tpl:focus-visible {
+  outline: none;
+}
+.tpl:focus-visible .tpl-thumb {
+  box-shadow:
+    0 0 0 2px var(--acc),
+    var(--sh2);
+}
+.tpl b {
+  display: block;
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tpl > span {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.tpl-tag {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--brand-ink);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+/* Kachel „PDF öffnen“: gestrichelte Ablagefläche im Format der Vorlagen */
+.drop {
+  width: 176px;
+}
+.drop .tpl-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--panel);
+  box-shadow: none;
+  border: 1.5px dashed var(--line2);
+  text-align: center;
+  color: var(--ink3);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.drop .tpl-thumb .big {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--acc-soft);
+  color: var(--acc);
+}
+.drop.over .tpl-thumb {
   border-color: var(--acc);
   background: var(--acc-soft);
 }
-.drop .dt {
-  flex: 1;
-}
-.drop .dt b {
-  font-size: 15px;
-  display: block;
-  margin-bottom: 3px;
-}
-.drop .dt span {
-  color: var(--ink3);
-}
 .drop .btn.primary {
-  height: 42px;
-  padding: 0 20px;
-  font-size: 14px;
+  height: 30px;
+  padding: 0 12px;
 }
 .feats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
 }
 .feat {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 16px;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 0 0 1px var(--line);
 }
 button.feat {
   font: inherit;
   color: inherit;
   text-align: left;
   cursor: pointer;
-  display: block;
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  column-gap: 12px;
+  align-items: start;
+  align-content: start;
   width: 100%;
+  border: 0;
+  transition:
+    box-shadow 0.14s var(--ease),
+    transform 0.14s var(--ease);
 }
 button.feat:hover {
-  border-color: var(--line2);
-  background: var(--hover);
+  box-shadow:
+    0 0 0 1px var(--line2),
+    var(--sh2);
+}
+button.feat:active {
+  transform: translateY(1px);
 }
 button.feat:focus-visible {
   outline: 2px solid var(--acc-line);
   outline-offset: 1px;
 }
 .feat .ti {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 9px;
   display: grid;
   place-items: center;
-  margin-bottom: 10px;
+  grid-row: span 2;
 }
 .feat b {
   display: block;
-  margin-bottom: 3px;
+  margin: 1px 0 2px;
+  font-weight: 600;
 }
 .feat span {
   color: var(--ink3);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.recent {
-  margin-top: 22px;
-}
-.recent h4 {
   font-size: 12px;
-  font-weight: 650;
-  color: var(--ink2);
-  margin: 0 0 8px;
+  line-height: 1.45;
+}
+/* Zuletzt verwendet: Reiter und Tabelle wie in Office */
+.hs-tabs {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.hs-tabs button {
+  position: relative;
+  height: 34px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--ink3);
+  font-weight: 500;
+  cursor: pointer;
+}
+.hs-tabs button:hover {
+  color: var(--ink);
+}
+.hs-tabs button.on {
+  color: var(--ink);
+  font-weight: 600;
+}
+.hs-tabs button.on::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+.hs-tabs button:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: 2px;
 }
 .rl {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  background: var(--panel);
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px var(--line);
   overflow: hidden;
 }
+.rh,
 .ri {
-  display: flex;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 170px 32px;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 0 14px;
+}
+.rh {
+  height: 34px;
+  color: var(--ink3);
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--line);
+}
+.ri {
+  height: 48px;
   cursor: pointer;
   border-top: 1px solid var(--line);
+  transition: background-color 0.1s var(--ease);
 }
-.ri:first-child {
+.rh + .ri {
   border-top: 0;
 }
 .ri:hover {
   background: var(--hover);
 }
+.ri:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+}
 .ri .rn {
-  flex: 1;
   font-weight: 550;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ri .rn small {
+  display: block;
+  font-weight: 400;
+  color: var(--ink3);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .ri .rd {
   color: var(--ink3);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ri .btn {
+  width: 28px;
+  height: 28px;
+  opacity: 0;
+}
+.ri:hover .btn,
+.ri .btn:focus-visible {
+  opacity: 1;
+}
+.rl-empty {
+  padding: 26px 18px;
+  color: var(--ink3);
+  text-align: center;
+  font-size: 12.5px;
 }
 .ficon {
-  width: 30px;
-  height: 36px;
-  border-radius: 4px;
+  width: 24px;
+  height: 30px;
+  border-radius: 3px;
   background: #fff;
   border: 1px solid var(--line2);
   position: relative;
@@ -1406,15 +1837,41 @@ button.feat:focus-visible {
 .ficon::after {
   content: 'PDF';
   position: absolute;
-  left: 3px;
-  bottom: 4px;
-  font-size: 8.5px;
+  left: 2px;
+  bottom: 3px;
+  font-size: 7px;
   font-weight: 800;
   color: #fff;
   background: var(--acc);
-  padding: 1px 3px;
+  padding: 1px 2px;
   border-radius: 2px;
   letter-spacing: 0.03em;
+}
+.ficon.prj {
+  border-color: transparent;
+  background: var(--t6);
+}
+.ficon.prj::after {
+  content: '';
+  left: 5px;
+  right: 5px;
+  top: 8px;
+  bottom: auto;
+  height: 2px;
+  padding: 0;
+  background: var(--t6-ink);
+  box-shadow:
+    0 5px 0 var(--t6-ink),
+    0 10px 0 var(--t6-ink);
+  border-radius: 1px;
+}
+@media (max-width: 900px) {
+  .hs-nav {
+    width: 200px;
+  }
+  .hs-in {
+    padding: 24px 24px 48px;
+  }
 }
 
 /* ---------- Menüs, Dialoge, Meldungen ---------- */

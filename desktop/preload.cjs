@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
     } catch {}
     return filePath ? call('file:grant-dropped', filePath) : Promise.resolve(null);
   },
+  /** „Dokumentation erstellen“: Druckfassung (HTML) als PDF-Bytes. */
+  makePdf: (html) => call('studio:pdf', String(html)),
   setState: (state) =>
     ipcRenderer.send('app:state', {
       hasDocument: !!state.hasDocument,

@@ -21,10 +21,6 @@ ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
 Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
 „Immer“.
 
-Ohne Installation: „PDFix-2.3.1-portable.exe“ starten (z. B. vom
-USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
-erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
-
 Falls Windows warnt („Der Computer wurde durch Windows geschützt“): Das
 Programm ist nicht digital signiert. „Weitere Informationen“ > „Trotzdem
 ausführen“.

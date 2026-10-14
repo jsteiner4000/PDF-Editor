@@ -1,5 +1,5 @@
 # Paketierung der Desktop-App (electron-builder).
-# Windows: NSIS-Installer (Benutzerinstallation ohne Adminrechte, Deutsch) und Portable-EXE.
+# Windows: NSIS-Installer (Benutzerinstallation ohne Adminrechte, Deutsch).
 # Vorher bauen: npm run build:desktop (macht npm run dist:win automatisch).
 appId: de.jsteiner.pdfeditor
 productName: PDFix
@@ -55,8 +55,6 @@ win:
   target:
     - target: nsis
       arch: [x64]
-    - target: portable
-      arch: [x64]
   legalTrademarks: PDFix
   requestedExecutionLevel: asInvoker
 
@@ -81,10 +79,6 @@ nsis:
   differentialPackage: false
   # Dateizuordnung .pdf als Option im Installer („Öffnen mit“), siehe desktop/installer.nsh
   include: desktop/installer.nsh
-
-portable:
-  artifactName: PDFix-${version}-portable.exe
-  requestExecutionLevel: user
 
 linux:
   icon: assets/icon/png

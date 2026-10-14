@@ -23,6 +23,7 @@ import { FontsPanel } from './ui/fonts-panel.js';
 import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
+import { STUDIO_TEMPLATES, Studio, deleteDraft, listDrafts, templatePreview } from './studio/studio.js';
 
 /**
  * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
@@ -108,9 +109,12 @@ export class App {
     this.forms = new FormLayer(this);
     this.design = new FormDesign(this);
     this.fontsPanel = new FontsPanel(this);
+    this.studio = new Studio(this);
+    this.view = 'home';
     this.build();
     this.loadFonts();
     this.showHome();
+    this.setView('home');
   }
   build() {
     this.root.innerHTML = `
@@ -118,7 +122,11 @@ export class App {
   <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PD<em>Fix</em></span></div>
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
-  <div class="doctab hidden" id="docTab">${icon('file', 's')}<span class="nm" id="docName"></span><span class="dot hidden" id="dirtyDot" title="Ungespeicherte Änderungen"></span><button class="btn ic" id="bClose" title="Dokument schließen">${icon('close', 's')}</button></div>
+  <nav class="tabs" id="tabs" aria-label="Geöffnet">
+    <button class="tab on" id="tHome" title="Startseite">${icon('home', 's')}Start</button>
+    <div class="doctab hidden" id="docTab" role="button" tabindex="0"><span class="ti c1">${icon('file', 's')}</span><span class="nm" id="docName"></span><span class="dot hidden" id="dirtyDot" title="Ungespeicherte Änderungen"></span><button class="btn ic" id="bClose" title="Dokument schließen">${icon('close', 's')}</button></div>
+    <div class="doctab hidden" id="prjTab" role="button" tabindex="0"><span class="ti c6">${icon('binder', 's')}</span><span class="nm" id="prjName"></span><button class="btn ic" id="bPrjClose" title="Dokumentation schließen">${icon('close', 's')}</button></div>
+  </nav>
   <div class="grow"></div>
   <div class="tb-group" id="histBtns">
     <button class="btn ic" id="bUndo" title="Rückgängig (Strg+Z)" disabled>${icon('undo')}</button>
@@ -128,6 +136,7 @@ export class App {
   <button class="btn ic" id="bPrint" title="Drucken / im Browser anzeigen" disabled>${icon('print')}</button>
   <button class="btn primary" id="bSave" disabled>${icon('save', 's')}Speichern</button>
 </header>
+<div id="ribbon" class="hidden" role="toolbar" aria-label="Werkzeuge"><div class="rb-bar" id="rbBar"></div></div>
 <div id="main">
   <aside id="left" class="collapsed"><div class="lp-head" id="lpHead"></div><div class="lp-body" id="lpBody"></div></aside>
   <section id="center">
@@ -154,7 +163,29 @@ export class App {
 </div>`;
     const on = (id, type, handler) => $('#' + id).addEventListener(type, handler);
     on('bFile', 'click', (n) => this.fileMenu(n.currentTarget));
-    on('bClose', 'click', () => this.close());
+    on('bClose', 'click', (ev) => {
+      ev.stopPropagation();
+      this.close();
+    });
+    on('tHome', 'click', () => this.showStart());
+    on('prjTab', 'click', () => this.showStudio());
+    on('bPrjClose', 'click', (ev) => {
+      ev.stopPropagation();
+      this.studio.close();
+    });
+    $('#prjTab').addEventListener('keydown', (ev) => {
+      if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) {
+        ev.preventDefault();
+        this.showStudio();
+      }
+    });
+    on('docTab', 'click', () => this.showDocument());
+    $('#docTab').addEventListener('keydown', (ev) => {
+      if (ev.target === ev.currentTarget && (ev.key === 'Enter' || ev.key === ' ')) {
+        ev.preventDefault();
+        this.showDocument();
+      }
+    });
     on('bUndo', 'click', () => this.undo());
     on('bRedo', 'click', () => this.redo());
     on('bSave', 'click', () => this.save());
@@ -233,26 +264,57 @@ export class App {
     });
     window.addEventListener('drop', (ev) => this.onDrop(ev));
   }
+  /** Startseite wie in Acrobat/Office: Navigation links, „Neu“ mit Vorlagen, Werkzeuge, Zuletzt verwendet. */
   async showHome() {
     const home = $('#home');
-    home.classList.remove('hidden');
+    const hour = new Date().getHours();
+    const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Guten Tag' : 'Guten Abend';
+    const recentKind = this.recentKind || 'files';
+    const templates = STUDIO_TEMPLATES.map(
+      (t) =>
+        `<button class="tpl" data-tpl="${t.id}"><div class="tpl-thumb" data-thumb="${t.id}">${t.tag ? `<span class="tpl-tag">${escapeHtml(t.tag)}</span>` : ''}</div><b>${escapeHtml(t.title)}</b><span>${escapeHtml(t.desc)}</span></button>`,
+    ).join('');
     home.innerHTML = `
-<div class="hcard">
-  <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1 class="wm">PD<em>Fix</em></h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
-  <div class="drop" id="dropZone">
-    <div class="ficon" style="width:40px;height:50px"></div>
-    <div class="dt"><b>PDF-Datei öffnen</b><span>Datei auswählen oder hierher ziehen</span></div>
-    <button class="btn primary" id="hOpen">${icon('open', 's')}Datei öffnen</button>
-  </div>
-  <div class="feats">
-    <button class="feat" id="hEdit"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></button>
-    <button class="feat" id="hImages"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></button>
-    <button class="feat" id="hPages"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></button>
-    <button class="feat" id="hSig"><div class="ti c4">${icon('signature')}</div><b>Unterschrift</b><span>Einmal aus einem Dokument übernehmen und in jedes PDF einsetzen.</span></button>
-  </div>
-  <div class="recent hidden" id="recent"><h4>Zuletzt geöffnet</h4><div class="rl" id="recentList"></div></div>
+<div class="hs">
+  <nav class="hs-nav" aria-label="Startseite">
+    <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1 class="wm">PD<em>Fix</em></h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
+    <button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
+    <button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
+    <button class="hs-item" data-go="hsNew">${icon('plus')}Neu erstellen</button>
+    <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt verwendet</button>
+  </nav>
+  <div class="hs-main" id="hsMain"><div class="hs-in">
+    <h2 class="hs-greet" id="hsTop">${greet}</h2>
+    <section class="hs-sec" id="hsNew">
+      <h3>Neu</h3>
+      <div class="hs-new">
+        <div class="tpl drop" id="dropZone">
+          <div class="tpl-thumb"><span class="big">${icon('open')}</span><span>Datei auswählen oder hierher ziehen</span><button class="btn primary" id="hOpen">Datei öffnen</button></div>
+          <b>PDF öffnen</b><span>Bearbeiten, ausfüllen, unterschreiben</span>
+        </div>
+        ${templates}
+      </div>
+    </section>
+    <section class="hs-sec">
+      <h3>Werkzeuge</h3>
+      <div class="feats">
+        <button class="feat" id="hEdit"><div class="ti c1">${icon('edit')}</div><b>Text bearbeiten</b><span>Direkt in den Text klicken und schreiben – in der Originalschrift des Dokuments.</span></button>
+        <button class="feat" id="hImages"><div class="ti c3">${icon('image')}</div><b>Bilder &amp; Grafiken</b><span>Verschieben, Größe ändern, ersetzen oder entfernen. Neue Bilder einfügen.</span></button>
+        <button class="feat" id="hPages"><div class="ti c2">${icon('pages')}</div><b>Seiten organisieren</b><span>Einfügen, löschen, drehen, sortieren – Seitenzahlen werden angepasst.</span></button>
+        <button class="feat" id="hSig"><div class="ti c4">${icon('signature')}</div><b>Unterschrift</b><span>Einmal aus einem Dokument übernehmen und in jedes PDF einsetzen.</span></button>
+      </div>
+    </section>
+    <section class="hs-sec recent" id="hsRecent">
+      <div class="hs-tabs" role="tablist" aria-label="Zuletzt verwendet">
+        <button role="tab" data-list="files"${recentKind === 'files' ? ' class="on"' : ''} aria-selected="${recentKind === 'files'}">Zuletzt geöffnet</button>
+        <button role="tab" data-list="drafts"${recentKind === 'drafts' ? ' class="on"' : ''} aria-selected="${recentKind === 'drafts'}">Dokumentationen</button>
+      </div>
+      <div class="rl" id="recentList"></div>
+    </section>
+  </div></div>
 </div>`;
     $('#hOpen').addEventListener('click', () => this.openDialog());
+    $('#hNavOpen').addEventListener('click', () => this.openDialog());
     // Kacheln: PDF wählen und danach direkt mit dem passenden Werkzeug loslegen
     for (const [id, tool] of [
       ['hEdit', 'edit'],
@@ -261,40 +323,112 @@ export class App {
     ])
       $('#' + id).addEventListener('click', () => this.openThenTool(tool));
     $('#hSig').addEventListener('click', (ev) => SignatureTool.of(this.edit).openPop(ev.currentTarget));
+    for (const btn of $$('.tpl[data-tpl]', home))
+      btn.addEventListener('click', () => this.newProject(btn.dataset.tpl));
+    const main = $('#hsMain');
+    for (const item of $$('.hs-item[data-go]', home))
+      item.addEventListener('click', () => {
+        const target = $('#' + item.dataset.go);
+        if (item.dataset.go === 'hsTop') main.scrollTop = 0;
+        else main.scrollTop = target.offsetTop - 24;
+        for (const other of $$('.hs-item', home)) other.classList.toggle('on', other === item);
+      });
     const dropZone = $('#dropZone');
     dropZone.addEventListener('dragenter', () => dropZone.classList.add('over'));
     dropZone.addEventListener('dragleave', (ev) => {
       if (!dropZone.contains(ev.relatedTarget)) dropZone.classList.remove('over');
     });
     dropZone.addEventListener('drop', () => dropZone.classList.remove('over'));
-    const recent = (await idbList('recent'))
-      .map((n) => n.value)
-      .filter((n) => n && n.handle)
-      .sort((n, a) => a.time - n.time)
-      .slice(0, 6);
-    if (recent.length) {
-      $('#recent').classList.remove('hidden');
-      const list = $('#recentList');
-      for (const item of recent) {
-        const el = htmlToElement(
-          `<div class="ri"><div class="ficon"></div><div class="rn"></div><div class="rd"></div><button class="btn ic" title="Aus Liste entfernen">${icon('x', 's')}</button></div>`,
-        );
-        el.querySelector('.rn').textContent = item.name;
-        el.querySelector('.rd').textContent = new Date(item.time).toLocaleString('de-DE', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        el.querySelector('button').addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          idbDelete('recent', item.name);
-          el.remove();
-        });
-        el.addEventListener('click', () => this.openHandle(item.handle));
-        list.appendChild(el);
-      }
+    for (const tab of $$('.hs-tabs button', home))
+      tab.addEventListener('click', () => {
+        for (const other of $$('.hs-tabs button', home)) {
+          other.classList.toggle('on', other === tab);
+          other.setAttribute('aria-selected', String(other === tab));
+        }
+        this.renderRecent(tab.dataset.list);
+      });
+    // Vorschaubilder der Vorlagen erst, wenn der Rechner Zeit hat (Start bleibt schnell)
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+    idle(() => {
+      for (const el of $$('.tpl-thumb[data-thumb]', home))
+        if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', templatePreview(el.dataset.thumb));
+    });
+    await this.renderRecent(recentKind);
+  }
+  /** Liste „Zuletzt geöffnet“ (PDF-Dateien) bzw. „Dokumentationen“ (Entwürfe aus „Neu erstellen“). */
+  async renderRecent(kind) {
+    const list = $('#recentList');
+    if (!list) return;
+    const token = (this._recentToken = (this._recentToken || 0) + 1);
+    this.recentKind = kind;
+    const fmt = (time) =>
+      new Date(time).toLocaleString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    const items =
+      kind === 'drafts'
+        ? (await listDrafts()).map((d) => ({
+            name: d.name,
+            sub: d.sub,
+            time: d.modified,
+            open: () => this.openDraft(d.id),
+            remove: () => deleteDraft(d.id),
+          }))
+        : (await idbList('recent'))
+            .map((n) => n.value)
+            .filter((n) => n && n.handle)
+            .sort((n, a) => a.time - n.time)
+            .slice(0, 8)
+            .map((item) => ({
+              name: item.name,
+              time: item.time,
+              open: () => this.openHandle(item.handle),
+              remove: () => idbDelete('recent', item.name),
+            }));
+    if (token !== this._recentToken) return; // inzwischen anderer Reiter gewählt
+    list.innerHTML = '';
+    if (!items.length) {
+      list.appendChild(
+        htmlToElement(
+          `<div class="rl-empty">${
+            kind === 'drafts'
+              ? 'Noch keine Dokumentation erstellt – oben unter „Neu“ eine Vorlage wählen.'
+              : 'Noch keine Dateien geöffnet. Zuletzt geöffnete PDFs erscheinen hier.'
+          }</div>`,
+        ),
+      );
+      return;
+    }
+    list.appendChild(
+      htmlToElement(
+        `<div class="rh"><span></span><span>Name</span><span>${kind === 'drafts' ? 'Zuletzt bearbeitet' : 'Zuletzt geöffnet'}</span><span></span></div>`,
+      ),
+    );
+    for (const item of items) {
+      const el = htmlToElement(
+        `<div class="ri" role="button" tabindex="0"><div class="ficon${kind === 'drafts' ? ' prj' : ''}"></div><div class="rn"></div><div class="rd"></div><button class="btn ic" title="Aus Liste entfernen">${icon('x', 's')}</button></div>`,
+      );
+      el.querySelector('.rn').textContent = item.name;
+      if (item.sub) el.querySelector('.rn').appendChild(htmlToElement('<small></small>')).textContent = item.sub;
+      el.querySelector('.rd').textContent = fmt(item.time);
+      el.querySelector('button').addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        await item.remove();
+        el.remove();
+        if (!list.querySelector('.ri')) this.renderRecent(kind);
+      });
+      el.addEventListener('click', () => item.open());
+      el.addEventListener('keydown', (ev) => {
+        if (ev.target === el && (ev.key === 'Enter' || ev.key === ' ')) {
+          ev.preventDefault();
+          item.open();
+        }
+      });
+      list.appendChild(el);
     }
   }
   async loadFonts() {
@@ -420,7 +554,6 @@ export class App {
       this.origSize = bytes.length;
       this.scanUnreadablePages(session);
       this.running = null;
-      $('#home').classList.add('hidden');
       $('#docTab').classList.remove('hidden');
       $('#docName').textContent = name;
       $('#docTab').title = name;
@@ -428,9 +561,11 @@ export class App {
       $('#rail').classList.remove('hidden');
       $('#bSave').disabled = false;
       $('#bPrint').disabled = false;
+      this.setView('doc');
       this.rebuildPages();
       this.setZoom(null, 'width', true);
       this.setTool(null);
+      this.studio.offerProject(session);
       if (handle) idbPut('recent', name, { name, handle, time: Date.now() });
       document.title = name + ' – PDFix';
       return true;
@@ -460,10 +595,12 @@ export class App {
     this.pvByKey.clear();
     $('#pages').innerHTML = '';
     $('#thumbs').innerHTML = '';
+    document.getElementById('sdOffer')?.remove();
     this.session = null;
     this.file = null;
   }
   async close() {
+    if (this.view === 'studio') return this.studio.close();
     if (this.session) {
       await this.edit.finishEdit();
       if (await this.confirmDiscard()) {
@@ -478,10 +615,105 @@ export class App {
         $('#scroller').classList.remove('hidden');
         $('#bSave').disabled = true;
         $('#bPrint').disabled = true;
-        this.updateHist();
         document.title = 'PDFix';
-        this.showHome();
+        if (this.studio.project) this.setView('studio');
+        else {
+          this.showHome();
+          this.setView('home');
+        }
       }
+    }
+  }
+  /** Reiter „Start“: Startseite zeigen (ein geöffnetes Dokument bleibt geöffnet). */
+  async showStart() {
+    if (this.view === 'home') return;
+    await this.finishEdit();
+    if (this.view === 'studio') await this.studio.flush();
+    this.showHome();
+    this.setView('home');
+  }
+  /** Reiter der Dokumentation: zurück zu „Dokumentation erstellen“. */
+  async showStudio() {
+    if (!this.studio.project || this.view === 'studio') return;
+    await this.finishEdit();
+    this.setView('studio');
+  }
+  /** Neue Dokumentation aus einer Vorlage der Startseite. */
+  newProject(templateId) {
+    return this.studio.create(templateId);
+  }
+  /** Entwurf aus „Zuletzt verwendet › Dokumentationen“ öffnen. */
+  openDraft(id) {
+    return this.studio.openDraft(id);
+  }
+  /** Reiter des Dokuments: zurück zur geöffneten PDF. */
+  showDocument() {
+    if (!this.session || this.view === 'doc') return;
+    this.setView('doc');
+    if (this.fit) requestAnimationFrame(() => this.setZoom(null, this.fit, true));
+  }
+  /**
+   * Sichtbarer Bereich: 'home' (Startseite), 'doc' (geöffnete PDF) oder 'studio' (Dokumentation
+   * erstellen). Kopfzeile und Werkzeugband richten sich danach.
+   */
+  setView(view) {
+    this.view = view;
+    for (const v of ['home', 'doc', 'studio']) this.root.classList.toggle('view-' + v, view === v);
+    $('#home').classList.toggle('hidden', view !== 'home');
+    $('#tHome').classList.toggle('on', view === 'home');
+    $('#docTab').classList.toggle('on', view === 'doc');
+    this.studio.setVisible(view === 'studio');
+    const doc = view === 'doc' && !!this.session;
+    const studio = view === 'studio';
+    $('#bSave').disabled = !(doc || studio);
+    $('#bPrint').disabled = !(doc || studio);
+    $('#bSave').innerHTML = studio ? `${icon('export', 's')}PDF erstellen` : `${icon('save', 's')}Speichern`;
+    $('#bSave').title = studio ? 'PDF erstellen (Strg+S)' : 'Speichern (Strg+S)';
+    this.renderRibbon();
+    this.updateHist();
+  }
+  /** Werkzeugband: Werkzeuge der PDF bzw. Befehle von „Dokumentation erstellen“. */
+  renderRibbon() {
+    const bar = $('#rbBar');
+    $('#ribbon').classList.toggle('hidden', this.view === 'home');
+    if (this.view === 'studio') {
+      bar.dataset.kind = 'studio';
+      return this.studio.renderRibbon(bar);
+    }
+    if (this.view !== 'doc') return;
+    if (bar.dataset.kind !== 'doc') {
+      bar.dataset.kind = 'doc';
+      bar.innerHTML = '';
+      const items = [
+        ['edit', 'c1', 'edit', 'Bearbeiten', 'Texte, Bilder und Grafiken ändern'],
+        ['addtext', 'c4', 'textbox', 'Text', 'Neues Textfeld auf der Seite'],
+        ['addimage', 'c3', 'image', 'Bild', 'PNG oder JPG einfügen'],
+        '-',
+        ['organize', 'c2', 'pages', 'Seiten', 'Einfügen, löschen, drehen, ordnen'],
+        ['insert', 'c6', 'pageadd', 'Einfügen', 'Leere Seite oder aus Datei'],
+        '-',
+        ['formdesign', 'c6', 'field', 'Formularfelder', 'Textfelder und Kästchen anlegen und ändern'],
+        ['signature', 'c4', 'signature', 'Unterschrift', 'Hinterlegen und einsetzen'],
+        '>',
+        ['fonts', 'c5', 'fonts', 'Schriften', 'Im Dokument verwendete Schriften'],
+      ];
+      for (const item of items) {
+        if (item === '-') bar.appendChild(htmlToElement('<span class="rb-sep"></span>'));
+        else if (item === '>') bar.appendChild(htmlToElement('<span class="rb-grow"></span>'));
+        else {
+          const [id, color, iconName, label, title] = item;
+          const btn = htmlToElement(
+            `<button class="rb ${color}" data-tool="${id}" title="${escapeHtml(title)}">${icon(iconName)}${escapeHtml(label)}</button>`,
+          );
+          btn.addEventListener('click', () => this.runTool(id, true));
+          bar.appendChild(btn);
+        }
+      }
+    }
+    for (const btn of $$('.rb[data-tool]', bar)) {
+      const on = btn.dataset.tool === this.tool;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', String(on));
     }
   }
   async confirmDiscard() {
@@ -590,6 +822,7 @@ export class App {
     this.strippedNote = null;
   }
   async save() {
+    if (this.view === 'studio') return this.studio.exportPdf();
     if (!this.session) return false;
     if (!this.file.handle) return this.saveAs();
     try {
@@ -624,6 +857,7 @@ export class App {
     }
   }
   async saveAs() {
+    if (this.view === 'studio') return this.studio.exportPdf();
     if (!this.session) return false;
     const filename = this.file.name.replace(/\.pdf$/i, '') + '.pdf';
     if (window.showSaveFilePicker) {
@@ -671,6 +905,7 @@ export class App {
     this.announceStripped();
   }
   async print() {
+    if (this.view === 'studio') return this.studio.print();
     if (!this.session) return;
     const bytes = await withBusy(() => this.bytesForSave());
     this.announceStripped();
@@ -724,6 +959,7 @@ export class App {
     });
   }
   async undo() {
+    if (this.view === 'studio') return this.studio.undo();
     if (this.edit.editor) {
       document.execCommand('undo');
       return;
@@ -737,6 +973,7 @@ export class App {
     }
   }
   async redo() {
+    if (this.view === 'studio') return this.studio.redo();
     if (this.edit.editor) {
       document.execCommand('redo');
       return;
@@ -750,7 +987,12 @@ export class App {
     }
   }
   updateHist() {
-    const session = this.session;
+    $('#dirtyDot').classList.toggle('hidden', !this.session || !this.session.dirty);
+    if (this.view === 'studio') {
+      notifyDocumentState();
+      return this.studio.updateHist();
+    }
+    const session = this.view === 'doc' ? this.session : null;
     $('#bUndo').disabled = !session || !session.hist.undo.length;
     $('#bRedo').disabled = !session || !session.hist.redo.length;
     $('#bUndo').title =
@@ -761,7 +1003,6 @@ export class App {
       session && session.hist.redo.length
         ? 'Wiederholen: ' + session.hist.redo[session.hist.redo.length - 1].label + ' (Strg+Y)'
         : 'Wiederholen (Strg+Y)';
-    $('#dirtyDot').classList.toggle('hidden', !session || !session.dirty);
     notifyDocumentState();
   }
   /**
@@ -1303,6 +1544,7 @@ export class App {
     if (this.session && this.fit && name !== 'organize')
       requestAnimationFrame(() => this.setZoom(null, this.fit, true));
     if (this.session) this.forms.refresh();
+    this.renderRibbon();
   }
   panel(title, withBack = true) {
     $('#lpHead').innerHTML =
@@ -1329,21 +1571,7 @@ export class App {
       const btn = htmlToElement(
         `<button class="tool" data-tool="${id}"><span class="ti ${color}">${icon(iconName)}</span><span><div class="tt">${escapeHtml(title)}</div><div class="td">${escapeHtml(desc)}</div></span></button>`,
       );
-      btn.addEventListener('click', async () => {
-        if (id === 'addtext') {
-          await this.setTool('edit');
-          this.edit.arm('text');
-        } else if (id === 'addimage') {
-          await this.setTool('edit');
-          this.edit.pickImage();
-        } else if (id === 'signature') {
-          await this.setTool('edit');
-          SignatureTool.of(this.edit).openPop(document.getElementById('cAddSig'));
-        } else if (id === 'insert') {
-          await this.setTool('organize');
-          this.org.insertMenu(null);
-        } else this.setTool(id);
-      });
+      btn.addEventListener('click', () => this.runTool(id));
       body.appendChild(btn);
     }
     body.appendChild(
@@ -1351,6 +1579,26 @@ export class App {
         `<div class="note info" style="margin-top:16px">${icon('info', 's')} <b>Tipp:</b> Mit <kbd>Strg</kbd> + Mausrad zoomen, mit <kbd>Strg</kbd>+<kbd>Z</kbd> jede Änderung rückgängig machen.</div>`,
       ),
     );
+  }
+  /**
+   * Werkzeug aus der Liste „Alle Werkzeuge“ bzw. dem Werkzeugband starten; im Werkzeugband schaltet
+   * ein zweiter Klick das aktive Werkzeug wieder aus (`toggle`).
+   */
+  async runTool(id, toggle = false) {
+    if (!this.session) return;
+    if (id === 'addtext') {
+      await this.setTool('edit');
+      this.edit.arm('text');
+    } else if (id === 'addimage') {
+      await this.setTool('edit');
+      this.edit.pickImage();
+    } else if (id === 'signature') {
+      await this.setTool('edit');
+      SignatureTool.of(this.edit).openPop(document.getElementById('cAddSig'));
+    } else if (id === 'insert') {
+      await this.setTool('organize');
+      this.org.insertMenu(null);
+    } else this.setTool(toggle && this.tool === id ? null : id);
   }
   async finishEdit() {
     await this.forms.flush();
@@ -1378,7 +1626,11 @@ export class App {
       this.openDialog();
       return;
     }
-    if (this.session) {
+    if (this.view === 'studio') {
+      this.studio.onKey(ev, inField);
+      return;
+    }
+    if (this.session && this.view === 'doc') {
       if (mod && key === 's') {
         ev.preventDefault();
         if (ev.shiftKey) this.saveAs();

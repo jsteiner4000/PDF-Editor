@@ -11,13 +11,15 @@
 import { BrowserWindow } from 'electron';
 import { randomUUID } from 'node:crypto';
 
-/** Kennung → { pages: Uint8Array[] } der gerade laufenden Druckaufträge. */
+/** Kennung → { pages: Uint8Array[] } bzw. { html } der gerade laufenden Druckaufträge. */
 const jobs = new Map();
 
 /** Höchstdauer, bis der Drucker den Auftrag angenommen hat (danach Fehlermeldung statt Hängen). */
 const PRINT_TIMEOUT = 180000;
 
 const PRINT_CSP = "default-src 'none'; img-src app:; style-src 'unsafe-inline'";
+/** Druckfassung von „Dokumentation erstellen“: nur eingebettete Bilder und Schriften, keine Skripte. */
+const DOC_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
 
 /** Antwort des app://-Protokolls für /print/<Kennung>/… oder null (nicht zuständig). */
 export function printResponse(url) {
@@ -25,6 +27,16 @@ export function printResponse(url) {
   if (!match) return null;
   const job = jobs.get(match[1]);
   if (!job) return new Response('Nicht gefunden', { status: 404 });
+  if (job.html !== undefined) {
+    if (match[2] !== undefined) return new Response('Nicht gefunden', { status: 404 });
+    return new Response(job.html, {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': DOC_CSP,
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  }
   if (match[2] !== undefined) {
     const png = job.pages[Number(match[2])];
     if (!png) return new Response('Nicht gefunden', { status: 404 });
@@ -104,6 +116,40 @@ export async function printPages(origin, pages, { printer = '', toPdf = false } 
       clearTimeout(timer);
     }
     return null;
+  } finally {
+    jobs.delete(token);
+    if (!win.isDestroyed()) win.destroy();
+  }
+}
+
+/**
+ * „Dokumentation erstellen“: setzt die Druckfassung (HTML mit SVG-Seiten) in einem unsichtbaren
+ * Fenster ohne JavaScript in eine PDF. Seitengröße und Ränder kommen aus der Druckfassung (@page).
+ */
+export async function htmlToPdf(origin, html) {
+  const token = randomUUID();
+  jobs.set(token, { html });
+  const win = new BrowserWindow({
+    show: false,
+    width: 800,
+    height: 1100,
+    webPreferences: {
+      javascript: false,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      devTools: false,
+      spellcheck: false,
+    },
+  });
+  try {
+    await win.loadURL(`${origin}/print/${token}/`);
+    const pdf = await win.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+      margins: { marginType: 'none' },
+    });
+    return new Uint8Array(pdf.buffer, pdf.byteOffset, pdf.byteLength);
   } finally {
     jobs.delete(token);
     if (!win.isDestroyed()) win.destroy();

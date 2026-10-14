@@ -1,8 +1,8 @@
 # PDFix
 
 PDFix: PDFs bearbeiten, ordnen und unterschreiben.
-Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer und
-Portable-EXE, mit echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
+Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer mit
+echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
 (`dist/PDF-Editor.html` – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet), die
 die Desktop-App lädt und gegen die die Tests laufen. Sie ist ein internes Bauteil und wird nicht
 als eigenes Programm ausgeliefert oder unterstützt (im Browser gelten die Schutzmaßnahmen der
@@ -27,7 +27,7 @@ Weitere Befehle:
 | `npm run fixtures`   | erzeugt die Test-PDFs in `tests/fixtures/` neu                             |
 | `npm run format`     | formatiert Quelltexte mit Prettier                                         |
 | `npm run app`        | baut und startet die Desktop-App (Entwicklung)                             |
-| `npm run dist:win`   | baut Installer und Portable-EXE nach `release/` (unter Windows)            |
+| `npm run dist:win`   | baut den Installer nach `release/` (unter Windows)                         |
 | `npm run dist:linux` | baut die Desktop-App ungepackt nach `release/linux-unpacked/` (zum Testen) |
 | `npm run licenses`   | erzeugt `dist/licenses/Lizenzhinweise.txt`                                 |
 
@@ -88,7 +88,7 @@ desktop/                  Desktop-App (Electron-Hauptprozess)
   menu.js                 natives Menü (Deutsch)
   window-state.js         Fenstergröße/-position merken
   installer.nsh           NSIS-Ergänzung: optionale Zuordnung .pdf („Öffnen mit“, „Drucken“)
-electron-builder.yml      Paketierung (NSIS-Installer, Portable, Linux-Verzeichnis zum Testen)
+electron-builder.yml      Paketierung (NSIS-Installer, Linux-Verzeichnis zum Testen)
 .github/workflows/release.yml  Windows-Build in GitHub Actions (Tags v*, manuell)
 scripts/build.mjs         Build (esbuild) → dist/PDF-Editor.html
 scripts/licenses.mjs      Lizenzhinweise der eingebundenen Bibliotheken und Schriften
@@ -183,14 +183,14 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   zeigt das Menü nur an (`registerAccelerator: false`) – keine Doppelbelegung.
 - **Paketierung** (`electron-builder.yml`): NSIS-Installer auf Deutsch, Benutzerinstallation
   ohne Adminrechte, Startmenü- und Desktop-Verknüpfung, Option „Öffnen mit“ für .pdf (eigene
-  Installer-Seite, HKCU), sauberer Uninstaller; Portable-EXE. In `app.asar` liegen nur
+  Installer-Seite, HKCU), sauberer Uninstaller. In `app.asar` liegen nur
   `desktop/`, `dist/PDF-Editor.html`, Symbole und `package.json`; Lizenzhinweise und
   Schriftdateien als `resources/Lizenzen` bzw. `resources/Schriften`.
 - **Release**: `.github/workflows/release.yml` auf `windows-latest` bei Tags `v*` und manuell:
   `npm ci`, Build, Desktop-Smoke-Test, Regressionstests, `electron-builder`, Prüfung des
   gepackten Programms (Start mit PDF, Fenstertitel) und des Installers (stille Installation,
-  Zuordnung, Startmenü, Deinstallation). Installer und Portable-EXE werden als
-  Artefakte hochgeladen; bei Tags legt der getrennte Job `release` (als einziger mit
+  Zuordnung, Startmenü, Deinstallation). Der Installer wird als
+  Artefakt hochgeladen; bei Tags legt der getrennte Job `release` (als einziger mit
   Schreibrecht) daraus die Release-Assets an. Der Tag muss zur Version in `package.json` passen.
   Aktionen sind auf Commit-SHAs festgelegt (Version im Kommentar); beim Aktualisieren SHA und
   Kommentar gemeinsam ändern.

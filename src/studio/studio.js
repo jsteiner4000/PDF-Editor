@@ -1,0 +1,1113 @@
+/**
+ * Arbeitsbereich „Dokumentation erstellen“: links die Projektmappe (Abschnitte), in der Mitte die
+ * Seiten als Live-Vorschau, rechts die Eigenschaften des Gewählten. Bedienung wie in Office:
+ * Werkzeugband oben, Strg+Z/Y, Strg+S = PDF erstellen, Strg+P = Drucken.
+ *
+ * Jede Änderung läuft über `change()` (Verlauf für Rückgängig, Vorschau, Sicherung als Entwurf).
+ * Im Schaltbild lassen sich Baugruppen verschieben (auch auf die andere Seite), in der Höhe ziehen
+ * und ihre Leitungen verschieben.
+ */
+import STUDIO_CSS from './studio.css';
+import { icon } from '../ui/icons.js';
+import { $, $$, escapeHtml, htmlToElement } from '../ui/dom.js';
+import { showMenu } from '../ui/menu.js';
+import { downloadBytes, pickFiles, showDialog, toast, withBusy } from '../ui/dialogs.js';
+import { idbPut } from '../storage/idb.js';
+import {
+  FONTS,
+  LANGS,
+  exampleWiring,
+  newBox,
+  newHint,
+  newPin,
+  newProject,
+  newWiring,
+  normalizeProject,
+  sectionTitle,
+  tx,
+  uid,
+} from './model.js';
+import { documentLabel, renderDocument } from './render.js';
+import { PAGE, typesetter } from './svg.js';
+import { DIAGRAM } from './wiring.js';
+import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
+import { ensureBarlow } from './fonts.js';
+import { canMakePdf, embedProject, makePdf, printHtml, readProject } from './export.js';
+import { Inspector } from './inspector.js';
+
+export { deleteDraft, listDrafts };
+
+/** Vorlagen auf der Startseite („Neu“). */
+export const STUDIO_TEMPLATES = [
+  { id: 'documentation', title: 'Anlagendokumentation', desc: 'Deckblatt, Inhalt und Anschlussplan' },
+  { id: 'wiring', title: 'Anschlussplan', desc: 'Schaltbild, Klemmenplan und Hinweise' },
+  { id: 'example', title: 'Zufallsgenerator', desc: 'Fertiger Plan zum Ausprobieren', tag: 'Beispiel' },
+];
+
+function templateProject(id) {
+  if (id === 'example') {
+    const project = newProject('wiring');
+    project.sections = [exampleWiring()];
+    return project;
+  }
+  return newProject(id === 'wiring' ? 'wiring' : 'documentation');
+}
+
+const previews = new Map();
+
+/** Vorschaubild einer Vorlage (erste bzw. zweite Seite des Beispiels) als SVG. */
+export function templatePreview(id) {
+  if (!previews.has(id)) {
+    let svg = '';
+    try {
+      const project = id === 'documentation' ? newProject('documentation') : templateProject('example');
+      const doc = renderDocument(project);
+      svg = (doc.pages[id === 'example' ? 1 : 0] || doc.pages[0]).svg;
+    } catch (err) {
+      console.warn('Vorschau der Vorlage', err);
+    }
+    previews.set(id, svg);
+  }
+  return previews.get(id);
+}
+
+const PX_PER_PT = 96 / 72;
+const ZOOMS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+
+let cssInjected = false;
+
+export class Studio {
+  constructor(app) {
+    this.app = app;
+    this.project = null;
+    this.sel = { kind: 'project' };
+    this.hist = { undo: [], redo: [] };
+    this.snap = '';
+    this.zoom = null; // null = Seitenbreite
+    this.doc = null;
+    this.root = null;
+    this.saveTimer = 0;
+    this.frame = 0;
+  }
+
+  /* ---------- Aufbau ---------- */
+
+  mount() {
+    if (this.root) return;
+    if (!cssInjected) {
+      const style = document.createElement('style');
+      style.textContent = STUDIO_CSS;
+      document.head.appendChild(style);
+      cssInjected = true;
+    }
+    this.root = htmlToElement(`
+<div id="studio" class="hidden">
+  <aside class="sd-side" aria-label="Projektmappe">
+    <div class="sd-head"><span>Projektmappe</span><button class="btn ic" id="sdAdd" title="Abschnitt hinzufügen">${icon('plus')}</button></div>
+    <div class="sd-list">
+      <button class="sd-proj" id="sdProj"><span class="ti c6">${icon('binder')}</span><span class="tx"><b></b><small></small></span></button>
+      <ol class="sd-secs" id="sdSecs"></ol>
+    </div>
+  </aside>
+  <section class="sd-center">
+    <div class="sd-scroll" id="sdScroll" tabindex="-1"><div class="sd-pages" id="sdPages"></div></div>
+    <div class="sd-nav">
+      <button class="btn ic" id="sdZout" title="Verkleinern (Strg+−)">${icon('zout')}</button>
+      <button class="btn zv" id="sdZoom" title="Seitenbreite">100 %</button>
+      <button class="btn ic" id="sdZin" title="Vergrößern (Strg++)">${icon('zin')}</button>
+      <button class="btn ic" id="sdFit" title="Seitenbreite (Strg+0)">${icon('fitw')}</button>
+    </div>
+  </section>
+  <aside class="sd-insp" aria-label="Eigenschaften"><div class="sd-ihead" id="sdIHead"></div><div class="sd-ibody" id="sdIBody"></div></aside>
+</div>`);
+    this.app.root.appendChild(this.root);
+    this.inspector = new Inspector(this, $('#sdIHead'), $('#sdIBody'));
+    $('#sdAdd').addEventListener('click', (ev) => this.addSectionMenu(ev.currentTarget));
+    $('#sdProj').addEventListener('click', () => this.select({ kind: 'project' }));
+    $('#sdZin').addEventListener('click', () => this.zoomStep(1));
+    $('#sdZout').addEventListener('click', () => this.zoomStep(-1));
+    $('#sdFit').addEventListener('click', () => this.setZoom(null));
+    $('#sdZoom').addEventListener('click', () => this.setZoom(null));
+    const scroll = $('#sdScroll');
+    scroll.addEventListener(
+      'wheel',
+      (ev) => {
+        if (!ev.ctrlKey && !ev.metaKey) return;
+        ev.preventDefault();
+        this.zoomStep(ev.deltaY < 0 ? 1 : -1);
+      },
+      { passive: false },
+    );
+    scroll.addEventListener('pointerdown', (ev) => this.onPointerDown(ev));
+    scroll.addEventListener('pointermove', (ev) => this.onPointerMove(ev));
+    scroll.addEventListener('pointerup', (ev) => this.onPointerUp(ev));
+    scroll.addEventListener('pointercancel', (ev) => this.onPointerUp(ev, true));
+    scroll.addEventListener('pointerleave', () => this.hover(null));
+    scroll.addEventListener('dblclick', (ev) => {
+      const hit = this.hitAt(ev);
+      if (hit && hit.item.kind === 'box') this.inspector.focusFirst();
+    });
+    new ResizeObserver(() => {
+      if (this.visible && this.zoom == null) this.layout();
+    }).observe(scroll);
+  }
+
+  setVisible(visible) {
+    this.visible = visible;
+    const tab = $('#prjTab');
+    if (tab) {
+      tab.classList.toggle('hidden', !this.project);
+      tab.classList.toggle('on', visible);
+    }
+    if (!this.root) {
+      if (!visible) return;
+      this.mount();
+    }
+    this.root.classList.toggle('hidden', !visible);
+    if (visible && this.project) {
+      this.renderPages();
+      this.inspector.render();
+    }
+  }
+
+  /* ---------- Projekt öffnen, schließen, sichern ---------- */
+
+  async create(templateId) {
+    const project = templateProject(templateId);
+    await this.open(project, templateId === 'example' ? { kind: 'section', id: project.sections[0].id } : null);
+  }
+
+  async openDraft(id) {
+    try {
+      const raw = await loadDraft(id);
+      if (!raw) throw new Error('fehlt');
+      await this.open(normalizeProject(raw));
+    } catch {
+      toast('Der Entwurf konnte nicht geöffnet werden.', 'err', 5000);
+    }
+  }
+
+  async open(project, sel = null) {
+    if (this.project && this.project.id !== project.id) await this.flush();
+    this.project = project;
+    this.hist = { undo: [], redo: [] };
+    this.snap = this.serialize();
+    this.sel = sel || { kind: 'project' };
+    this.zoom = null;
+    if (project.font === 'barlow') await ensureBarlow().catch(() => {});
+    this.mount();
+    this.updateTab();
+    this.app.setView('studio');
+    this.layout();
+    this.saveSoon(0);
+  }
+
+  async close() {
+    await this.flush();
+    this.project = null;
+    this.doc = null;
+    if (this.root) $('#sdPages').innerHTML = '';
+    $('#prjTab').classList.add('hidden');
+    if (this.app.view === 'home') this.app.renderRecent(this.app.recentKind || 'files');
+    else if (this.app.session) this.app.showDocument();
+    else {
+      await this.app.showHome();
+      this.app.setView('home');
+    }
+  }
+
+  serialize() {
+    return JSON.stringify({ ...this.project, images: undefined });
+  }
+
+  saveSoon(delay = 700) {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.flush(), delay);
+  }
+
+  /** Entwurf sofort sichern (vor dem Schließen, Wechsel auf die Startseite, PDF erstellen). */
+  async flush() {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = 0;
+    if (!this.project) return;
+    try {
+      await saveDraft(this.project, { name: documentLabel(this.project), sub: this.subtitle() });
+    } catch (err) {
+      console.warn('Entwurf nicht gesichert', err);
+    }
+  }
+
+  subtitle() {
+    const m = this.project.meta;
+    return [m.customer, m.site].filter(Boolean).join(' · ');
+  }
+
+  updateTab() {
+    const tab = $('#prjTab');
+    if (!tab || !this.project) return;
+    tab.classList.remove('hidden');
+    const name = documentLabel(this.project);
+    $('#prjName').textContent = name;
+    tab.title = name;
+  }
+
+  /** Nach dem Öffnen einer PDF: enthält sie ein PDFix-Projekt, Weiterbearbeiten anbieten. */
+  offerProject(session) {
+    const found = readProject(session.doc);
+    const old = document.getElementById('sdOffer');
+    if (old) old.remove();
+    if (!found) return;
+    const bar = htmlToElement(
+      `<div class="sd-offer" id="sdOffer">${icon('binder', 's')}<span>Diese PDF wurde mit <b>Dokumentation erstellen</b> angelegt.</span><button class="btn primary">Weiterbearbeiten</button><button class="btn ic" title="Ausblenden">${icon('x', 's')}</button></div>`,
+    );
+    const [go, hide] = bar.querySelectorAll('button');
+    hide.addEventListener('click', () => bar.remove());
+    go.addEventListener('click', async () => {
+      if (found.changed) {
+        const ok = await showDialog({
+          title: 'Dokumentation weiterbearbeiten',
+          icon: 'info',
+          body: 'Die PDF wurde nach dem Erstellen verändert. Diese Änderungen sind im Projekt nicht enthalten – sie fehlen, wenn die PDF neu erstellt wird.',
+          buttons: [
+            { label: 'Abbrechen', value: false },
+            { label: 'Weiterbearbeiten', primary: true, value: true },
+          ],
+        });
+        if (!ok) return;
+      }
+      bar.remove();
+      await this.open(normalizeProject(JSON.parse(JSON.stringify(found.project))));
+    });
+    $('#center').appendChild(bar);
+  }
+
+  /* ---------- Änderungen und Verlauf ---------- */
+
+  /**
+   * Führt eine Änderung aus: `fn(project)` ändert das Projekt. `key` fasst schnelle Folgeänderungen
+   * (Tippen in einem Feld) zu einem Schritt zusammen; `inspector: true` baut die Eigenschaften neu.
+   */
+  change(label, fn, { key = null, inspector = false } = {}) {
+    if (!this.project) return;
+    const before = this.snap;
+    fn(this.project);
+    this.commit(label, before, key);
+    if (inspector) this.inspector.render();
+  }
+
+  /** Verlaufsschritt für eine bereits ausgeführte Änderung (z. B. nach dem Ziehen). */
+  commit(label, before, key = null) {
+    const after = this.serialize();
+    if (after === before) return;
+    const last = this.hist.undo[this.hist.undo.length - 1];
+    const now = Date.now();
+    if (key && last && last.key === key && now - last.t < 2000) last.t = now;
+    else {
+      this.hist.undo.push({ label, before, key, t: now });
+      if (this.hist.undo.length > 300) this.hist.undo.shift();
+    }
+    this.hist.redo = [];
+    this.snap = after;
+    this.project.modified = now;
+    this.changed();
+  }
+
+  changed() {
+    // Werkzeugband hängt an Sprache, Schrift und vorhandenem Anschlussplan
+    const p = this.project;
+    const ribbonKey = `${p.lang}|${p.font}|${p.sections.some((s) => s.type === 'wiring')}`;
+    if (ribbonKey !== this.ribbonKey) {
+      this.ribbonKey = ribbonKey;
+      if (this.visible) this.app.renderRibbon();
+    }
+    this.updateTab();
+    this.updateHist();
+    this.schedule();
+    this.saveSoon();
+  }
+
+  restore(json) {
+    const images = this.project.images;
+    this.project = { ...JSON.parse(json), images };
+    this.snap = json;
+    if (!this.selected()) this.sel = this.sel.section ? { kind: 'section', id: this.sel.section } : { kind: 'project' };
+    this.project.modified = Date.now();
+    this.changed();
+    this.inspector.render();
+    this.app.renderRibbon();
+  }
+
+  undo() {
+    const entry = this.hist.undo.pop();
+    if (!entry) return;
+    this.hist.redo.push({ label: entry.label, before: this.snap });
+    this.restore(entry.before);
+    toast('Rückgängig: ' + entry.label);
+  }
+
+  redo() {
+    const entry = this.hist.redo.pop();
+    if (!entry) return;
+    this.hist.undo.push({ label: entry.label, before: this.snap, t: 0 });
+    this.restore(entry.before);
+    toast('Wiederholt: ' + entry.label);
+  }
+
+  updateHist() {
+    const { undo, redo } = this.hist;
+    $('#bUndo').disabled = !undo.length;
+    $('#bRedo').disabled = !redo.length;
+    $('#bUndo').title = undo.length ? `Rückgängig: ${undo[undo.length - 1].label} (Strg+Z)` : 'Rückgängig (Strg+Z)';
+    $('#bRedo').title = redo.length ? `Wiederholen: ${redo[redo.length - 1].label} (Strg+Y)` : 'Wiederholen (Strg+Y)';
+  }
+
+  /* ---------- Auswahl ---------- */
+
+  section(id) {
+    return this.project && this.project.sections.find((s) => s.id === id);
+  }
+
+  /** Das gewählte Objekt (oder null, wenn es nicht mehr existiert). */
+  selected() {
+    const { kind, id, section } = this.sel;
+    if (kind === 'project') return this.project;
+    if (kind === 'section') return this.section(id) || null;
+    const s = this.section(section);
+    if (!s) return null;
+    if (kind === 'box') return s.boxes.find((b) => b.id === id) || null;
+    if (kind === 'pin') return s.hub.pins.find((p) => p.id === id) || null;
+    if (kind === 'hint') return s.hints.find((h) => h.id === id) || null;
+    if (kind === 'hub') return s.hub;
+    return null;
+  }
+
+  select(sel, { reveal = false } = {}) {
+    this.sel = sel;
+    this.inspector.render();
+    this.renderSelection();
+    this.renderSide();
+    if (reveal) this.reveal();
+  }
+
+  /** Wiring-Abschnitt für neue Baugruppen/Anschlüsse: der gewählte, sonst der erste. */
+  wiringSection() {
+    const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
+    const s = id && this.section(id);
+    if (s && s.type === 'wiring') return s;
+    return this.project.sections.find((x) => x.type === 'wiring') || null;
+  }
+
+  /* ---------- Vorschau ---------- */
+
+  schedule() {
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => {
+      this.frame = 0;
+      this.renderPages();
+    });
+  }
+
+  pxPerPt() {
+    const scroll = $('#sdScroll');
+    if (this.zoom != null) return this.zoom * PX_PER_PT;
+    const avail = Math.max(200, scroll.clientWidth - 64);
+    return Math.min(1.5 * PX_PER_PT, avail / PAGE.w);
+  }
+
+  layout() {
+    this.scale = this.pxPerPt();
+    $('#sdZoom').textContent = Math.round((this.scale / PX_PER_PT) * 100).toLocaleString('de-DE') + ' %';
+    this.renderPages();
+  }
+
+  setZoom(zoom) {
+    const scroll = $('#sdScroll');
+    const rel = scroll.scrollTop / Math.max(1, scroll.scrollHeight);
+    this.zoom = zoom == null ? null : Math.max(0.25, Math.min(4, zoom));
+    this.layout();
+    scroll.scrollTop = rel * scroll.scrollHeight;
+  }
+
+  zoomStep(dir) {
+    const cur = this.scale / PX_PER_PT;
+    const next = dir > 0 ? ZOOMS.find((z) => z > cur + 0.001) : [...ZOOMS].reverse().find((z) => z < cur - 0.001);
+    this.setZoom(next ?? cur);
+  }
+
+  renderPages() {
+    if (!this.project || !this.root || !this.visible) return;
+    const host = $('#sdPages');
+    let doc;
+    try {
+      doc = renderDocument(this.project);
+    } catch (err) {
+      console.error('Dokument setzen', err);
+      return;
+    }
+    this.doc = doc;
+    const w = PAGE.w * this.scale;
+    const h = PAGE.h * this.scale;
+    doc.pages.forEach((page, i) => {
+      let el = host.children[i];
+      if (!el) {
+        el = htmlToElement('<div class="sd-page"><div class="sd-svg"></div><div class="sd-marks"></div><span class="sd-pnum"></span></div>');
+        host.appendChild(el);
+      }
+      el.style.width = w + 'px';
+      el.style.height = h + 'px';
+      el.dataset.index = i;
+      el.dataset.section = page.section;
+      if (el._svg !== page.svg) {
+        el.firstChild.innerHTML = page.svg;
+        el._svg = page.svg;
+      }
+      el.querySelector('.sd-pnum').textContent = `Seite ${i + 1}`;
+    });
+    while (host.children.length > doc.pages.length) host.lastChild.remove();
+    if (!doc.pages.length) host.innerHTML = '';
+    this.renderSelection();
+    this.renderSide();
+  }
+
+  /** Markierung der Auswahl auf den Seiten. */
+  renderSelection() {
+    if (!this.doc || !this.root) return;
+    const { kind, id, section } = this.sel;
+    const pages = $$('.sd-page', $('#sdPages'));
+    pages.forEach((el, i) => {
+      const page = this.doc.pages[i];
+      const marks = el.querySelector('.sd-marks');
+      marks.innerHTML = '';
+      const sectionSel =
+        (kind === 'section' && page.section === id) || (kind === 'project' && page.kind === 'cover');
+      el.classList.toggle('sd-cur', sectionSel);
+      if (!page || page.section !== section) return;
+      for (const hit of page.hits) {
+        const match =
+          (kind === 'box' && hit.kind === 'box' && hit.id === id) ||
+          (kind === 'pin' && (hit.kind === 'pin' || hit.kind === 'conn') && hit.id === id) ||
+          (kind === 'pin' && hit.kind === 'conn' && this.pinInConn(hit, id)) ||
+          (kind === 'hint' && hit.kind === 'hint' && hit.id === id) ||
+          (kind === 'hub' && hit.kind === 'hub');
+        if (!match) continue;
+        const mark = this.markEl(hit.rect, 'sd-sel');
+        if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
+        marks.appendChild(mark);
+      }
+    });
+  }
+
+  pinInConn(hit, pinId) {
+    const page = this.doc.pages.find((p) => p.layout && p.hits.includes(hit));
+    const conn = page && page.layout.conns.find((c) => c.pins[0] === hit.id);
+    return !!conn && conn.pins.includes(pinId);
+  }
+
+  markEl([x, y, w, h], cls) {
+    const s = this.scale;
+    const el = document.createElement('div');
+    el.className = cls;
+    el.style.cssText = `left:${x * s}px;top:${y * s}px;width:${w * s}px;height:${h * s}px`;
+    return el;
+  }
+
+  reveal() {
+    const mark = $('#sdPages .sd-sel') || $('#sdPages .sd-page.sd-cur');
+    if (mark) mark.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  /** Projektmappe links: Projekt und Abschnitte mit Miniatur der ersten Seite. */
+  renderSide() {
+    if (!this.root || !this.project) return;
+    const proj = $('#sdProj');
+    proj.querySelector('b').textContent = typesetter(this.project).inline(this.project.title) || 'Projekt';
+    proj.querySelector('small').textContent = this.subtitle() || 'Projektangaben, Logo, Sprache';
+    proj.classList.toggle('on', this.sel.kind === 'project');
+    const list = $('#sdSecs');
+    const sections = this.project.sections;
+    const pagesOf = (id) => (this.doc ? this.doc.pages.map((p, i) => [p, i]).filter(([p]) => p.section === id) : []);
+    sections.forEach((section, i) => {
+      let li = list.children[i];
+      if (!li || li.dataset.id !== section.id) {
+        li = this.sectionItem(section);
+        list.insertBefore(li, list.children[i] || null);
+      }
+      const pages = pagesOf(section.id);
+      const first = pages[0];
+      li.querySelector('b').textContent = sectionTitle(section, typesetter(this.project).lang);
+      li.querySelector('small').textContent = !pages.length
+        ? 'Noch leer'
+        : pages.length === 1
+          ? `Seite ${first[1] + 1}`
+          : `Seite ${first[1] + 1}–${pages[pages.length - 1][1] + 1}`;
+      const thumb = li.querySelector('.sd-thumb');
+      const svg = first ? first[0].svg : '';
+      if (thumb._svg !== svg) {
+        thumb.innerHTML = svg;
+        thumb._svg = svg;
+      }
+      const on = (this.sel.kind === 'section' && this.sel.id === section.id) || this.sel.section === section.id;
+      li.classList.toggle('on', on);
+    });
+    while (list.children.length > sections.length) list.lastChild.remove();
+    for (const li of [...list.children]) if (!sections.some((s) => s.id === li.dataset.id)) li.remove();
+  }
+
+  sectionItem(section) {
+    const li = htmlToElement(
+      `<li class="sd-sec" draggable="true" tabindex="0" data-id="${section.id}"><span class="sd-thumb"></span><span class="tx"><b></b><small></small></span><button class="btn ic" title="Abschnitt">${icon('more', 's')}</button></li>`,
+    );
+    li.addEventListener('click', (ev) => {
+      if (ev.target.closest('button')) return;
+      this.select({ kind: 'section', id: section.id }, { reveal: true });
+      const first = $(`#sdPages .sd-page[data-section="${section.id}"]`);
+      if (first) $('#sdScroll').scrollTop = first.offsetTop - 24;
+    });
+    li.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        li.click();
+      }
+    });
+    li.querySelector('button').addEventListener('click', (ev) => this.sectionMenu(section.id, ev.currentTarget));
+    li.addEventListener('dragstart', (ev) => {
+      ev.dataTransfer.setData('text/x-pdfix-section', section.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      li.classList.add('dragging');
+    });
+    li.addEventListener('dragend', () => li.classList.remove('dragging'));
+    li.addEventListener('dragover', (ev) => {
+      if (!ev.dataTransfer.types.includes('text/x-pdfix-section')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const r = li.getBoundingClientRect();
+      li.classList.toggle('drop-before', ev.clientY < r.top + r.height / 2);
+      li.classList.toggle('drop-after', ev.clientY >= r.top + r.height / 2);
+    });
+    li.addEventListener('dragleave', () => li.classList.remove('drop-before', 'drop-after'));
+    li.addEventListener('drop', (ev) => {
+      const from = ev.dataTransfer.getData('text/x-pdfix-section');
+      if (!from) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const after = li.classList.contains('drop-after');
+      li.classList.remove('drop-before', 'drop-after');
+      if (from === section.id) return;
+      this.change('Abschnitt verschoben', (p) => {
+        const moved = p.sections.find((s) => s.id === from);
+        p.sections = p.sections.filter((s) => s.id !== from);
+        const at = p.sections.findIndex((s) => s.id === section.id) + (after ? 1 : 0);
+        p.sections.splice(at, 0, moved);
+      });
+    });
+    return li;
+  }
+
+  sectionMenu(id, anchor) {
+    const index = this.project.sections.findIndex((s) => s.id === id);
+    const count = this.project.sections.length;
+    showMenu(
+      [
+        { label: 'Nach oben', icon: 'up', disabled: index === 0, run: () => this.moveSection(id, -1) },
+        { label: 'Nach unten', icon: 'down', disabled: index === count - 1, run: () => this.moveSection(id, 1) },
+        { label: 'Duplizieren', icon: 'dup', run: () => this.duplicateSection(id) },
+        '-',
+        { label: 'Entfernen', icon: 'trash', run: () => this.removeSection(id) },
+      ],
+      anchor,
+    );
+  }
+
+  moveSection(id, dir) {
+    this.change('Abschnitt verschoben', (p) => {
+      const i = p.sections.findIndex((s) => s.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= p.sections.length) return;
+      [p.sections[i], p.sections[j]] = [p.sections[j], p.sections[i]];
+    });
+  }
+
+  duplicateSection(id) {
+    const copy = JSON.parse(JSON.stringify(this.section(id)));
+    copy.id = uid('s');
+    this.change(
+      'Abschnitt dupliziert',
+      (p) => p.sections.splice(p.sections.findIndex((s) => s.id === id) + 1, 0, copy),
+      { inspector: true },
+    );
+    this.select({ kind: 'section', id: copy.id });
+  }
+
+  removeSection(id) {
+    const s = this.section(id);
+    if (!s) return;
+    this.sel = { kind: 'project' };
+    this.change(`${sectionTitle(s)} entfernt`, (p) => (p.sections = p.sections.filter((x) => x.id !== id)), {
+      inspector: true,
+    });
+  }
+
+  addSectionMenu(anchor) {
+    const has = (type) => this.project.sections.some((s) => s.type === type);
+    showMenu(
+      [
+        { label: 'Deckblatt', icon: 'fitp', disabled: has('cover'), run: () => this.addSection('cover') },
+        { label: 'Inhaltsverzeichnis', icon: 'list', disabled: has('toc'), run: () => this.addSection('toc') },
+        { label: 'Anschlussplan', icon: 'wiring', run: () => this.addSection('wiring') },
+      ],
+      anchor,
+    );
+  }
+
+  addSection(type) {
+    const section = type === 'wiring' ? newWiring() : { id: uid('s'), type };
+    this.change(
+      'Abschnitt hinzugefügt',
+      (p) => {
+        if (type === 'cover') p.sections.unshift(section);
+        else if (type === 'toc') p.sections.splice(p.sections[0] && p.sections[0].type === 'cover' ? 1 : 0, 0, section);
+        else {
+          const at = p.sections.findIndex((s) => s.id === (this.sel.section || this.sel.id));
+          p.sections.splice(at >= 0 ? at + 1 : p.sections.length, 0, section);
+        }
+      },
+      { inspector: true },
+    );
+    this.select({ kind: 'section', id: section.id }, { reveal: true });
+  }
+
+  /* ---------- Anlegen im Anschlussplan ---------- */
+
+  addBox(side = 'left') {
+    const s = this.wiringSection() || this.ensureWiring();
+    const parentBox = this.sel.kind === 'box' && this.sel.section === s.id ? s.boxes.find((b) => b.id === this.sel.id) : null;
+    const box = newBox(parentBox ? parentBox.cat : 'sig', parentBox && parentBox.side !== 'bottom' ? parentBox.side : side);
+    box.title = { de: 'Neue Baugruppe', en: 'New module' };
+    this.change('Baugruppe hinzugefügt', () => s.boxes.push(box));
+    this.select({ kind: 'box', id: box.id, section: s.id }, { reveal: true });
+    this.inspector.focusFirst();
+  }
+
+  addPin(boxId = null) {
+    const s = this.wiringSection() || this.ensureWiring();
+    const box = boxId || (this.sel.kind === 'box' && this.sel.section === s.id ? this.sel.id : null);
+    const pin = newPin(nextPinName(s.hub.pins), box);
+    this.change('Anschluss hinzugefügt', () => s.hub.pins.push(pin));
+    this.select({ kind: 'pin', id: pin.id, section: s.id }, { reveal: true });
+    this.inspector.focusFirst();
+  }
+
+  addHint() {
+    const s = this.wiringSection() || this.ensureWiring();
+    const hint = newHint(s.categories[0] ? s.categories[0].id : 'sig');
+    hint.title = { de: 'Hinweis', en: 'Note' };
+    this.change('Hinweis hinzugefügt', () => s.hints.push(hint));
+    this.select({ kind: 'hint', id: hint.id, section: s.id }, { reveal: true });
+    this.inspector.focusFirst();
+  }
+
+  ensureWiring() {
+    const section = newWiring();
+    this.change('Anschlussplan hinzugefügt', (p) => p.sections.push(section));
+    return section;
+  }
+
+  /** Gewähltes Element löschen (Entf). */
+  removeSelected() {
+    const { kind, id, section } = this.sel;
+    const s = this.section(section);
+    if (kind === 'section') return this.removeSection(id);
+    if (!s) return;
+    if (kind === 'box') {
+      this.sel = { kind: 'section', id: section };
+      this.change(
+        'Baugruppe gelöscht',
+        () => {
+          s.boxes = s.boxes.filter((b) => b.id !== id);
+          for (const b of s.boxes) if (b.parent === id) b.parent = null;
+          for (const p of s.hub.pins) if (p.box === id) p.box = null;
+        },
+        { inspector: true },
+      );
+    } else if (kind === 'pin') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Anschluss gelöscht', () => (s.hub.pins = s.hub.pins.filter((p) => p.id !== id)), { inspector: true });
+    } else if (kind === 'hint') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Hinweis gelöscht', () => (s.hints = s.hints.filter((h) => h.id !== id)), { inspector: true });
+    }
+    this.renderSelection();
+  }
+
+  /* ---------- Firmenlogo ---------- */
+
+  async pickLogo() {
+    const file = await pickFiles('image/png,image/jpeg,image/svg+xml,image/webp');
+    if (file) await this.setLogo(file);
+  }
+
+  async setLogo(file) {
+    try {
+      const image = await readImage(file);
+      const id = uid('img');
+      this.project.images[id] = image;
+      this.change('Logo eingesetzt', (p) => (p.company.logo = id), { inspector: true });
+    } catch {
+      toast('Das Bild konnte nicht gelesen werden (PNG, JPG oder SVG).', 'err', 5000);
+    }
+  }
+
+  /* ---------- Sprache und Schrift ---------- */
+
+  setLang(lang) {
+    this.change('Sprache geändert', (p) => (p.lang = lang), { inspector: true });
+    this.app.renderRibbon();
+  }
+
+  async setFont(font) {
+    if (font === 'barlow') await ensureBarlow().catch(() => toast('Barlow konnte nicht geladen werden.', 'err'));
+    this.change('Schrift geändert', (p) => (p.font = font), { inspector: true });
+    this.app.renderRibbon();
+  }
+
+  /* ---------- Werkzeugband ---------- */
+
+  renderRibbon(bar) {
+    if (!this.project) return;
+    const lang = LANGS.find((l) => l.id === this.project.lang) || LANGS[0];
+    const font = FONTS.find((f) => f.id === this.project.font) || FONTS[0];
+    const hasWiring = this.project.sections.some((s) => s.type === 'wiring');
+    bar.innerHTML = `
+<button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
+<span class="rb-sep"></span>
+<button class="rb c1" data-act="box" title="Baugruppe zum Anschlussplan hinzufügen">${icon('module')}Baugruppe</button>
+<button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
+<button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>
+<span class="rb-sep"></span>
+<button class="rb c3" data-act="logo" title="Firmenlogo hochladen">${icon('image')}Logo</button>
+<button class="rb c4" data-act="lang" title="Sprache des Dokuments">${icon('globe')}${escapeHtml(lang.label)}${icon('chev', 's caret')}</button>
+<button class="rb c5" data-act="font" title="Schrift des Dokuments">${icon('fonts')}${escapeHtml(font.label)}${icon('chev', 's caret')}</button>
+`;
+    for (const btn of $$('.rb', bar))
+      btn.addEventListener('click', () => {
+        const act = btn.dataset.act;
+        if (act === 'section') this.addSectionMenu(btn);
+        else if (act === 'box') this.addBox();
+        else if (act === 'pin') this.addPin();
+        else if (act === 'hint') this.addHint();
+        else if (act === 'logo') this.pickLogo();
+        else if (act === 'lang')
+          showMenu(
+            LANGS.map((l) => ({ label: l.label, checked: l.id === this.project.lang, run: () => this.setLang(l.id) })),
+            btn,
+          );
+        else if (act === 'font')
+          showMenu(
+            FONTS.map((f) => ({ label: f.label, checked: f.id === this.project.font, run: () => this.setFont(f.id) })),
+            btn,
+          );
+      });
+  }
+
+  /* ---------- Zeiger: Auswahl, Verschieben, Höhe, Leitungen ---------- */
+
+  /** Seite und Bereich unter dem Zeiger: { page, el, item, x, y } (pt) oder null. */
+  hitAt(ev) {
+    const el = ev.target.closest && ev.target.closest('.sd-page');
+    if (!el || !this.doc) return null;
+    const page = this.doc.pages[+el.dataset.index];
+    if (!page) return null;
+    const r = el.getBoundingClientRect();
+    const x = ((ev.clientX - r.left) / r.width) * PAGE.w;
+    const y = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    let item = null;
+    for (let i = page.hits.length - 1; i >= 0; i--) {
+      const [hx, hy, hw, hh] = page.hits[i].rect;
+      const pad = page.hits[i].kind === 'box' ? 3 : 0;
+      if (x >= hx - pad && x <= hx + hw + pad && y >= hy - pad && y <= hy + hh + pad) {
+        item = page.hits[i];
+        break;
+      }
+    }
+    return { page, el, item, x, y };
+  }
+
+  hover(hit) {
+    const old = $('#sdPages .sd-hov');
+    if (old) old.remove();
+    if (!hit || !hit.item || this.drag) return;
+    const mark = this.markEl(hit.item.rect, 'sd-hov');
+    hit.el.querySelector('.sd-marks').appendChild(mark);
+  }
+
+  /** Art des Ziehens an dieser Stelle (Verschieben, Höhe, Leitungen) – für Zeiger und Start. */
+  dragMode(hit) {
+    if (!hit || !hit.item || !hit.page.layout) return null;
+    const { kind, rect } = hit.item;
+    if (kind === 'box') {
+      const bottom = rect[1] + rect[3];
+      return hit.y > bottom - 5 ? 'resize' : 'move';
+    }
+    if (kind === 'conn') return 'pins';
+    return null;
+  }
+
+  onPointerMove(ev) {
+    if (this.drag) return this.dragMove(ev);
+    const hit = this.hitAt(ev);
+    this.hover(hit);
+    const mode = this.dragMode(hit);
+    $('#sdScroll').style.cursor = mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : hit && hit.item ? 'pointer' : '';
+  }
+
+  onPointerDown(ev) {
+    if (ev.button !== 0) return;
+    const hit = this.hitAt(ev);
+    if (!hit) return;
+    const { page, item } = hit;
+    const section = page.section;
+    if (!item) {
+      this.select(page.kind === 'cover' ? { kind: 'project' } : { kind: 'section', id: section });
+      return;
+    }
+    if (item.kind === 'box') this.select({ kind: 'box', id: item.id, section });
+    else if (item.kind === 'conn') this.select({ kind: 'box', id: item.box, section });
+    else if (item.kind === 'pin') this.select({ kind: 'pin', id: item.id, section });
+    else if (item.kind === 'hint') this.select({ kind: 'hint', id: item.id, section });
+    else if (item.kind === 'hub') this.select({ kind: 'hub', section });
+    else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
+    else if (item.kind === 'project') this.select({ kind: 'project' });
+    else this.select({ kind: 'section', id: section });
+    const mode = this.dragMode(hit);
+    if (!mode) return;
+    const s = this.section(section);
+    const boxId = item.kind === 'conn' ? item.box : item.id;
+    const box = s.boxes.find((b) => b.id === boxId);
+    const laid = page.layout.boxes.find((b) => b.id === boxId);
+    const conn = page.layout.conns.find((c) => c.box === boxId);
+    if (!box || !laid) return;
+    ev.preventDefault();
+    hit.el.setPointerCapture(ev.pointerId);
+    this.drag = {
+      mode,
+      box,
+      section: s,
+      el: hit.el,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      before: this.snap,
+      scale: page.layout.scale,
+      y: laid.y - DIAGRAM.top,
+      h: laid.h,
+      pinY: conn ? conn.y - laid.y : 0,
+      moved: false,
+    };
+    $('#sdScroll').classList.add('dragging');
+  }
+
+  dragMove(ev) {
+    const d = this.drag;
+    const perPt = this.scale * d.scale;
+    const dy = (ev.clientY - d.startY) / perPt;
+    const dx = (ev.clientX - d.startX) / perPt;
+    if (!d.moved && Math.hypot(dx, dy) < 2) return;
+    d.moved = true;
+    const box = d.box;
+    if (d.mode === 'move') {
+      box.y = Math.max(0, Math.round(d.y + dy));
+      if (box.side !== 'bottom' && !box.parent) {
+        const r = d.el.getBoundingClientRect();
+        const x = ((ev.clientX - r.left) / r.width) * PAGE.w;
+        if (x < PAGE.w / 2 - 70) box.side = 'left';
+        else if (x > PAGE.w / 2 + 70) box.side = 'right';
+      }
+    } else if (d.mode === 'resize') box.h = Math.max(20, Math.round(d.h + dy));
+    else if (d.mode === 'pins') box.pinY = Math.max(4, Math.min(d.h - 4, Math.round(d.pinY + dy)));
+    this.schedule();
+  }
+
+  onPointerUp(ev, cancel = false) {
+    const d = this.drag;
+    if (!d) return;
+    this.drag = null;
+    $('#sdScroll').classList.remove('dragging');
+    if (d.el.hasPointerCapture(ev.pointerId)) d.el.releasePointerCapture(ev.pointerId);
+    if (!d.moved) return;
+    if (cancel) return this.restore(d.before);
+    const label = { move: 'Baugruppe verschoben', resize: 'Höhe geändert', pins: 'Leitungen verschoben' }[d.mode];
+    this.commit(label, d.before);
+    this.inspector.render();
+  }
+
+  /* ---------- Tastatur ---------- */
+
+  onKey(ev, inField) {
+    const mod = ev.ctrlKey || ev.metaKey;
+    const key = ev.key.toLowerCase();
+    if (mod && key === 's') {
+      ev.preventDefault();
+      this.exportPdf();
+    } else if (mod && key === 'p') {
+      ev.preventDefault();
+      this.print();
+    } else if (document.querySelector('.backdrop')) {
+      // Dialog offen: nichts weiter
+    } else if (mod && !inField && key === 'z' && !ev.shiftKey) {
+      ev.preventDefault();
+      this.undo();
+    } else if (mod && !inField && (key === 'y' || (key === 'z' && ev.shiftKey))) {
+      ev.preventDefault();
+      this.redo();
+    } else if (mod && (key === '+' || key === '=')) {
+      ev.preventDefault();
+      this.zoomStep(1);
+    } else if (mod && key === '-') {
+      ev.preventDefault();
+      this.zoomStep(-1);
+    } else if (mod && key === '0') {
+      ev.preventDefault();
+      this.setZoom(null);
+    } else if (!inField && !mod && (key === 'delete' || key === 'backspace') && this.sel.kind !== 'project') {
+      ev.preventDefault();
+      this.removeSelected();
+    } else if (!inField && key === 'escape') {
+      const { kind, section } = this.sel;
+      if (kind === 'box' || kind === 'pin' || kind === 'hint' || kind === 'hub') this.select({ kind: 'section', id: section });
+    } else if (!inField && this.sel.kind === 'box' && (key === 'arrowup' || key === 'arrowdown')) {
+      ev.preventDefault();
+      const s = this.section(this.sel.section);
+      const page = this.doc.pages.find((p) => p.layout && p.section === s.id);
+      const laid = page && page.layout.boxes.find((b) => b.id === this.sel.id);
+      if (!laid) return;
+      const step = (ev.shiftKey ? 10 : 1) * (key === 'arrowup' ? -1 : 1);
+      this.change(
+        'Baugruppe verschoben',
+        () => {
+          const box = s.boxes.find((b) => b.id === this.sel.id);
+          box.y = Math.max(0, Math.round(laid.y - DIAGRAM.top + step));
+        },
+        { key: 'nudge:' + this.sel.id },
+      );
+    }
+  }
+
+  /* ---------- PDF erstellen, drucken ---------- */
+
+  fileName() {
+    return (documentLabel(this.project) || 'Dokumentation').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() + '.pdf';
+  }
+
+  async buildPdf() {
+    if (this.project.font === 'barlow') await ensureBarlow();
+    const doc = renderDocument(this.project);
+    const ts = typesetter(this.project);
+    const html = printHtml({ pages: doc.pages, font: this.project.font, lang: ts.lang }, doc.label);
+    const raw = await makePdf(html);
+    return embedProject(raw, this.project, {
+      title: doc.label,
+      author: [this.project.company.name, this.project.meta.technician].filter(Boolean).join(', '),
+      subject: [this.project.meta.customer, this.project.meta.site].filter(Boolean).join(', '),
+      lang: ts.lang,
+    });
+  }
+
+  /** „PDF erstellen“: Datei speichern (Desktop-App: Speichern-Dialog). Im Browser: Drucken als PDF. */
+  async exportPdf() {
+    if (!this.project) return false;
+    await this.flush();
+    if (!canMakePdf()) {
+      toast('Im Druckdialog „Als PDF speichern“ wählen.', '', 5000);
+      return this.print();
+    }
+    const name = this.fileName();
+    let handle = null;
+    if (window.showSaveFilePicker) {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: 'PDF-Dokument', accept: { 'application/pdf': ['.pdf'] } }],
+        });
+      } catch (err) {
+        if (err && err.name === 'AbortError') return false;
+      }
+    }
+    try {
+      const bytes = await withBusy(() => this.buildPdf(), 100);
+      if (handle) {
+        const writable = await handle.createWritable();
+        await writable.write(bytes);
+        await writable.close();
+        idbPut('recent', handle.name, { name: handle.name, handle, time: Date.now() });
+        toast('PDF erstellt: ' + handle.name);
+      } else {
+        downloadBytes(bytes, name);
+        toast('Die PDF wurde in den Download-Ordner gespeichert.');
+      }
+      return true;
+    } catch (err) {
+      console.error('PDF erstellen', err);
+      toast('Die PDF konnte nicht erstellt werden.', 'err', 6000);
+      return false;
+    }
+  }
+
+  async print() {
+    if (!this.project) return;
+    await this.flush();
+    if (canMakePdf()) {
+      try {
+        const bytes = await withBusy(() => this.buildPdf(), 100);
+        const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+        if (!window.open(url, '_blank')) downloadBytes(bytes, this.fileName());
+      } catch (err) {
+        console.error('Drucken', err);
+        toast('Die PDF konnte nicht erstellt werden.', 'err', 6000);
+      }
+      return;
+    }
+    // Browser: Druckfassung in einem unsichtbaren Rahmen drucken
+    const doc = renderDocument(this.project);
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
+    frame.srcdoc = printHtml({ pages: doc.pages, font: this.project.font, lang: typesetter(this.project).lang }, doc.label);
+    frame.addEventListener('load', () => {
+      try {
+        frame.contentWindow.print();
+      } finally {
+        setTimeout(() => frame.remove(), 60000);
+      }
+    });
+    document.body.appendChild(frame);
+  }
+}
+
+/** Nächster freier Pin-Name nach dem letzten (D2 → D3, A0 → A1); sonst leer. */
+function nextPinName(pins) {
+  const last = pins[pins.length - 1];
+  const m = last && /^([A-Za-z]*)(\d+)$/.exec(last.name || '');
+  if (!m) return '';
+  let n = +m[2] + 1;
+  while (pins.some((p) => p.name === m[1] + n)) n++;
+  return m[1] + n;
+}
+
+/** Bild für Logo: Rastergrafiken verkleinert (höchstens 1600 px breit), SVG unverändert. */
+async function readImage(file) {
+  if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
+    const text = await file.text();
+    const data = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
+    const img = new Image();
+    img.src = data;
+    await img.decode();
+    return { mime: 'image/svg+xml', data, w: img.naturalWidth || 300, h: img.naturalHeight || 100 };
+  }
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / bitmap.width);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return { mime: 'image/png', data: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height };
+}
+

@@ -1,7 +1,7 @@
 {
   "name": "pdf-editor",
   "productName": "PDFix",
-  "version": "2.3.1",
+  "version": "2.4.0",
   "private": true,
   "description": "PDFix: PDFs bearbeiten, ordnen und unterschreiben – Desktop-App für Windows (Electron).",
   "author": {
@@ -19,7 +19,7 @@
     "licenses": "node scripts/licenses.mjs",
     "build:desktop": "node scripts/build.mjs && node scripts/licenses.mjs",
     "app": "npm run build:desktop && electron .",
-    "dist:win": "npm run build:desktop && electron-builder --win nsis portable --x64 --publish never",
+    "dist:win": "npm run build:desktop && electron-builder --win nsis --x64 --publish never",
     "dist:linux": "npm run build:desktop && electron-builder --linux dir --publish never"
   },
   "dependencies": {

@@ -18,7 +18,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } from './file-access.js';
-import { printPages, printResponse } from './quick-print.js';
+import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS } from './menu.js';
 import { loadWindowState, trackWindowState, MIN_SIZE } from './window-state.js';
 
@@ -468,6 +468,12 @@ function start() {
       return files.grant(target);
     });
     handle('file:read', (id) => files.read(id));
+    // „Dokumentation erstellen“: Druckfassung → PDF (höchstens 200 MB Text, z. B. mit Fotos)
+    handle('studio:pdf', async (html) => {
+      if (typeof html !== 'string' || !html.startsWith('<!doctype html>') || html.length > 200 * 1024 * 1024)
+        throw new Error('Ungültige Druckfassung');
+      return htmlToPdf(ORIGIN, html);
+    });
     handle('file:write', async (id, data) => {
       await files.write(id, data);
       app.addRecentDocument(files.pathOf(id));

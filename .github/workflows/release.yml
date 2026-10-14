@@ -1,4 +1,4 @@
-# Windows-Release der Desktop-App: Installer (NSIS) und Portable-EXE.
+# Windows-Release der Desktop-App: Installer (NSIS).
 # Läuft bei Tags v* (z. B. v2.0.2) und manuell („Run workflow“). Bei Tags werden die Dateien
 # als Release-Assets veröffentlicht, sonst nur als Artefakte des Laufs hochgeladen.
 name: Release (Windows)
@@ -67,8 +67,8 @@ jobs:
         if: ${{ !inputs.skip_regression }}
         run: npx playwright test tests/regression.spec.js
 
-      - name: Installer und Portable bauen
-        run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Installer bauen
+        run: npx electron-builder --win nsis --x64 --publish never
 
       - name: Paket prüfen – startet mit PDF als Argument, Fenstertitel = Dateiname
         run: |
@@ -112,7 +112,7 @@ jobs:
       - name: Ausgabedateien zusammenstellen
         run: |
           New-Item -ItemType Directory -Force upload | Out-Null
-          Copy-Item release\PDFix-Setup-*.exe, release\PDFix-*-portable.exe upload\
+          Copy-Item release\PDFix-Setup-*.exe upload\
           Get-ChildItem upload | Format-Table Name, Length
 
       - name: Artefakte hochladen

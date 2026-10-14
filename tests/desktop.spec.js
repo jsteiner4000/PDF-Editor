@@ -23,7 +23,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFName } from 'pdf-lib';
 import { idle, clientPoint, findBlock, extractText } from './helpers.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -99,6 +99,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     expect(security.bridge).toEqual(
       [
         'grantDroppedFile',
+        'makePdf',
         'onCommand',
         'onOpenFile',
         'platform',
@@ -458,5 +459,55 @@ test('Desktop-App: Schnelldruck (Windows-Verb „Drucken“, z. B. Outlook) ohne
     expect(app.windows().length).toBe(1);
   } finally {
     await app.close().catch(() => {});
+  }
+});
+
+test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bearbeitbar', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pdf-editor-studio-'));
+  const app = await electron.launch({
+    executablePath: ELECTRON,
+    args: [ROOT, ...extraArgs],
+    env: { ...process.env, PDF_EDITOR_USER_DATA: path.join(dir, 'userdata') },
+    cwd: ROOT,
+  });
+  try {
+    const page = await app.firstWindow();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()));
+    await page.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10);
+    await page.locator('.tpl[data-tpl="example"]').click();
+    await expect(page.locator('#studio .sd-page')).toHaveCount(2);
+    // PDF über den Hauptprozess (ohne Speichern-Dialog)
+    const b64 = await page.evaluate(async () => {
+      const bytes = await window.pdfEditor.studio.buildPdf();
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    });
+    const bytes = Buffer.from(b64, 'base64');
+    const doc = await PDFDocument.load(bytes);
+    expect(doc.getPageCount()).toBe(2);
+    const [w, h] = [doc.getPage(0).getWidth(), doc.getPage(0).getHeight()];
+    expect(Math.abs(w - 595.28) < 1 && Math.abs(h - 841.89) < 1).toBe(true);
+    expect(doc.getTitle()).toBe('Anschlussplan Zufallsgenerator');
+    expect(String(doc.catalog.get(PDFName.of('PDFixProject')))).toMatch(/ 0 R$/);
+    const text = (await extractText(bytes)).join('\n');
+    expect(text).toContain('Anschlussplan');
+    expect(text).toContain('Belegung der Arduino-Anschlüsse');
+    expect(text).toContain('Seite 2 von 2');
+
+    // Wieder öffnen: PDFix bietet die Dokumentation zum Weiterbearbeiten an
+    await page.evaluate(async (b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      await window.pdfEditor.openBytes(bytes, 'plan.pdf', null);
+    }, b64);
+    await expect(page.locator('#sdOffer')).toBeVisible();
+    await page.locator('#sdOffer .btn.primary').click();
+    await expect(page.locator('#studio')).toBeVisible();
+    expect(await page.evaluate(() => window.pdfEditor.studio.project.sections[0].hub.pins.length)).toBe(20);
+    expect(errors).toEqual([]);
+  } finally {
+    await app.close();
   }
 });
