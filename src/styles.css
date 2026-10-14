@@ -459,6 +459,15 @@ kbd {
   margin-left: -3px;
   opacity: 0.6;
 }
+.rb-note {
+  padding: 0 6px;
+  color: var(--ink3);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 .rb-sep {
   width: 1px;
   height: 22px;
@@ -513,8 +522,8 @@ kbd {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  transition: width 0.18s;
 }
+/* ohne Übergang: „Seitenbreite“ wird gleich nach dem Ein-/Ausblenden berechnet */
 #left.collapsed {
   width: 0;
   border-right: 0;
@@ -1525,40 +1534,6 @@ body.editing #nav {
   border-right: 1px solid var(--line);
   overflow: auto;
 }
-.hhero {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 2px 8px 18px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-.hhero .mark {
-  width: 40px;
-  height: 40px;
-  flex: none;
-  display: grid;
-  place-items: center;
-  filter: drop-shadow(0 3px 8px rgba(44, 125, 255, 0.22));
-}
-.hhero .mark img {
-  width: 40px;
-  height: 40px;
-}
-.hhero h1 {
-  margin: 0;
-  font-size: 21px;
-  letter-spacing: -0.02em;
-  font-weight: 700;
-  line-height: 1.1;
-}
-.hhero p {
-  margin: 3px 0 0;
-  color: var(--ink3);
-  font-size: 11.5px;
-  line-height: 1.35;
-  text-wrap: balance;
-}
 .hs-item {
   display: flex;
   align-items: center;
@@ -1601,11 +1576,16 @@ body.editing #nav {
   padding: 30px 44px 64px;
 }
 .hs-greet {
-  margin: 0 0 26px;
+  margin: 0;
   font-size: 26px;
   line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+.hs-sub {
+  margin: 6px 0 28px;
+  color: var(--ink3);
+  font-size: 13.5px;
 }
 .hs-sec + .hs-sec {
   margin-top: 36px;
@@ -1685,17 +1665,6 @@ body.editing #nav {
   color: var(--ink3);
   font-size: 12px;
   line-height: 1.4;
-}
-.tpl-tag {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--chip);
-  color: #fff;
-  font-size: 10.5px;
-  font-weight: 600;
 }
 /* Kachel „PDF öffnen“: gestrichelte Ablagefläche im Format der Vorlagen */
 .drop {
@@ -2311,6 +2280,78 @@ button.feat:focus-visible {
 .desktop #bFile,
 .desktop #bFile + .sep {
   display: none;
+}
+
+/* ---------- Eigene Titelleiste (Desktop-App unter Windows/Linux, src/platform/title-bar.js) ----------
+   Die Kopfzeile ist zugleich Titelleiste: Sie zieht das Fenster (Doppelklick maximiert), trägt die
+   Menüs wie Word/Excel und lässt rechts Platz für die Fenstertasten des Systems. */
+.menubar {
+  display: none;
+}
+.frame #top {
+  -webkit-app-region: drag;
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px);
+}
+.frame #top button,
+.frame #top input,
+.frame #top [role='button'],
+.frame .menu,
+.frame .backdrop,
+.frame #toasts,
+.frame #busy {
+  -webkit-app-region: no-drag;
+}
+.frame .brand {
+  margin-right: 2px;
+}
+.frame .menubar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+}
+.menubar .mb {
+  height: 30px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink2);
+  font-size: 13px;
+  font-weight: 450;
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.menubar .mb:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.menubar .mb[aria-expanded='true'] {
+  background: var(--press);
+  color: var(--ink);
+}
+.menubar .mb:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: -2px;
+  color: var(--ink);
+}
+.menubar .mb-all {
+  display: none;
+  width: 32px;
+  padding: 0;
+  place-items: center;
+}
+/* schmale Fenster: ein Menüknopf statt fünf Wörter – die Reiter behalten ihren Platz */
+@media (max-width: 1099px) {
+  .menubar .mb {
+    display: none;
+  }
+  .menubar .mb-all {
+    display: grid;
+  }
 }
 
 /* Browser-Flächen im Farbton der App: Markierung, Eingabemarke, Zahlen */

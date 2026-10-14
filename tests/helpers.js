@@ -183,24 +183,26 @@ const LEGACY_LOOK = `:root{
   --sh3:0 18px 48px rgba(16,24,40,.18),0 4px 12px rgba(16,24,40,.08);
 }
 .sec h4,.recent h4{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3)}
-.fld:disabled{background:#fff;color:revert;cursor:revert}
-.tool[data-tool="formdesign"]{display:none}`;
+.fld:disabled{background:#fff;color:revert;cursor:revert}`;
 
 /**
  * Raster wie in 1.0 für den Vergleich (nur Neubau): Kopfzeile 52 px, kein Werkzeugband – sonst ist
  * der Dokumentbereich niedriger und „Ganze Seite“ sowie die Bildschirmfotos weichen ab.
  */
 const LEGACY_FRAME = `#app:has(> #ribbon){grid-template-rows:52px 0 1fr !important}
-#ribbon{display:none !important}`;
+#ribbon{display:none !important}
+#app:not(.view-home) #left.collapsed{width:272px !important;border-right:1px solid var(--line) !important}`;
 
 /**
  * Bildschirmfotos der wichtigsten Bereiche (Kopfzeile, Seitenleisten, erste Seite).
  * Einzelne Elemente statt des ganzen Fensters, weil Ganzfenster-Aufnahmen im Headless-Chromium
  * nicht pixelstabil sind.
  */
-// Die Kopfzeile ist seit 2.4 neu gestaltet (Reiter, Werkzeugband wie Acrobat/Office) und wird nicht
-// mehr mit 1.0 verglichen; für die übrigen Bereiche stellt LEGACY_LOOK das alte Raster nach.
-export async function screenshots(page, selectors = ['#left', '#right', '.page']) {
+// Die Kopfzeile ist seit 2.4 neu gestaltet (Reiter, Werkzeugband wie Acrobat/Office), die linke
+// Seitenleiste seit 2.8 (nur noch Einstellungen des Werkzeugs, keine doppelten Befehle); beide werden
+// nicht mehr mit 1.0 verglichen. Für die übrigen Bereiche stellt LEGACY_LOOK das alte Raster nach,
+// LEGACY_FRAME hält die Breite der Seitenleiste wie in 1.0 (gleiche Seitengröße).
+export async function screenshots(page, selectors = ['#right', '.page']) {
   // Maus aus dem Weg (Hover-Zustände) und Übergänge abklingen lassen
   await page.mouse.move(1, 999);
   await page.waitForTimeout(400);

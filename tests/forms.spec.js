@@ -64,7 +64,7 @@ test('Formularfelder ausfüllen, rückgängig machen und speichern', async ({ br
     await openPdf(page, await formPdf(), 'formular.pdf');
     await expect(page.locator('.ff')).toHaveCount(6);
 
-    await field(page, 'kunde').fill('Tanzschule Schöning GmbH');
+    await field(page, 'kunde').fill('Bäckerei Lindner GmbH');
     await field(page, 'kunde').press('Enter');
     await idle(page);
     await field(page, 'bemerkung').click();
@@ -81,7 +81,7 @@ test('Formularfelder ausfüllen, rückgängig machen und speichern', async ({ br
     const undo = await page.evaluate(() => window.pdfEditor.session.hist.undo.map((e) => e.label));
     expect(undo).toEqual(Array(5).fill('Formularfeld ausgefüllt'));
     expect(await fieldValues(await savedBytes(page))).toEqual({
-      kunde: 'Tanzschule Schöning GmbH',
+      kunde: 'Bäckerei Lindner GmbH',
       bemerkung: 'Zeile eins\nZeile zwei – Akku getauscht',
       erledigt: true,
       ergebnis: 'schlecht',

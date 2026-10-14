@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, PDFName } from 'pdf-lib';
 import { idle, clientPoint, findBlock, extractText } from './helpers.js';
+import { exampleProject } from './fixtures/wiring-example.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ELECTRON = createRequire(import.meta.url)('electron'); // Pfad zur Electron-Binary
@@ -103,6 +104,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
         'onCommand',
         'onOpenFile',
         'platform',
+        'popupMenu',
         'readFile',
         'ready',
         'setState',
@@ -113,7 +115,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     );
 
     // 3. Text bearbeiten → Titel zeigt „Bearbeitet“
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await page.locator('#rbBar .rb[data-tool="edit"]').click();
     await idle(page);
     const block = await findBlock(page, 0, 'Zeilen läuft');
     const line = block.lines[1];
@@ -276,6 +278,33 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('stripActive').click());
     await expect.poll(() => page.evaluate(() => window.pdfEditor.stripActive)).toBe(true);
     await expect.poll(async () => (await stripItem()).checked).toBe(true);
+
+    // Eigene Titelleiste (Windows/Linux): Menüs in der Kopfzeile = das native Menü
+    if (process.platform !== 'darwin') {
+      expect(await page.evaluate(() => document.documentElement.classList.contains('frame'))).toBe(true);
+      const native = await app.evaluate(({ Menu }) =>
+        Menu.getApplicationMenu()
+          .items.filter((i) => i.visible)
+          .map((i) => i.label),
+      );
+      expect(await page.locator('.menubar .mb:not(.mb-all)').allInnerTexts()).toEqual(native);
+      // Klick öffnet das Untermenü (bis es geschlossen wird, gilt der Knopf als aufgeklappt)
+      const datei = page.locator('.menubar .mb', { hasText: 'Datei' });
+      await datei.click();
+      await expect(datei).toHaveAttribute('aria-expanded', 'true');
+      await app.evaluate(({ Menu, BrowserWindow }) =>
+        Menu.getApplicationMenu().items[0].submenu.closePopup(BrowserWindow.getAllWindows()[0]),
+      );
+      await expect(datei).toHaveAttribute('aria-expanded', 'false');
+      // F10 setzt den Fokus in die Menüleiste, Pfeil rechts wechselt, Esc kehrt zurück
+      await page.locator('#scroller').focus();
+      await page.keyboard.press('F10');
+      await expect(datei).toBeFocused();
+      await page.keyboard.press('ArrowRight');
+      await expect(page.locator('.menubar .mb', { hasText: 'Bearbeiten' })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(page.locator('#scroller')).toBeFocused();
+    }
 
     // Einstellungen im nativen Menü: Dunkel gilt auch für Titelleiste und Systemdialoge
     await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('settings').click());
@@ -484,7 +513,7 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text()));
     await page.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10);
-    await page.locator('.tpl[data-tpl="example"]').click();
+    await page.evaluate((p) => window.pdfEditor.studio.open(p), exampleProject());
     await expect(page.locator('#studio .sd-page')).toHaveCount(2);
     // PDF über den Hauptprozess (ohne Speichern-Dialog)
     const b64 = await page.evaluate(async () => {
@@ -498,7 +527,7 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     expect(doc.getPageCount()).toBe(2);
     const [w, h] = [doc.getPage(0).getWidth(), doc.getPage(0).getHeight()];
     expect(Math.abs(w - 595.28) < 1 && Math.abs(h - 841.89) < 1).toBe(true);
-    expect(doc.getTitle()).toBe('Anschlussplan Zufallsgenerator');
+    expect(doc.getTitle()).toBe('Anschlussplan Testaufbau');
     expect(String(doc.catalog.get(PDFName.of('PDFixProject')))).toMatch(/ 0 R$/);
     const text = (await extractText(bytes)).join('\n');
     expect(text).toContain('Anschlussplan');

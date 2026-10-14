@@ -39,8 +39,7 @@ export class OrganizeMode {
     this.active = true;
     const ctx = $('#ctx');
     ctx.classList.remove('hidden');
-    ctx.innerHTML = `<span class="title">Seiten organisieren</span>
-      <button class="btn" id="oIns">${icon('pageadd', 's')}Einfügen ${icon('chev', 's caret')}</button>
+    ctx.innerHTML = `<button class="btn" id="oIns">${icon('pageadd', 's')}Einfügen ${icon('chev', 's caret')}</button>
       <div class="sep"></div>
       <button class="btn ic" id="oRotL" title="Nach links drehen">${icon('rotl')}</button>
       <button class="btn ic" id="oRotR" title="Nach rechts drehen">${icon('rotr')}</button>
@@ -86,13 +85,6 @@ export class OrganizeMode {
     if (!this.active) return;
     const body = this.app.panel('Seiten organisieren');
     const detected = this.detected;
-    const insertSection = htmlToElement('<div class="sec"><h4>Seiten einfügen</h4></div>');
-    body.appendChild(insertSection);
-    const blankBtn = htmlToElement(`<button class="btn big">${icon('pageadd')}Leere Seite …</button>`);
-    blankBtn.addEventListener('click', () => this.blankDialog(this.insertPos()));
-    const fileBtn = htmlToElement(`<button class="btn big">${icon('filein')}Aus PDF-Datei …</button>`);
-    fileBtn.addEventListener('click', () => this.insertFromFile(this.insertPos()));
-    insertSection.append(blankBtn, fileBtn);
     const pnSection = htmlToElement('<div class="sec"><h4>Seitenzahlen</h4></div>');
     body.appendChild(pnSection);
     if (!detected) pnSection.appendChild(htmlToElement('<p class="hint">Dokument wird untersucht …</p>'));

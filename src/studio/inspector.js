@@ -27,7 +27,6 @@ import {
   tx,
   uid,
 } from './model.js';
-import { symbolIconSvg } from './site.js';
 import { thumbOf } from './thumbs.js';
 import { chapterLabels, referenceTargets } from './chapters.js';
 import { sideOf } from './wiring.js';
@@ -346,7 +345,7 @@ export class Inspector {
   wiringForm(s) {
     const studio = this.studio;
     const lang = langsOf(this.project)[0];
-    this.group('Anschlussplan', this.bi('Anlage', s, 'system', { placeholder: 'z. B. Zufallsgenerator' }));
+    this.group('Anschlussplan', this.bi('Anlage', s, 'system', { placeholder: 'z. B. Torsteuerung Halle 2' }));
     this.hubFields(s, 'Steuerung');
     const sideName = { left: 'links', right: 'rechts', bottom: 'unten' };
     const byId = new Map(s.boxes.map((b) => [b.id, b]));
@@ -359,7 +358,6 @@ export class Inspector {
         onOpen: (b) => studio.select({ kind: 'box', id: b.id, section: s.id }, { reveal: true }),
       }),
     );
-    boxes.appendChild(this.addButton('Baugruppe', () => studio.addBox()));
     const pins = this.group(
       `Anschlüsse (${s.hub.pins.length})`,
       this.rows(s.hub.pins, {
@@ -368,7 +366,6 @@ export class Inspector {
         onOpen: (p) => studio.select({ kind: 'pin', id: p.id, section: s.id }, { reveal: true }),
       }),
     );
-    pins.appendChild(this.addButton('Anschluss', () => studio.addPin()));
     const hints = this.group(
       `Hinweise (${s.hints.length})`,
       this.rows(s.hints, {
@@ -378,7 +375,6 @@ export class Inspector {
         onOpen: (h) => studio.select({ kind: 'hint', id: h.id, section: s.id }, { reveal: true }),
       }),
     );
-    hints.appendChild(this.addButton('Hinweis', () => studio.addHint()));
     this.categoriesGroup(s);
     const badge = s.badge;
     const colorInput = htmlToElement(`<input type="color" class="sd-color" value="${safeColor(badge.color, '#b45309')}">`);
@@ -451,7 +447,6 @@ export class Inspector {
         onOpen: (p) => this.studio.select({ kind: 'pin', id: p.id, section: s.id }, { reveal: true }),
       }),
     );
-    pins.appendChild(this.addButton('Anschluss', () => this.studio.addPin(null)));
   }
 
   /* ---------- Baugruppe ---------- */
@@ -520,7 +515,7 @@ export class Inspector {
         : this.check('Sammelleitung', box.bus, (v) => studio.change('Sammelleitung geändert', () => (box.bus = v)), 'Alle Anschlüsse als eine Leitung, z. B. „D10-D13“'),
     );
     const own = s.hub.pins.filter((p) => p.box === box.id);
-    const pins = this.group(
+    this.group(
       `Anschlüsse (${own.length})`,
       this.rows(own, {
         empty: 'Mit der Steuerung noch nicht verbunden.',
@@ -528,7 +523,6 @@ export class Inspector {
         onOpen: (p) => studio.select({ kind: 'pin', id: p.id, section: s.id }, { reveal: true }),
       }),
     );
-    pins.appendChild(this.addButton('Anschluss', () => studio.addPin(box.id)));
     const placed = [box.y, box.h, box.pinY, box.pinGap].some((v) => v != null && v !== '');
     this.actions(
       placed && [
@@ -707,7 +701,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (d) => studio.select({ kind: 'device', id: d.id, section: s.id }, { reveal: true }),
       }),
     );
-    devices.appendChild(this.addButton('Gerät', () => studio.addAccessItem('device')));
     if (s.blocks.network) {
       const n = s.network;
       this.group(
@@ -726,7 +719,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (w) => studio.select({ kind: 'wifi', id: w.id, section: s.id }, { reveal: true }),
       }),
     );
-    wifi.appendChild(this.addButton('WLAN', () => studio.addAccessItem('wifi')));
     const remote = this.group(
       `Fernzugriff (${s.remote.length})`,
       this.rows(s.remote, {
@@ -735,7 +727,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (r) => studio.select({ kind: 'remote', id: r.id, section: s.id }, { reveal: true }),
       }),
     );
-    remote.appendChild(this.addButton('Fernzugriff', () => studio.addAccessItem('remote')));
   },
 
   /** Reihenfolge-Knöpfe und Löschen für Listeneinträge. */
@@ -855,19 +846,9 @@ Object.assign(Inspector.prototype, {
     const bg = this.group('Hintergrund');
     bg.appendChild(
       htmlToElement(
-        `<div class="sd-thumbrow">${img ? `<img alt="Hintergrund" src="${escapeHtml(img.data)}">` : `<span class="sd-empty" style="padding:0">Noch kein Bild</span>`}</div>`,
+        `<div class="sd-thumbrow">${img ? `<img alt="Hintergrund" src="${escapeHtml(img.data)}">` : `<span class="sd-empty" style="padding:0">Noch kein Bild – „Hintergrund“ oben im Werkzeugband: Luftbild, Karte oder Grundriss (auch aus einer PDF-Seite).</span>`}</div>`,
       ),
     );
-    const buttons = htmlToElement('<div class="sd-acts" style="padding-top:8px"></div>');
-    for (const [label, iconName, run] of [
-      ['Bild …', 'image', () => studio.pickBackground(s)],
-      ['PDF-Seite …', 'file', () => studio.pickBackgroundPdf(s)],
-    ]) {
-      const b = htmlToElement(`<button type="button" class="btn outline">${icon(iconName, 's')}${label}</button>`);
-      b.addEventListener('click', run);
-      buttons.appendChild(b);
-    }
-    bg.appendChild(buttons);
     if (img) {
       bg.appendChild(
         this.seg('Drehung', [[0, '0°'], [90, '90°'], [180, '180°'], [270, '270°']], s.bg.rotate, (v) =>
@@ -881,18 +862,7 @@ Object.assign(Inspector.prototype, {
       );
       bg.appendChild(this.slider('Aufhellen', s.bg, 'fade', { min: 0, max: 80, scale: 100, unit: '%' }));
     }
-    // Symbole
-    const palette = htmlToElement('<div class="sd-symbols"></div>');
-    const kinds = [...SYMBOLS, ...s.custom.map((c) => ({ id: 'custom:' + c.id, ...symbolInfo(s, 'custom:' + c.id) }))];
-    for (const kind of kinds) {
-      const info = symbolInfo(s, kind.id);
-      const b = htmlToElement(
-        `<button type="button" class="sd-symbol${studio.armed === kind.id ? ' on' : ''}" aria-pressed="${studio.armed === kind.id}" title="${escapeHtml(tx(info.name, 'de'))}">${symbolIconSvg(info, this.project.images)}<span>${escapeHtml(tx(info.name, lang))}</span></button>`,
-      );
-      b.addEventListener('click', () => studio.arm(kind.id));
-      palette.appendChild(b);
-    }
-    this.group('Symbole', palette, this.note('Symbol wählen, dann in den Plan klicken – so oft wie nötig. Esc beendet. Eigene Symbole oben im Werkzeugband.'));
+    // Symbole setzen: Galerie „Symbol“ im Werkzeugband (dort auch eigene Symbole hochladen)
     for (const c of s.custom) {
       const code = this.text('Kürzel', c, 'code', { id: 'cc' + c.id, placeholder: 'ES', hint: 'Steht vor der Nummer, z. B. „ES 1“.' });
       code.querySelector('input').maxLength = 6;
@@ -992,7 +962,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (p) => studio.select({ kind: 'photo', id: p.id, section: s.id }, { reveal: true }),
       }),
     );
-    list.appendChild(this.addButton('Fotos hinzufügen', () => studio.pickPhotos(s)));
     for (const el of list.querySelectorAll('img[data-img]'))
       thumbOf(this.project.images[el.dataset.img]).then((url) => url && el.isConnected && (el.src = url));
   },
@@ -1039,7 +1008,7 @@ Object.assign(Inspector.prototype, {
       this.bi('Titel', s, 'title'),
       this.check('Überschriften nummerieren', s.numbering, (v) => studio.change('Nummerierung geändert', () => (s.numbering = v))),
     );
-    const list = this.group(
+    this.group(
       `Bausteine (${s.blocks.length})`,
       this.rows(s.blocks, {
         empty: 'Noch kein Baustein.',
@@ -1052,7 +1021,6 @@ Object.assign(Inspector.prototype, {
         onOpen: (b) => studio.select({ kind: 'block', id: b.id, section: s.id }, { reveal: true }),
       }),
     );
-    list.appendChild(this.addButton('Baustein', () => studio.blockMenu(list.lastChild, s)));
     this.actions(['Suchen und Ersetzen', 'replace', () => studio.replaceDialog()]);
   },
 

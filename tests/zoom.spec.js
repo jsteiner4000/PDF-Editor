@@ -209,7 +209,7 @@ test('Leertaste + Ziehen verschiebt den Ausschnitt, ohne zu bearbeiten', async (
   const { page, context, errors } = await launch(browser, 1);
   try {
     await openPdf(page);
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await page.locator('#rbBar .rb[data-tool="edit"]').click();
     await zoomOnto(page, 16, 0, 400, 440);
     const before = await page.evaluate(() => {
       const s = document.getElementById('scroller');
@@ -269,7 +269,7 @@ test('Overlays bei 3200 % deckungsgleich, Strg+2 zoomt auf die Auswahl', async (
   const { page, context, errors } = await launch(browser, 1.5);
   try {
     await openPdf(page);
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await page.locator('#rbBar .rb[data-tool="edit"]').click();
     await idle(page);
     // orangefarbenes Rechteck (re-Operator, 300/380, 200 × 120 pt) auswählen
     const [x, y] = await page.evaluate(() => {
@@ -425,7 +425,7 @@ test('Objekt bei 3200 % verschieben und speichern', async ({ browser }) => {
   let saved;
   try {
     await openPdf(page);
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await page.locator('#rbBar .rb[data-tool="edit"]').click();
     await idle(page);
     const before = (await objectsOf(page, 0)).find((o) => o.type === 'image');
     const cx = (before.vis[0] + before.vis[2]) / 2;
@@ -502,8 +502,8 @@ test('Leertaste: Hand-Werkzeug nur im Dokumentbereich, nicht auf Schaltflächen 
     await page.keyboard.down('Space');
     expect(await page.locator('#scroller.pan-ready').count()).toBe(0);
     await page.keyboard.up('Space');
-    // Kachel „PDF bearbeiten“ per Leertaste
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).focus();
+    // Schaltfläche „Bearbeiten“ im Werkzeugband per Leertaste
+    await page.locator('#rbBar .rb[data-tool="edit"]').focus();
     await page.keyboard.press('Space');
     await idle(page);
     expect(await app(() => window.pdfEditor.tool)).toBe('edit');
@@ -546,7 +546,7 @@ test('Gemerkte Seitenbilder werden beim Schließen freigegeben', async ({ browse
   const { page, context, errors } = await launch(browser, 1.5);
   try {
     await openPdf(page);
-    await page.locator('#lpBody .tool', { hasText: 'PDF bearbeiten' }).click();
+    await page.locator('#rbBar .rb[data-tool="edit"]').click();
     await idle(page);
     await zoomOnto(page, 3, 0, 150, 745);
     const [x, y] = await page.evaluate(() => {

@@ -360,19 +360,8 @@ export class FormDesign {
       }
       return;
     }
+    // Textfeld und Kontrollkästchen anlegen: Befehlsleiste oben
     const body = this.app.panel('Formularfelder');
-    const add = htmlToElement('<div class="sec"><h4>Hinzufügen</h4></div>');
-    for (const [type, iconName, label] of [
-      ['text', 'field', 'Textfeld'],
-      ['checkbox', 'checkbox', 'Kontrollkästchen'],
-    ]) {
-      const btn = htmlToElement(
-        `<button class="btn big ${this.armed === type ? 'on' : ''}">${icon(iconName)}${label}</button>`,
-      );
-      btn.addEventListener('click', () => this.arm(this.armed === type ? null : type));
-      add.appendChild(btn);
-    }
-    body.appendChild(add);
     const current = this.selected();
     if (!current) {
       body.appendChild(

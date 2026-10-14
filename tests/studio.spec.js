@@ -5,14 +5,16 @@
 import { test, expect } from '@playwright/test';
 import { PDFDocument, PDFName } from 'pdf-lib';
 import { launch, extractText } from './helpers.js';
+import { exampleProject } from './fixtures/wiring-example.mjs';
 
+/** Beispiel-Anschlussplan (Testdaten) öffnen. */
 async function openExample(page) {
-  await page.locator('.tpl[data-tpl="example"]').click();
+  await page.evaluate((p) => window.pdfEditor.studio.open(p, { kind: 'section', id: p.sections[0].id }), exampleProject());
   await expect(page.locator('#studio .sd-page')).toHaveCount(2);
   await expect(page.locator('#prjTab')).toHaveClass(/on/);
 }
 
-test('Beispiel „Zufallsgenerator“: Lage aller Teile wie im Vorbild', async ({ browser }) => {
+test('Beispiel-Anschlussplan: Lage aller Teile wie im Vorbild', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
     await openExample(page);
@@ -96,12 +98,14 @@ test('Bedienung: Baugruppe ziehen, Rückgängig, Eigenschaften, Sprache, Entwurf
     await page.locator('#sdProj').click();
     await page.locator('.sd-seg button', { hasText: 'Beide' }).click();
     await expect(pageEl).toContainText('Anschlussplan / Wiring diagram');
-    await expect(page.locator('.rb[data-act="lang"]')).toContainText('Deutsch und Englisch');
+    await expect(page.locator('.sd-seg button[aria-checked="true"]', { hasText: 'Beide' })).toBeVisible();
+    // Sprache, Schrift und Logo stehen nur in den Projekteigenschaften, nicht auch im Werkzeugband
+    await expect(page.locator('.rb[data-act="lang"], .rb[data-act="font"], .rb[data-act="logo"]')).toHaveCount(0);
 
     // Entwurf: auf der Startseite unter „Dokumentationen“, von dort wieder zu öffnen
     await page.locator('#tHome').click();
     await page.locator('.hs-tabs [data-list="drafts"]').click();
-    const row = page.locator('#recentList .ri', { hasText: 'Anschlussplan Zufallsgenerator' });
+    const row = page.locator('#recentList .ri', { hasText: 'Anschlussplan Testaufbau' });
     await expect(row).toBeVisible();
     await page.locator('#bPrjClose').click({ force: true });
     await expect(page.locator('#prjTab')).toBeHidden();
@@ -137,10 +141,10 @@ test('PDF erstellen: Projekt eingebettet, beim Öffnen weiterbearbeiten', async 
     const bytes = Buffer.from(b64, 'base64');
     const doc = await PDFDocument.load(bytes);
     expect(doc.getPageCount()).toBe(2);
-    expect(doc.getTitle()).toBe('Anschlussplan Zufallsgenerator');
+    expect(doc.getTitle()).toBe('Anschlussplan Testaufbau');
     expect(doc.catalog.has(PDFName.of('PDFixProject'))).toBe(true);
     const [p1, p2] = await extractText(bytes);
-    expect(p1).toContain('Zufallsgenerator - Übersicht der Anschlüsse');
+    expect(p1).toContain('Testaufbau - Übersicht der Anschlüsse');
     expect(p1).toContain('Seite 1 von 2');
     expect(p2).toContain('Belegung der Arduino-Anschlüsse');
 
@@ -561,9 +565,15 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
     expect(bg.mime).toBe('image/jpeg');
     expect(Math.max(bg.w, bg.h)).toBe(2400);
 
-    // 3. eigenes Symbol
+    // 3. Symbol-Galerie: Symbol wählen, dann eigenes Symbol hochladen
+    await page.locator('.rb[data-act="symbols"]').click();
+    await expect(page.locator('.sd-gallery .sd-symbol')).toHaveCount(15);
+    await page.locator('.sd-gallery .sd-symbol', { hasText: 'Kamera' }).click();
+    await expect(page.locator('#sdArm')).toContainText('Kamera');
+    await expect(page.locator('.sd-gallery')).toHaveCount(0);
     chooser = page.waitForEvent('filechooser');
-    await page.locator('.rb[data-act="custom"]').click();
+    await page.locator('.rb[data-act="symbols"]').click();
+    await page.locator('.sd-gallery .mi', { hasText: 'Eigenes Symbol' }).click();
     await (await chooser).setFiles({ name: 'tor.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
     await page.locator('.dlg input[type="text"]').fill('Torantrieb');
     await page.locator('.dlg .btn.primary').click();

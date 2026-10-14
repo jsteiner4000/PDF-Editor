@@ -809,48 +809,54 @@
 .sd-armed .btn:hover {
   background: rgba(255, 255, 255, 0.14);
 }
+.sd-gallery {
+  width: 384px;
+  padding: 8px;
+}
 .sd-symbols {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
-  gap: 6px;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
 }
 .sd-symbol {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 8px 4px 6px;
+  gap: 9px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 9px;
-  background: var(--bg);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink2);
-  font-size: 11px;
-  line-height: 1.2;
-  text-align: center;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12.5px;
+  text-align: left;
   cursor: pointer;
-  transition:
-    background-color 0.12s var(--ease),
-    box-shadow 0.12s var(--ease);
+  transition: background-color 0.12s var(--ease);
+}
+.sd-symbol svg {
+  flex: none;
 }
 .sd-symbol span {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  hyphens: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sd-symbol:hover {
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--line2);
+  background: var(--hover);
 }
 .sd-symbol.on {
   background: var(--acc-soft);
   color: var(--acc-ink);
-  box-shadow: inset 0 0 0 1.5px var(--acc);
   font-weight: 600;
 }
 .sd-symbol:focus-visible {
   outline: 2px solid var(--acc-line);
-  outline-offset: 1px;
+  outline-offset: -2px;
+}
+.sd-gallery hr {
+  margin: 6px 2px;
 }
 .sd-range {
   display: grid;

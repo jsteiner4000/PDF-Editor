@@ -65,11 +65,7 @@ function virtualModules(contents) {
 
 /** App-Symbol aus assets/icon/png (einzige Quelle, erzeugt von build-icons.mjs) als data:-URI. */
 async function loadLogos() {
-  const [small, large] = await Promise.all([
-    readFile(path.join(ICON_DIR, 'png', 'icon-64.png')),
-    readFile(path.join(ICON_DIR, 'png', 'icon-256.png')),
-  ]);
-  return { small: pngDataUri(small), large: pngDataUri(large) };
+  return { small: pngDataUri(await readFile(path.join(ICON_DIR, 'png', 'icon-64.png'))) };
 }
 
 const pngDataUri = (bytes) => 'data:image/png;base64,' + bytes.toString('base64');

@@ -18,6 +18,7 @@
 
 import { toast } from '../ui/dialogs.js';
 import { readTheme } from '../ui/theme.js';
+import { installTitleBar } from './title-bar.js';
 
 const desktop = typeof window !== 'undefined' ? window.pdfEditorDesktop : undefined;
 
@@ -189,6 +190,7 @@ export function installDesktopBridge(appInstance) {
   app = appInstance;
   // Plattform-Klasse: Stile für die Desktop-App (z. B. ohne In-App-Menü „Datei“, siehe styles.css)
   document.documentElement.classList.add('desktop');
+  if (desktop.platform !== 'darwin') installTitleBar(desktop);
 
   window.showOpenFilePicker = async () => {
     const entry = await desktop.showOpenDialog();

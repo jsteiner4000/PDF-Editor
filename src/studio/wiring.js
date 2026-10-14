@@ -6,7 +6,7 @@
  * Baugruppe, die Versorgung als breiter Kasten darunter, unten die Legende. Die folgenden Seiten
  * enthalten den Klemmenplan (Tabelle aller Anschlüsse) und die Hinweise zur Verdrahtung.
  *
- * Maße, Schriftgrade und Farben sind dem Vorbild „Anschlussplan Zufallsgenerator“ entnommen.
+ * Maße, Schriftgrade und Farben folgen einem bewährten Anschlussplan-Vorbild.
  */
 import { C, PAGE, color, line, n, pill, rect, text } from './svg.js';
 import { STRINGS, tx } from './model.js';

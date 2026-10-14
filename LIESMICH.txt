@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.7.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.8.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -45,6 +45,12 @@ von Hand gelöscht werden.
 
 PDFix stellt keine Verbindung zum Internet her, sucht nicht nach
 Updates und sendet keine Daten.
+
+Bedienung: PDFix startet bildschirmfüllend (F11 = Vollbild). Oben in einer Zeile:
+Menüs „Datei“ bis „Hilfe“ (Alt oder F10 wechselt per Tastatur hinein), die
+Reiter der geöffneten Dokumente und Speichern. Darunter das Werkzeugband. Wählt
+man ein Werkzeug (z. B. „Bearbeiten“), tritt seine Befehlsleiste an die Stelle
+des Werkzeugbands; links stehen dann seine Einstellungen. „Fertig“ führt zurück.
 
 
 PDF ÖFFNEN
@@ -80,8 +86,7 @@ deshalb über das Feld geändert, nicht über „Text bearbeiten“.
 
 FORMULARFELDER ANLEGEN UND ÄNDERN
 ---------------------------------
-Werkzeug „Formularfelder“ (in „Alle Werkzeuge“ oder unter „PDF bearbeiten“ >
-„Formularfeld“):
+Werkzeug „Formularfelder“ im Werkzeugband:
 - Neues Feld: „Textfeld“ oder „Kontrollkästchen“ wählen, dann auf die Seite
   klicken (Standardgröße) oder einen Rahmen aufziehen.
 - Vorhandene Felder – auch aus anderen Programmen – erscheinen als blaue
@@ -109,7 +114,7 @@ lässt sich mit Strg+Z rückgängig machen.
 
 TEXT BEARBEITEN
 ---------------
-1. Links „PDF bearbeiten“ wählen.
+1. Im Werkzeugband „Bearbeiten“ wählen.
 2. In einen Text klicken und schreiben – der Text erscheint in der Schrift,
    die im PDF verwendet wird. Absätze brechen automatisch um.
 3. Links unter „Format“: Schrift, Größe, Farbe, Fett und Ausrichtung.
@@ -187,8 +192,8 @@ BILDER UND GRAFIKEN
 UNTERSCHRIFT
 ------------
 Die eigene Unterschrift einmal hinterlegen und danach in jedes Dokument setzen.
-Links „PDF bearbeiten“ > „Unterschrift“ (auch oben in der Werkzeugleiste, unter
-„Alle Werkzeuge“ und auf der Startseite).
+„Unterschrift“ im Werkzeugband (im Werkzeug „Bearbeiten“ in dessen Befehlsleiste,
+außerdem auf der Startseite).
 
 Unterschrift hinterlegen – drei Wege:
 - „Aus Dokument übernehmen“: Ein PDF öffnen, in dem Sie bereits unterschrieben
@@ -238,7 +243,7 @@ weiter. Achtung: Nach der Umstellung kann Version 1.0 diesen Speicher nicht mehr
 
 SEITEN ORGANISIEREN
 -------------------
-Links „Seiten organisieren“:
+Im Werkzeugband „Seiten“:
 - Leere Seite oder Seiten aus einer anderen PDF einfügen (auch über das „+“
   zwischen zwei Seiten).
 - Seiten löschen, drehen, duplizieren oder per Ziehen umsortieren.
@@ -305,8 +310,8 @@ ein neues Zeichen (z. B. „Ü“ oder „Q“), braucht der Editor die vollstä
 Schriftdatei:
 - Die Schriften Barlow, Barlow Semi Condensed und IBM Plex Mono (unsere
   Anleitungen) sind bereits eingebaut.
-- Andere Schriften: rechts auf das Symbol „Aa“ (Schriften) klicken und die
-  passende Schriftdatei (.ttf/.otf) laden. Der Editor merkt sich die Schrift.
+- Andere Schriften: im Werkzeugband „Schriften“ wählen und die passende
+  Schriftdatei (.ttf/.otf) laden. Der Editor merkt sich die Schrift.
 - Fehlt eine Schrift, weist der Editor darauf hin; das Zeichen wird dann in
   einer ähnlichen Standardschrift geschrieben.
 Die mitgelieferten Schriften gibt es zusätzlich als Dateien (z. B. zum

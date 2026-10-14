@@ -1,5 +1,5 @@
 /**
- * Fenstergröße und -position merken (userData/window-state.json).
+ * Fenstergröße, -position und Darstellung (Hell/Dunkel) merken (userData/window-state.json).
  */
 import { app, screen } from 'electron';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -9,11 +9,29 @@ export const DEFAULT_SIZE = { width: 1280, height: 860 };
 export const MIN_SIZE = { width: 900, height: 600 };
 
 const stateFile = () => path.join(app.getPath('userData'), 'window-state.json');
+const THEMES = ['light', 'dark', 'system'];
+let theme = 'system';
 
-/** Gespeicherte Fenstergrenzen – nur, wenn sie noch auf einem vorhandenen Bildschirm liegen. */
+/** Darstellung der App (für Titelleiste und Fensterhintergrund schon beim nächsten Start). */
+export function rememberTheme(value) {
+  if (THEMES.includes(value)) theme = value;
+}
+
+/**
+ * Gespeicherte Fenstergrenzen – nur, wenn sie noch auf einem vorhandenen Bildschirm liegen – und
+ * die zuletzt gewählte Darstellung.
+ */
 export function loadWindowState() {
+  let s = null;
   try {
-    const s = JSON.parse(readFileSync(stateFile(), 'utf8'));
+    s = JSON.parse(readFileSync(stateFile(), 'utf8'));
+  } catch {}
+  rememberTheme(s && s.theme);
+  return { ...bounds(s), theme };
+}
+
+function bounds(s) {
+  try {
     const bounds = {
       x: Math.round(s.x),
       y: Math.round(s.y),
@@ -27,19 +45,19 @@ export function loadWindowState() {
       bounds.x + bounds.width > area.x + 100 &&
       bounds.y >= area.y - 10 &&
       bounds.y < area.y + area.height - 100;
-    return visible ? { ...bounds, maximized: !!s.maximized } : { ...DEFAULT_SIZE, maximized: !!s.maximized };
+    return visible ? bounds : { ...DEFAULT_SIZE };
   } catch {
-    return { ...DEFAULT_SIZE, maximized: false };
+    return { ...DEFAULT_SIZE };
   }
 }
 
-/** Speichert die Grenzen beim Schließen (im maximierten Zustand die „normalen“ Grenzen). */
+/** Speichert die Grenzen beim Schließen (im maximierten Zustand die „normalen“ Grenzen für „Verkleinern“). */
 export function trackWindowState(win) {
   const save = () => {
     try {
       const b = win.getNormalBounds();
       mkdirSync(path.dirname(stateFile()), { recursive: true });
-      writeFileSync(stateFile(), JSON.stringify({ ...b, maximized: win.isMaximized() }));
+      writeFileSync(stateFile(), JSON.stringify({ ...b, theme }));
     } catch {}
   };
   win.on('close', save);

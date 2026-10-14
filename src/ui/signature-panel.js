@@ -15,7 +15,7 @@
  *   danach wie jedes Bild verschieb- und skalierbar. Dieselbe Unterschrift wird pro Dokument nur
  *   einmal eingebettet.
  *
- * Eingriffe in EditMode beschränken sich auf `mountToolbar()`, `mountPanel()` und `cancel()`.
+ * Eingriffe in EditMode beschränken sich auf `mountToolbar()` und `cancel()`.
  * Zeigerereignisse beim Erfassen/Platzieren werden in der Capture-Phase am Fenster abgefangen, so
  * dass EditMode davon nichts sieht.
  */
@@ -307,18 +307,9 @@ export class SignatureTool {
     after.after(btn);
     this.syncButtons();
   }
-  /** Schaltfläche „Unterschrift“ im Bereich „Hinzufügen“ der Seitenleiste. */
-  mountPanel(section) {
-    const btn = htmlToElement(
-      `<button class="btn big" data-sig-btn title="Unterschrift einsetzen (U)">${icon('signature')}Unterschrift</button>`,
-    );
-    btn.addEventListener('click', () => this.toggle(btn));
-    section.appendChild(btn);
-    this.syncButtons();
-  }
   syncButtons() {
     const on = !!(this.pop || this.placing || this.capture);
-    for (const btn of document.querySelectorAll('#cAddSig,[data-sig-btn]')) btn.classList.toggle('on', on);
+    for (const btn of document.querySelectorAll('#cAddSig')) btn.classList.toggle('on', on);
   }
   /** Bricht alles ab (Popover, Platzieren, Erfassen) – z. B. beim Verlassen des Modus. */
   cancel() {
@@ -359,7 +350,7 @@ export class SignatureTool {
   onOutside(ev) {
     const target = ev.target;
     if (!(target instanceof Element)) return;
-    if (target.closest('#cAddSig,[data-sig-btn],.sig-hint')) return;
+    if (target.closest('#cAddSig,.sig-hint')) return;
     if (this.pop && !this.pop.contains(target) && !(this.popAnchor && this.popAnchor.contains(target)))
       this.closePop();
     if (this.placing && !target.closest('#pages .page')) this.cancelPlacing();

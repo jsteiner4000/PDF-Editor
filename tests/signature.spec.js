@@ -747,14 +747,14 @@ test('Datenbank blockiert durch altes Fenster: Popover bleibt bedienbar, Hinweis
   await context.close();
 });
 
-test('Alle Werkzeuge und Startseite öffnen das Unterschrift-Popover', async ({ browser }) => {
+test('Werkzeugband und Startseite öffnen das Unterschrift-Popover', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   await page.locator('#hSig').click();
   await expect(page.locator('.sig-pop')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.locator('.sig-pop')).toHaveCount(0);
   expect(await openPdf(page, await targetPdf(), 'angebot.pdf')).toBe(true);
-  await page.locator('#lpBody .tool[data-tool="signature"]').click();
+  await page.locator('#rbBar .rb[data-tool="signature"]').click();
   await expect(page.locator('.sig-pop')).toBeVisible();
   expect(await page.evaluate(() => window.pdfEditor.tool)).toBe('edit');
   // Klick auf „Unterschrift“ während des Erfassens beendet es

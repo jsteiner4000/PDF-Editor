@@ -20,9 +20,22 @@ import { fileURLToPath } from 'node:url';
 import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } from './file-access.js';
 import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS } from './menu.js';
-import { loadWindowState, trackWindowState, MIN_SIZE } from './window-state.js';
+import { loadWindowState, rememberTheme, trackWindowState, MIN_SIZE } from './window-state.js';
 
 const APP_NAME = 'PDFix';
+/**
+ * Eigene Titelleiste (Windows/Linux, wie Office und VS Code): Die Kopfzeile der App trägt Menü,
+ * Reiter und Befehle; die Fenstertasten legt das System darüber (Window Controls Overlay). macOS
+ * behält Ampel und Menü am oberen Bildschirmrand.
+ */
+const CUSTOM_FRAME = process.platform !== 'darwin';
+/** = Höhe der Kopfzeile (#top in src/styles.css) */
+const TITLEBAR_HEIGHT = 48;
+/** Farben wie die Kopfzeile der App (--bg / --ink, hell bzw. dunkel). */
+const frameColors = () =>
+  nativeTheme.shouldUseDarkColors
+    ? { background: '#15181d', overlay: { color: '#15181d', symbolColor: '#e6e9ee', height: TITLEBAR_HEIGHT } }
+    : { background: '#f2f3f5', overlay: { color: '#f2f3f5', symbolColor: '#1f2329', height: TITLEBAR_HEIGHT } };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEME = 'app';
 const ORIGIN = `${SCHEME}://pdf-editor`;
@@ -280,15 +293,18 @@ function start() {
   }
 
   function createWindow() {
-    const state = loadWindowState();
+    const { theme, ...bounds } = loadWindowState();
+    nativeTheme.themeSource = theme;
+    const colors = frameColors();
     win = new BrowserWindow({
-      ...state,
+      ...bounds,
       minWidth: MIN_SIZE.width,
       minHeight: MIN_SIZE.height,
       title: APP_NAME,
       icon: ICON,
       show: false,
-      backgroundColor: '#f5f5f7',
+      backgroundColor: colors.background,
+      ...(CUSTOM_FRAME ? { titleBarStyle: 'hidden', titleBarOverlay: colors.overlay } : {}),
       webPreferences: {
         preload: path.join(ROOT, 'desktop', 'preload.cjs'),
         contextIsolation: true,
@@ -299,7 +315,8 @@ function start() {
         devTools: !app.isPackaged,
       },
     });
-    if (state.maximized && !printOnly) win.maximize();
+    // immer bildschirmfüllend starten (maximiert, Taskleiste bleibt sichtbar; F11 = echtes Vollbild)
+    if (!printOnly) win.maximize();
     trackWindowState(win);
     win.once('ready-to-show', () => {
       if (!printOnly) win.show();
@@ -356,11 +373,10 @@ function start() {
     });
 
     if (process.platform !== 'darwin') {
-      // Unter Windows fokussiert das Loslassen von Alt die Menüleiste. Im Editor ist Alt aber ein
-      // Maus-Modifikator (Alt+Klick = Element dahinter, Alt-Ziehen = ohne Einrasten). Wurde die
-      // Maus bei gedrückter Alt-Taste benutzt, wird das Loslassen deshalb nicht an das Menü
-      // weitergegeben. Alt allein (Tastaturbedienung des Menüs) funktioniert weiter; die Web-App
-      // wertet das keyup von Alt nicht aus.
+      // Unter Windows fokussiert das Loslassen von Alt die Menüleiste (in der eigenen Titelleiste,
+      // src/platform/title-bar.js). Im Editor ist Alt aber ein Maus-Modifikator (Alt+Klick = Element
+      // dahinter, Alt-Ziehen = ohne Einrasten). Wurde die Maus bei gedrückter Alt-Taste benutzt,
+      // wird das Loslassen deshalb zurückgehalten. Alt allein (Tastaturbedienung des Menüs) geht weiter.
       win.webContents.on('before-input-event', (event, input) => {
         if (input.key !== 'Alt') return;
         if (input.type === 'keyDown') {
@@ -375,10 +391,34 @@ function start() {
       win.webContents.on('input-event', (_event, input) => {
         if (altDown && /^(mouseDown|mouseWheel|gesture)/.test(input.type)) altUsedWithMouse = true;
       });
+      // Eigene Titelleiste: ohne sichtbare Menüleiste greifen die Kürzel der Fensterbefehle hier
+      win.webContents.on('before-input-event', (event, input) => {
+        if (input.type !== 'keyDown' || input.isAutoRepeat || input.alt || input.shift || input.meta) return;
+        const key = input.key.toLowerCase();
+        const action =
+          key === 'f11' && !input.control
+            ? () => win.setFullScreen(!win.isFullScreen())
+            : input.control && key === 'w'
+              ? () => win.close()
+              : input.control && key === 'm'
+                ? () => win.minimize()
+                : null;
+        if (!action) return;
+        event.preventDefault();
+        action();
+      });
     }
 
     win.webContents.setVisualZoomLevelLimits(1, 1);
     win.loadURL(START_URL);
+  }
+
+  /** Titelleiste und Fensterhintergrund in den Farben der aktuellen Darstellung. */
+  function applyFrameColors() {
+    if (!win || win.isDestroyed()) return;
+    const colors = frameColors();
+    win.setBackgroundColor(colors.background);
+    if (CUSTOM_FRAME) win.setTitleBarOverlay(colors.overlay);
   }
 
   /** Renderer abgestürzt: offene Anfragen beenden, Hinweis mit „Neu laden“. */
@@ -496,9 +536,23 @@ function start() {
       // Darstellung der App auch für Titelleiste, Menü und Systemdialoge
       if (['light', 'dark', 'system'].includes(state.theme) && nativeTheme.themeSource !== state.theme) {
         nativeTheme.themeSource = state.theme;
-        if (win) win.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#15181d' : '#f2f3f5');
+        rememberTheme(state.theme);
+        applyFrameColors();
       }
     });
+    // Menü der eigenen Titelleiste: Untermenü `index` (−1 = ganzes Menü) an der Stelle (x, y) öffnen;
+    // die Antwort kommt, wenn es wieder geschlossen ist.
+    handle(
+      'menu:popup',
+      (index, x, y) =>
+        new Promise((resolve) => {
+          const item = Number.isInteger(index) && index >= 0 && menu ? menu.items[index] : null;
+          const target = index === -1 ? menu : item && item.visible !== false ? item.submenu : null;
+          const at = (v) => (Number.isFinite(v) ? Math.max(0, Math.min(20000, Math.round(v))) : 0);
+          if (!target || !win || win.isDestroyed()) return resolve(false);
+          target.popup({ window: win, x: at(x), y: at(y), callback: () => resolve(true) });
+        }),
+    );
     ipcMain.on('app:ready', (event) => {
       if (!fromMainFrame(event)) return;
       rendererReady = true;
@@ -661,6 +715,7 @@ function start() {
       devTools: !app.isPackaged,
     });
     Menu.setApplicationMenu(menu);
+    nativeTheme.on('updated', applyFrameColors);
     createWindow();
     updateTitle();
   });

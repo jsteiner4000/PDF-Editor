@@ -10,7 +10,7 @@ import { unreadablePageMessage } from './pdf/stream-limit.js';
 import { PdfRenderer, PREVIEW_MAX_PX } from './render/pdf-renderer.js';
 import { DetailRenderer } from './render/detail-renderer.js';
 import { PageView } from './ui/page-view.js';
-import { icon, LOGO_LARGE, LOGO_SMALL } from './ui/icons.js';
+import { icon, LOGO_SMALL } from './ui/icons.js';
 import { $, $$, escapeHtml, htmlToElement } from './ui/dom.js';
 import { closeMenu, showMenu } from './ui/menu.js';
 import { downloadBytes, pickFiles, showDialog, toast, withBusy } from './ui/dialogs.js';
@@ -87,6 +87,9 @@ function readStripSetting() {
   }
 }
 
+/** Werkzeuge mit eigener Befehlsleiste: Sie ersetzt das Werkzeugband, solange sie aktiv sind. */
+const MODE_TOOLS = new Set(['edit', 'organize', 'formdesign']);
+
 export class App {
   constructor(root) {
     this.root = root;
@@ -159,7 +162,6 @@ export class App {
   <aside id="right" class="collapsed"><div class="lp-head" style="height:44px;font-size:13px">Seiten</div><div class="thumbs" id="thumbs"></div></aside>
   <nav id="rail" class="hidden">
     <button class="btn ic" id="rThumbs" title="Seitenminiaturen">${icon('thumbs')}</button>
-    <button class="btn ic" id="rFonts" title="Schriften im Dokument">${icon('fonts')}</button>
   </nav>
 </div>`;
     const on = (id, type, handler) => $('#' + id).addEventListener(type, handler);
@@ -198,7 +200,6 @@ export class App {
     on('bFit', 'click', () => this.setZoom(null, 'width'));
     on('bZoom', 'click', (n) => this.zoomMenu(n.currentTarget));
     on('rThumbs', 'click', () => this.toggleRight());
-    on('rFonts', 'click', () => this.setTool(this.tool === 'fonts' ? null : 'fonts'));
     const pageInput = $('#pgIn');
     pageInput.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') {
@@ -275,12 +276,11 @@ export class App {
     const recentKind = this.recentKind || 'files';
     const templates = STUDIO_TEMPLATES.map(
       (t) =>
-        `<button class="tpl" data-tpl="${t.id}"><div class="tpl-thumb" data-thumb="${t.id}">${t.tag ? `<span class="tpl-tag">${escapeHtml(t.tag)}</span>` : ''}</div><b>${escapeHtml(t.title)}</b><span>${escapeHtml(t.desc)}</span></button>`,
+        `<button class="tpl" data-tpl="${t.id}"><div class="tpl-thumb" data-thumb="${t.id}"></div><b>${escapeHtml(t.title)}</b><span>${escapeHtml(t.desc)}</span></button>`,
     ).join('');
     home.innerHTML = `
 <div class="hs">
   <nav class="hs-nav" aria-label="Startseite">
-    <div class="hhero"><div class="mark">${LOGO_LARGE}</div><div><h1 class="wm">PD<em>Fix</em></h1><p>PDFs bearbeiten, ordnen und unterschreiben.</p></div></div>
     <button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
     <button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
     <button class="hs-item" data-go="hsNew">${icon('plus')}Neu erstellen</button>
@@ -288,6 +288,7 @@ export class App {
   </nav>
   <div class="hs-main" id="hsMain"><div class="hs-in">
     <h2 class="hs-greet" id="hsTop">${greet}</h2>
+    <p class="hs-sub">PDFs bearbeiten, ordnen und unterschreiben – und Dokumentationen erstellen.</p>
     <section class="hs-sec" id="hsNew">
       <h3>Neu</h3>
       <div class="hs-new">
@@ -681,10 +682,14 @@ export class App {
     this.renderRibbon();
     this.updateHist();
   }
-  /** Werkzeugband: Werkzeuge der PDF bzw. Befehle von „Dokumentation erstellen“. */
+  /**
+   * Werkzeugband: Werkzeuge der PDF bzw. Befehle von „Dokumentation erstellen“. In einem Werkzeug mit
+   * eigener Befehlsleiste (Bearbeiten, Seiten, Formularfelder) tritt diese an seine Stelle – wie in
+   * Acrobat; „Fertig“ führt zurück. So steht kein Befehl doppelt auf dem Bildschirm.
+   */
   renderRibbon() {
     const bar = $('#rbBar');
-    $('#ribbon').classList.toggle('hidden', this.view === 'home');
+    $('#ribbon').classList.toggle('hidden', this.view === 'home' || (this.view === 'doc' && MODE_TOOLS.has(this.tool)));
     if (this.view === 'studio') {
       bar.dataset.kind = 'studio';
       return this.studio.renderRibbon(bar);
@@ -699,7 +704,7 @@ export class App {
         ['addimage', 'c3', 'image', 'Bild', 'PNG oder JPG einfügen'],
         '-',
         ['organize', 'c2', 'pages', 'Seiten', 'Einfügen, löschen, drehen, ordnen'],
-        ['insert', 'c6', 'pageadd', 'Einfügen', 'Leere Seite oder aus Datei'],
+        ['insert', 'c6', 'pageadd', 'Seite einfügen', 'Leere Seite oder aus einer PDF-Datei'],
         '-',
         ['formdesign', 'c6', 'field', 'Formularfelder', 'Textfelder und Kästchen anlegen und ändern'],
         ['signature', 'c4', 'signature', 'Unterschrift', 'Hinterlegen und einsetzen'],
@@ -1582,18 +1587,15 @@ export class App {
     $('#scroller').classList.toggle('hidden', name === 'organize');
     $('#org').classList.toggle('hidden', name !== 'organize');
     $('#nav').classList.toggle('hidden', !this.session || name === 'organize');
-    $('#rFonts').classList.toggle('on', name === 'fonts');
-    $('#left').classList.remove('collapsed');
+    // Seitenleiste nur für Einstellungen des aktiven Werkzeugs; die Werkzeuge selbst stehen oben
+    $('#left').classList.toggle('collapsed', !name);
     if (name === 'edit') this.edit.enter();
     else if (name === 'organize') this.org.enter();
     else if (name === 'formdesign') this.design.enter();
     else if (name === 'fonts') {
       $('#ctx').classList.add('hidden');
       this.fontsPanel.show();
-    } else {
-      $('#ctx').classList.add('hidden');
-      this.toolList();
-    }
+    } else $('#ctx').classList.add('hidden');
     if (this.session && this.fit && name !== 'organize')
       requestAnimationFrame(() => this.setZoom(null, this.fit, true));
     if (this.session) this.forms.refresh();
@@ -1608,35 +1610,7 @@ export class App {
     body.innerHTML = '';
     return body;
   }
-  toolList() {
-    const body = this.panel('Alle Werkzeuge', false);
-    const tools = [
-      ['edit', 'c1', 'edit', 'PDF bearbeiten', 'Texte, Bilder und Grafiken ändern'],
-      ['organize', 'c2', 'pages', 'Seiten organisieren', 'Einfügen, löschen, drehen, ordnen'],
-      ['addtext', 'c4', 'textbox', 'Text hinzufügen', 'Neues Textfeld auf der Seite'],
-      ['addimage', 'c3', 'image', 'Bild hinzufügen', 'PNG oder JPG einfügen'],
-      ['formdesign', 'c6', 'field', 'Formularfelder', 'Textfelder und Kästchen anlegen und ändern'],
-      ['signature', 'c4', 'signature', 'Unterschrift', 'Hinterlegen und einsetzen'],
-      ['insert', 'c6', 'pageadd', 'Seiten einfügen', 'Leere Seite oder aus Datei'],
-      ['fonts', 'c5', 'fonts', 'Schriften', 'Im Dokument verwendete Schriften'],
-    ];
-    for (const [id, color, iconName, title, desc] of tools) {
-      const btn = htmlToElement(
-        `<button class="tool" data-tool="${id}"><span class="ti ${color}">${icon(iconName)}</span><span><div class="tt">${escapeHtml(title)}</div><div class="td">${escapeHtml(desc)}</div></span></button>`,
-      );
-      btn.addEventListener('click', () => this.runTool(id));
-      body.appendChild(btn);
-    }
-    body.appendChild(
-      htmlToElement(
-        `<div class="note info" style="margin-top:16px">${icon('info', 's')} <b>Tipp:</b> Mit <kbd>Strg</kbd> + Mausrad zoomen, mit <kbd>Strg</kbd>+<kbd>Z</kbd> jede Änderung rückgängig machen.</div>`,
-      ),
-    );
-  }
-  /**
-   * Werkzeug aus der Liste „Alle Werkzeuge“ bzw. dem Werkzeugband starten; im Werkzeugband schaltet
-   * ein zweiter Klick das aktive Werkzeug wieder aus (`toggle`).
-   */
+  /** Werkzeug aus dem Werkzeugband starten; ein zweiter Klick schaltet es wieder aus (`toggle`). */
   async runTool(id, toggle = false) {
     if (!this.session) return;
     if (id === 'addtext') {
@@ -1650,7 +1624,7 @@ export class App {
       SignatureTool.of(this.edit).openPop(document.getElementById('cAddSig'));
     } else if (id === 'insert') {
       await this.setTool('organize');
-      this.org.insertMenu(null);
+      this.org.insertMenu(document.getElementById('oIns'));
     } else this.setTool(toggle && this.tool === id ? null : id);
   }
   async finishEdit() {

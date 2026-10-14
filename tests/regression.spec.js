@@ -27,8 +27,14 @@ const noErrors = (r) => {
   expect(r.neubauErrors, 'Fehler im Neubau').toEqual([]);
 };
 
+/**
+ * Werkzeug wählen: im Original über „Alle Werkzeuge“ links, im Neubau über das Werkzeugband (ab 2.8
+ * ohne doppelte Werkzeugliste; für den Bildvergleich ist das Band ausgeblendet, siehe LEGACY_FRAME).
+ */
 async function chooseTool(page, label) {
-  await page.locator('#lpBody .tool', { hasText: label }).click();
+  const ids = { 'PDF bearbeiten': 'edit', 'Seiten organisieren': 'organize' };
+  if (await page.locator('#rbBar').count()) await page.evaluate((id) => window.pdfEditor.runTool(id), ids[label]);
+  else await page.locator('#lpBody .tool', { hasText: label }).click();
   await idle(page);
 }
 
@@ -67,14 +73,6 @@ test('Laden und Darstellen', async ({ browser }) => {
     const opened = await openPdf(page);
     const state = await uiState(page);
     const canvases = await canvasHashes(page);
-    // Neu gegenüber 1.0: Eintrag „Unterschrift“ in „Alle Werkzeuge“. Er wird separat geprüft und
-    // für den Bildschirmvergleich der Seitenleiste ausgeblendet (display:none – ohne Platzbedarf).
-    const signatureTool = await page.evaluate(() => {
-      const el = document.querySelector('#lpBody .tool[data-tool="signature"]');
-      if (!el) return null;
-      el.style.display = 'none';
-      return el.textContent;
-    });
     const shot = await screenshots(page);
     const model = await page.evaluate(() => {
       const s = window.pdfEditor.session;
@@ -101,13 +99,9 @@ test('Laden und Darstellen', async ({ browser }) => {
       [...document.querySelectorAll('#thumbs .th canvas')].map((c) => c.toDataURL()),
     );
     const shotThumbs = await screenshots(page, ['#right', '#thumbs .th']);
-    return { opened, state, canvases, shot, model, thumbs: thumbs.map(sha), shotThumbs, signatureTool };
+    return { opened, state, canvases, shot, model, thumbs: thumbs.map(sha), shotThumbs };
   });
   noErrors(r);
-  expect(r.original.signatureTool).toBeNull();
-  expect(r.neubau.signatureTool).toBe('UnterschriftHinterlegen und einsetzen');
-  delete r.original.signatureTool;
-  delete r.neubau.signatureTool;
   expect(r.original.opened).toBe(true);
   expect(r.original.state.pages).toBe(3);
   expect(r.original.model[0].blocks.map((b) => b.text)).toContain('Regressionstest');
@@ -254,6 +248,9 @@ test('Seiten löschen und einfügen (Seitenzahlen, Kopfzeile)', async ({ browser
   });
   noErrors(r);
   const o = r.original;
+  // „Seiten einfügen“ steht ab 2.8 nur noch in der Befehlsleiste („Einfügen“), nicht auch links
+  expect(o.panel.startsWith('seiten einfügen\nleere seite …\naus pdf-datei …\n')).toBe(true);
+  o.panel = o.panel.replace('seiten einfügen\nleere seite …\naus pdf-datei …\n', '');
   expect(o.afterDelete).toHaveLength(2);
   expect(o.afterDelete[1]).toContain('2 / 2');
   expect(o.text).toHaveLength(3);

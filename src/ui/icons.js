@@ -101,4 +101,3 @@ export const icon = (name, cls = '') =>
 
 // App-Symbol: wird beim Build aus assets/icon/png eingebettet (virtual:logos).
 export const LOGO_SMALL = `<img src="${LOGOS.small}" width="28" height="28" alt="" draggable="false">`;
-export const LOGO_LARGE = `<img src="${LOGOS.large}" width="76" height="76" alt="" draggable="false">`;

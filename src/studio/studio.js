@@ -10,15 +10,12 @@
 import STUDIO_CSS from './studio.css';
 import { icon } from '../ui/icons.js';
 import { $, $$, escapeHtml, htmlToElement } from '../ui/dom.js';
-import { showMenu } from '../ui/menu.js';
+import { closeMenu, showMenu, showPopover } from '../ui/menu.js';
 import { downloadBytes, pickFiles, showDialog, toast, withBusy } from '../ui/dialogs.js';
 import { idbPut } from '../storage/idb.js';
 import { notifyDocumentState } from '../platform/desktop-bridge.js';
 import {
   ACCESS_BLOCKS,
-  FONTS,
-  LANGS,
-  exampleWiring,
   BLOCK_TYPES,
   PHOTO_LAYOUTS,
   SYMBOLS,
@@ -57,6 +54,7 @@ import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
 import { ensureBarlow } from './fonts.js';
 import { TooLargeError, assertPrintable, canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
 import { Inspector } from './inspector.js';
+import { symbolIconSvg } from './site.js';
 
 export { deleteDraft, listDrafts };
 
@@ -66,29 +64,22 @@ export const STUDIO_TEMPLATES = [
   { id: 'manual', title: 'Bedienungsanleitung', desc: 'Kapitel, Schritte, Warnhinweise, Störungen' },
   { id: 'tech', title: 'Technische Beschreibung', desc: 'Aufbau, Funktion, technische Daten' },
   { id: 'wiring', title: 'Anschlussplan', desc: 'Schaltbild, Klemmenplan und Hinweise' },
-  { id: 'example', title: 'Zufallsgenerator', desc: 'Fertiger Plan zum Ausprobieren', tag: 'Beispiel' },
 ];
 
 function templateProject(id) {
-  if (id === 'example') {
-    const project = newProject('wiring');
-    project.sections = [exampleWiring()];
-    return project;
-  }
   return newProject(['wiring', 'manual', 'tech'].includes(id) ? id : 'documentation');
 }
 
 const previews = new Map();
 
-/** Vorschaubild einer Vorlage (erste bzw. zweite Seite des Beispiels) als SVG. */
+/** Vorschaubild einer Vorlage als SVG. */
 export function templatePreview(id) {
   if (!previews.has(id)) {
     let svg = '';
     try {
-      const project = id === 'example' ? templateProject('example') : newProject(id);
-      const doc = renderDocument(project);
-      // Beispiel: Seite 2 (Klemmenplan); Anleitungen: erste Inhaltsseite; sonst Deckblatt bzw. Plan
-      const at = id === 'example' ? 1 : id === 'manual' || id === 'tech' ? 2 : 0;
+      const doc = renderDocument(newProject(id));
+      // Anleitungen: erste Inhaltsseite; sonst Deckblatt bzw. Plan
+      const at = id === 'manual' || id === 'tech' ? 2 : 0;
       svg = (doc.pages[at] || doc.pages[0]).svg;
     } catch (err) {
       console.warn('Vorschau der Vorlage', err);
@@ -202,7 +193,7 @@ export class Studio {
   async create(templateId) {
     const project = templateProject(templateId);
     applyCompany(project);
-    await this.open(project, templateId === 'example' ? { kind: 'section', id: project.sections[0].id } : null);
+    await this.open(project);
   }
 
   async openDraft(id) {
@@ -672,23 +663,12 @@ export class Studio {
         continue;
       }
       card = htmlToElement(
-        `<div class="sd-start" data-type="wiring"><b>Anschlussplan aufbauen</b><span>Zuerst die Baugruppen anlegen (links, rechts oder unten), dann die Anschlüsse der Steuerung zuordnen – der Plan zeichnet sich selbst.</span><div><button class="btn primary">${icon('module', 's')}Baugruppe</button><button class="btn outline">${icon('sparkle', 's')}Beispiel übernehmen</button></div></div>`,
+        `<div class="sd-start" data-type="wiring"><b>Anschlussplan aufbauen</b><span>Zuerst die Baugruppen anlegen (links, rechts oder unten), dann die Anschlüsse der Steuerung zuordnen – der Plan zeichnet sich selbst.</span><div><button class="btn primary">${icon('module', 's')}Baugruppe</button></div></div>`,
       );
-      const [add, example] = card.querySelectorAll('button');
-      add.addEventListener('click', () => {
+      card.querySelector('button').addEventListener('click', () => {
         this.select({ kind: 'section', id: section.id });
         this.addBox();
       });
-      example.addEventListener('click', () =>
-        this.change(
-          'Beispiel übernommen',
-          (p) => {
-            const i = p.sections.findIndex((s) => s.id === section.id);
-            p.sections[i] = { ...exampleWiring(), id: section.id };
-          },
-          { inspector: true },
-        ),
-      );
       for (const type of ['pointerdown', 'dblclick']) card.addEventListener(type, (ev) => ev.stopPropagation());
       el.appendChild(card);
     }
@@ -1122,10 +1102,12 @@ export class Studio {
 
   /* ---------- Werkzeugband ---------- */
 
+  /**
+   * Werkzeugband: „Abschnitt“ und die Befehle des gewählten Abschnitts. Einstellungen des Dokuments
+   * (Sprache, Schrift, Logo) stehen in den Eigenschaften des Projekts – nicht doppelt hier.
+   */
   renderRibbon(bar) {
     if (!this.project) return;
-    const lang = LANGS.find((l) => l.id === this.project.lang) || LANGS[0];
-    const font = FONTS.find((f) => f.id === this.project.font) || FONTS[0];
     const hasWiring = this.project.sections.some((s) => s.type === 'wiring');
     this.ribbonType = this.currentType();
     const access = this.ribbonType === 'access' ? this.section(this.sel.section || this.sel.id) : null;
@@ -1137,8 +1119,7 @@ export class Studio {
 <button class="rb c5" data-act="replace" title="Suchen und Ersetzen (Strg+H)">${icon('replace')}Ersetzen</button>`
       : siteSection
       ? `<button class="rb c1${this.armed ? ' on' : ''}" data-act="symbols" title="Symbol wählen und im Plan setzen">${icon('map')}Symbol${icon('chev', 's caret')}</button>
-<button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>
-<button class="rb c4" data-act="custom" title="Eigenes Symbol hochladen">${icon('plus')}Eigenes Symbol</button>`
+<button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>`
       : photosSection
         ? `<button class="rb c3" data-act="addphotos" title="Fotos hinzufügen (Aufnahmedatum wird gelesen)">${icon('image')}Fotos hinzufügen</button>`
         : access
@@ -1146,17 +1127,15 @@ export class Studio {
 <button class="rb c6" data-act="wifi" title="WLAN hinzufügen">${icon('wifi')}WLAN</button>
 <button class="rb c2" data-act="remote" title="Fernzugriff hinzufügen (DDNS, Cloud, Portfreigabe)">${icon('remote')}Fernzugriff</button>
 <button class="rb c4${access.showPasswords ? ' on' : ''}" data-act="secrets" aria-pressed="${!!access.showPasswords}" title="Passwörter und Schlüssel in der PDF zeigen">${icon('key')}Passwörter ${access.showPasswords ? 'sichtbar' : 'ausgeblendet'}</button>`
-      : `<button class="rb c1" data-act="box" title="Baugruppe zum Anschlussplan hinzufügen">${icon('module')}Baugruppe</button>
+      : this.ribbonType === 'wiring' || this.onlyWiring()
+      ? `<button class="rb c1" data-act="box" title="Baugruppe zum Anschlussplan hinzufügen">${icon('module')}Baugruppe</button>
 <button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
-<button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>`;
+<button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>`
+      : `<span class="rb-note">Abschnitt in der Projektmappe wählen – hier erscheinen seine Befehle.</span>`;
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
 <span class="rb-sep"></span>
 ${context}
-<span class="rb-sep"></span>
-<button class="rb c3" data-act="logo" title="Firmenlogo hochladen">${icon('image')}Logo</button>
-<button class="rb c4" data-act="lang" title="Sprache des Dokuments">${icon('globe')}${escapeHtml(lang.label)}${icon('chev', 's caret')}</button>
-<button class="rb c5" data-act="font" title="Schrift des Dokuments">${icon('fonts')}${escapeHtml(font.label)}${icon('chev', 's caret')}</button>
 `;
     for (const btn of $$('.rb', bar))
       btn.addEventListener('click', () => {
@@ -1171,20 +1150,14 @@ ${context}
         else if (act === 'replace') this.replaceDialog();
         else if (act === 'symbols') this.symbolMenu(btn, siteSection);
         else if (act === 'bg') this.backgroundMenu(btn, siteSection);
-        else if (act === 'custom') this.addCustomSymbol(siteSection);
         else if (act === 'addphotos') this.pickPhotos(photosSection);
-        else if (act === 'logo') this.pickLogo();
-        else if (act === 'lang')
-          showMenu(
-            LANGS.map((l) => ({ label: l.label, checked: l.id === this.project.lang, run: () => this.setLang(l.id) })),
-            btn,
-          );
-        else if (act === 'font')
-          showMenu(
-            FONTS.map((f) => ({ label: f.label, checked: f.id === this.project.font, run: () => this.setFont(f.id) })),
-            btn,
-          );
       });
+  }
+
+  /** Nur ein Anschlussplan und sonst nichts (Vorlage „Anschlussplan“): seine Befehle sind immer da. */
+  onlyWiring() {
+    const content = this.project.sections.filter((s) => s.type !== 'cover' && s.type !== 'toc');
+    return content.length === 1 && content[0].type === 'wiring';
   }
 
   /* ---------- Zeiger: Auswahl, Verschieben, Höhe, Leitungen ---------- */
@@ -1445,13 +1418,31 @@ ${context}
 
   /* ---------- Lageplan: Hintergrund, eigene Symbole ---------- */
 
+  /** Galerie der Symbole (wie „Formen“ in Office): wählen, dann in den Plan klicken. */
   symbolMenu(anchor, site) {
     if (!site) return;
-    const info = [...SYMBOLS, ...site.custom.map((c) => ({ id: 'custom:' + c.id, name: c.name }))];
-    showMenu(
-      info.map((i) => ({ label: tx(i.name), checked: this.armed === i.id, run: () => this.arm(i.id) })),
-      anchor,
+    const kinds = [...SYMBOLS.map((k) => k.id), ...site.custom.map((c) => 'custom:' + c.id)];
+    const el = htmlToElement(
+      `<div class="menu sd-gallery" role="dialog" aria-label="Symbol wählen"><div class="sd-symbols"></div><hr><button type="button" class="mi" data-custom>${icon('plus', 's')}<span>Eigenes Symbol hochladen …</span></button></div>`,
     );
+    const grid = el.querySelector('.sd-symbols');
+    for (const kind of kinds) {
+      const info = symbolInfo(site, kind);
+      const on = this.armed === kind;
+      const b = htmlToElement(
+        `<button type="button" class="sd-symbol${on ? ' on' : ''}" aria-pressed="${on}" title="${escapeHtml(tx(info.name, 'de'))}">${symbolIconSvg(info, this.project.images, 22)}<span>${escapeHtml(tx(info.name, 'de'))}</span></button>`,
+      );
+      b.addEventListener('click', () => {
+        closeMenu();
+        this.arm(kind);
+      });
+      grid.appendChild(b);
+    }
+    el.querySelector('[data-custom]').addEventListener('click', () => {
+      closeMenu();
+      this.addCustomSymbol(site);
+    });
+    showPopover(el, anchor);
   }
 
   backgroundMenu(anchor, site) {

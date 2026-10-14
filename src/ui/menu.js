@@ -14,7 +14,6 @@ export function closeMenu() {
 }
 
 export function showMenu(items, anchor) {
-  closeMenu();
   const menu = htmlToElement('<div class="menu" role="menu"></div>');
   for (const item of items) {
     if (item === '-') {
@@ -34,7 +33,16 @@ export function showMenu(items, anchor) {
     });
     menu.appendChild(button);
   }
-  document.body.appendChild(menu);
+  return showPopover(menu, anchor);
+}
+
+/**
+ * Beliebiges Element als aufklappendes Feld unter `anchor` (Element oder { x, y }) zeigen – z. B.
+ * eine Galerie. Schließt bei Klick daneben und mit Esc, wie ein Menü.
+ */
+export function showPopover(el, anchor) {
+  closeMenu();
+  document.body.appendChild(el);
   let x;
   let y;
   if (anchor instanceof Element) {
@@ -45,22 +53,22 @@ export function showMenu(items, anchor) {
     x = anchor.x;
     y = anchor.y;
   }
-  const rect = menu.getBoundingClientRect();
+  const rect = el.getBoundingClientRect();
   x = Math.min(x, innerWidth - rect.width - 8);
   y = Math.min(y, innerHeight - rect.height - 8);
-  menu.style.left = Math.max(8, x) + 'px';
-  menu.style.top = Math.max(8, y) + 'px';
-  openMenuEl = menu;
+  el.style.left = Math.max(8, x) + 'px';
+  el.style.top = Math.max(8, y) + 'px';
+  openMenuEl = el;
   setTimeout(() => {
     const onOutside = (ev) => {
-      if (!menu.contains(ev.target)) {
-        closeMenu();
+      if (!el.contains(ev.target)) {
+        if (openMenuEl === el) closeMenu();
         document.removeEventListener('pointerdown', onOutside, true);
       }
     };
     document.addEventListener('pointerdown', onOutside, true);
   });
-  return menu;
+  return el;
 }
 
 document.addEventListener(

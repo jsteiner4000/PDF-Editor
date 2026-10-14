@@ -2094,23 +2094,9 @@ export class EditMode {
       }
       return;
     }
+    // Hinzufügen (Text, Bild, Unterschrift) steht in der Befehlsleiste oben; hier nur das Format
     const body = this.app.panel('PDF bearbeiten');
     const editor = this.editor;
-    body.appendChild(htmlToElement('<div class="sec"><h4>Hinzufügen</h4></div>'));
-    const addSection = body.lastChild;
-    const addTextBtn = htmlToElement(
-      `<button class="btn big ${this.armed === 'text' ? 'on' : ''}">${icon('textbox')}Text hinzufügen</button>`,
-    );
-    addTextBtn.addEventListener('click', () => this.arm(this.armed === 'text' ? null : 'text'));
-    const addImageBtn = htmlToElement(
-      `<button class="btn big ${this.armed === 'image' ? 'on' : ''}">${icon('image')}Bild hinzufügen</button>`,
-    );
-    addImageBtn.addEventListener('click', () => this.pickImage());
-    addSection.append(addTextBtn, addImageBtn);
-    if (this.signature) this.signature.mountPanel(addSection);
-    const formBtn = htmlToElement(`<button class="btn big">${icon('field')}Formularfeld</button>`);
-    formBtn.addEventListener('click', () => this.app.setTool('formdesign'));
-    addSection.appendChild(formBtn);
     const style = editor ? editor.currentStyle() : null;
     const formatSection = htmlToElement('<div class="sec"><h4>Format</h4></div>');
     body.appendChild(formatSection);

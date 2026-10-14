@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
     } catch {}
     return filePath ? call('file:grant-dropped', filePath) : Promise.resolve(null);
   },
+  /** Eigene Titelleiste: Untermenü `index` (−1 = ganzes Menü) bei (x, y) öffnen; erfüllt beim Schließen. */
+  popupMenu: (index, x, y) => call('menu:popup', Number(index), Number(x), Number(y)),
   /** „Dokumentation erstellen“: Druckfassung (HTML) als PDF-Bytes. */
   makePdf: (html) => call('studio:pdf', String(html)),
   setState: (state) =>

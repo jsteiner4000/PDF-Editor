@@ -22,8 +22,9 @@ test.describe('PDFix-Symbol und Name', () => {
         /^data:image\/png;base64,/,
       );
       expect(await page.locator('#top .brand').innerText()).toBe('PDFix');
-      expect(await page.locator('#home .hhero h1').innerText()).toBe('PDFix');
-      for (const sel of ['#top .brand .mark img', '#home .hhero .mark img']) {
+      // Name und Symbol nur einmal: in der Kopfzeile (die Startseite wiederholt sie nicht)
+      await expect(page.locator('#home .mark')).toHaveCount(0);
+      for (const sel of ['#top .brand .mark img']) {
         expect(await page.locator(sel).getAttribute('src'), sel).toMatch(/^data:image\/png;base64,/);
         const box = await page.locator(sel).boundingBox();
         expect(box.width).toBeGreaterThanOrEqual(28);
