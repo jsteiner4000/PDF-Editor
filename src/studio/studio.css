@@ -292,6 +292,38 @@
   justify-content: center;
 }
 
+.sd-start {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 33%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh2);
+  color: var(--ink2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.sd-start b {
+  color: var(--ink);
+  font-size: 14px;
+}
+.sd-start div {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.sd-start .btn {
+  height: 32px;
+}
+
 /* Eigenschaften */
 .sd-ihead {
   padding-left: 8px;

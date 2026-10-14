@@ -13,6 +13,7 @@ import { $, $$, escapeHtml, htmlToElement } from '../ui/dom.js';
 import { showMenu } from '../ui/menu.js';
 import { downloadBytes, pickFiles, showDialog, toast, withBusy } from '../ui/dialogs.js';
 import { idbPut } from '../storage/idb.js';
+import { notifyDocumentState } from '../platform/desktop-bridge.js';
 import {
   FONTS,
   LANGS,
@@ -174,6 +175,7 @@ export class Studio {
 
   async create(templateId) {
     const project = templateProject(templateId);
+    applyCompany(project);
     await this.open(project, templateId === 'example' ? { kind: 'section', id: project.sections[0].id } : null);
   }
 
@@ -235,11 +237,17 @@ export class Studio {
     } catch (err) {
       console.warn('Entwurf nicht gesichert', err);
     }
+    rememberCompany(this.project);
   }
 
   subtitle() {
     const m = this.project.meta;
     return [m.customer, m.site].filter(Boolean).join(' · ');
+  }
+
+  /** Titel des Projekts (Reiter, Fenstertitel, Dateiname). */
+  title() {
+    return this.project ? documentLabel(this.project) : '';
   }
 
   updateTab() {
@@ -354,6 +362,7 @@ export class Studio {
   }
 
   updateHist() {
+    notifyDocumentState();
     const { undo, redo } = this.hist;
     $('#bUndo').disabled = !undo.length;
     $('#bRedo').disabled = !redo.length;
@@ -464,9 +473,45 @@ export class Studio {
       el.querySelector('.sd-pnum').textContent = `Seite ${i + 1}`;
     });
     while (host.children.length > doc.pages.length) host.lastChild.remove();
+    this.renderStarters(host);
     if (!doc.pages.length) host.innerHTML = '';
     this.renderSelection();
     this.renderSide();
+  }
+
+  /** Starthilfe auf einem Schaltbild ohne Baugruppen (nur im Editor, nicht in der PDF). */
+  renderStarters(host) {
+    for (const el of $$('.sd-page', host)) {
+      const page = this.doc.pages[+el.dataset.index];
+      const section = page && page.kind === 'diagram' ? this.section(page.section) : null;
+      const empty = !!section && !section.boxes.length;
+      let card = el.querySelector('.sd-start');
+      if (!empty) {
+        if (card) card.remove();
+        continue;
+      }
+      if (card) continue;
+      card = htmlToElement(
+        `<div class="sd-start"><b>Anschlussplan aufbauen</b><span>Zuerst die Baugruppen anlegen (links, rechts oder unten), dann die Anschlüsse der Steuerung zuordnen – der Plan zeichnet sich selbst.</span><div><button class="btn primary">${icon('module', 's')}Baugruppe</button><button class="btn outline">${icon('sparkle', 's')}Beispiel übernehmen</button></div></div>`,
+      );
+      const [add, example] = card.querySelectorAll('button');
+      add.addEventListener('click', () => {
+        this.select({ kind: 'section', id: section.id });
+        this.addBox();
+      });
+      example.addEventListener('click', () =>
+        this.change(
+          'Beispiel übernommen',
+          (p) => {
+            const i = p.sections.findIndex((s) => s.id === section.id);
+            p.sections[i] = { ...exampleWiring(), id: section.id };
+          },
+          { inspector: true },
+        ),
+      );
+      for (const type of ['pointerdown', 'dblclick']) card.addEventListener(type, (ev) => ev.stopPropagation());
+      el.appendChild(card);
+    }
   }
 
   /** Markierung der Auswahl auf den Seiten. */
@@ -1111,3 +1156,31 @@ async function readImage(file) {
   return { mime: 'image/png', data: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height };
 }
 
+
+/* ---------- Firma für neue Projekte merken ---------- */
+
+const COMPANY_KEY = 'pdfix.studio.company';
+
+/** Firmenname, Zusatz und Logo des zuletzt bearbeiteten Projekts für neue Projekte merken. */
+function rememberCompany(project) {
+  try {
+    const { name, tagline, logo } = project.company;
+    const image = logo && project.images[logo];
+    const value = JSON.stringify({ name, tagline, logo: image || null });
+    if (localStorage.getItem(COMPANY_KEY) !== value) localStorage.setItem(COMPANY_KEY, value);
+  } catch {}
+}
+
+function applyCompany(project) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMPANY_KEY) || 'null');
+    if (!saved) return;
+    if (typeof saved.name === 'string') project.company.name = saved.name;
+    if (saved.tagline && typeof saved.tagline === 'object') project.company.tagline = saved.tagline;
+    if (saved.logo && typeof saved.logo.data === 'string' && /^data:image\/(png|jpeg|webp|svg\+xml);base64,/.test(saved.logo.data)) {
+      const id = uid('img');
+      project.images[id] = saved.logo;
+      project.company.logo = id;
+    }
+  } catch {}
+}

@@ -58,6 +58,9 @@ src/
   render/pdf-renderer.js  Darstellung mit pdf.js (Worker als Blob-URL), ganze Seite oder Ausschnitt
   render/detail-renderer.js  scharfer Detail-Canvas für den sichtbaren Ausschnitt bei hohem Zoom
   platform/desktop-bridge.js  Anbindung an die Desktop-App (im Browser wirkungslos)
+  studio/                 „Dokumentation erstellen“: Projekt (model.js), Seitensatz als SVG (render.js,
+                          wiring.js: Anschlussplan), Arbeitsbereich (studio.js, inspector.js),
+                          Entwürfe (store.js, IndexedDB „pdfix-studio“), PDF mit Projekt (export.js)
   storage/idb.js          IndexedDB „pdf-editor“ v2 (eigene Schriften, zuletzt geöffnet, Unterschriften)
   signature/
     signature-extract.js  Freistellen (Hintergrund → transparent, Formularlinien, Zuschnitt) – ohne DOM
@@ -175,6 +178,9 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   JavaScript still auf den Standard- bzw. genannten Drucker. Läuft PDFix noch nicht, beendet es
   sich danach wieder; sonst bleibt das offene Dokument unberührt. `PDF_EDITOR_PRINT_TO_PDF=<Pfad>`
   schreibt für Tests eine PDF statt zu drucken.
+- **Dokumentation erstellen**: Die Seiten (SVG) gehen als Druckfassung über `studio:pdf` an den
+  Hauptprozess, der sie in einem unsichtbaren Fenster ohne JavaScript per `printToPDF` setzt; danach
+  legt pdf-lib das Projekt als `/PDFixProject` (Flate-Datenstrom im Katalog) in die PDF.
 - **Fenster**: Größe/Position werden gemerkt, Mindestgröße 900 × 600, Titel
   `Datei.pdf (Bearbeitet) – PDFix`, Rückfrage bei ungespeicherten Änderungen als nativer
   Dialog (Speichern / Nicht speichern / Abbrechen).

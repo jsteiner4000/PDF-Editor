@@ -118,14 +118,22 @@ export function notifyDocumentState() {
   stateTimer = setTimeout(() => {
     stateTimer = 0;
     const session = app.session;
+    // „Dokumentation erstellen“: Fenstertitel = Projekt; Entwürfe sichern sich selbst (nie „Bearbeitet“)
+    const project = studioActive() ? app.studio.title() : '';
     desktop.setState({
-      hasDocument: !!session,
-      name: session && app.file ? app.file.name : '',
-      dirty: !!(session && session.dirty),
+      hasDocument: !!session || !!project,
+      name: project || (session && app.file ? app.file.name : ''),
+      dirty: !project && !!(session && session.dirty),
       stripActive: !!app.stripActive,
     });
   }, 0);
 }
+
+/** Ist „Dokumentation erstellen“ der sichtbare Bereich? */
+const studioActive = () => app.view === 'studio' && !!app.studio.project;
+
+/** Zoom im sichtbaren Bereich (PDF oder Dokumentation). */
+const zoom = (doc, studio) => (studioActive() ? studio() : app.session && doc());
 
 const inEditableField = () => {
   const el = document.activeElement;
@@ -135,19 +143,19 @@ const inEditableField = () => {
 /** Befehle aus dem nativen Menü (desktop/menu.js) und Anfragen des Hauptprozesses. */
 const COMMANDS = {
   open: () => app.openDialog(),
-  save: () => (app.session ? app.save() : false),
-  saveAs: () => (app.session ? app.saveAs() : false),
-  print: () => app.session && app.print(),
+  save: () => (app.session || studioActive() ? app.save() : false),
+  saveAs: () => (app.session || studioActive() ? app.saveAs() : false),
+  print: () => (app.session || studioActive()) && app.print(),
   properties: () => app.session && app.props(),
   closeDocument: () => app.close(),
   stripActive: () => app.toggleStripActive(),
-  undo: () => (inEditableField() ? document.execCommand('undo') : app.session && app.undo()),
-  redo: () => (inEditableField() ? document.execCommand('redo') : app.session && app.redo()),
-  zoomIn: () => app.session && app.zoomStep(1),
-  zoomOut: () => app.session && app.zoomStep(-1),
-  zoomActual: () => app.session && app.setZoom(1, null, false, app.selectionAnchor()),
+  undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
+  redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),
+  zoomIn: () => zoom(() => app.zoomStep(1), () => app.studio.zoomStep(1)),
+  zoomOut: () => zoom(() => app.zoomStep(-1), () => app.studio.zoomStep(-1)),
+  zoomActual: () => zoom(() => app.setZoom(1, null, false, app.selectionAnchor()), () => app.studio.setZoom(1)),
   zoomSelection: () => app.session && app.zoomToSelection(),
-  zoomWidth: () => app.session && app.setZoom(null, 'width'),
+  zoomWidth: () => zoom(() => app.setZoom(null, 'width'), () => app.studio.setZoom(null)),
   zoomPage: () => app.session && app.setZoom(null, 'page'),
   /** Schnelldruck: PDF (Bytes vom Hauptprozess) laden, Seiten einzeln als PNG holen, schließen. */
   printOpen: (data) => (data instanceof Uint8Array ? app.printOpen(data) : null),
@@ -159,6 +167,7 @@ const COMMANDS = {
   printed: (name) => toast(`„${String(name || '')}“ wurde an den Drucker gesendet.`),
   /** Vor dem Schließen: offene Textbearbeitung übernehmen und den echten Zustand liefern. */
   queryDirty: async () => {
+    if (app.studio.project) await app.studio.flush(); // letzten Stand des Entwurfs sichern
     if (!app.session) return false;
     await app.finishEdit();
     return !!(app.session && app.session.dirty);
@@ -202,6 +211,7 @@ export function installDesktopBridge(appInstance) {
   window.addEventListener('keydown', (ev) => {
     const mod = ev.ctrlKey || ev.metaKey;
     if (!mod || ev.shiftKey || ev.altKey || ev.key.toLowerCase() !== 'p') return;
+    if (app.view === 'studio') return; // Dokumentation: eigenes Strg+P (studio.onKey)
     ev.preventDefault();
     if (app.session && !document.querySelector('.backdrop')) app.print();
   });

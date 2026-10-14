@@ -739,8 +739,10 @@ export class App {
     const file = files[0];
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
-    if (this.session && isImage) return this.edit.dropImage(file, ev);
-    if (this.session && isPdf && this.tool === 'organize')
+    if (isImage && this.view === 'studio') return toast('Bilder bitte auf das Feld „Logo“ ziehen.');
+    const inDoc = this.session && this.view === 'doc';
+    if (inDoc && isImage) return this.edit.dropImage(file, ev);
+    if (inDoc && isPdf && this.tool === 'organize')
       return this.org.insertFiles(
         files.filter((s) => /\.pdf$/i.test(s.name)),
         null,
@@ -750,7 +752,7 @@ export class App {
       try {
         if (items[0] && items[0].getAsFileSystemHandle) handle = await items[0].getAsFileSystemHandle();
       } catch {}
-      if (this.session) {
+      if (inDoc) {
         const choice = await showDialog({
           title: 'PDF-Datei abgelegt',
           icon: 'file',
