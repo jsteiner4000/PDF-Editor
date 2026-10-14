@@ -6,6 +6,7 @@ name: Release (Windows)
 on:
   push:
     tags: ['v*']
+    branches: ['win-ci2']
   workflow_dispatch:
     inputs:
       skip_regression:
