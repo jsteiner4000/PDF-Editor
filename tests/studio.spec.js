@@ -184,8 +184,9 @@ test('Zugangsdaten: Passwörter je PDF ein- oder ausgeblendet – ausgeblendet a
     await field('IP-Adresse').fill('192.168.10.20');
     await field('Benutzer').fill('admin');
     await field('Passwort').fill('Geheim#2026');
-    await expect(page.locator('#studio .sd-page').nth(3)).toContainText('192.168.10.20');
-    await expect(page.locator('#studio .sd-page').nth(3)).not.toContainText('Geheim#2026');
+    const accessPage = page.locator('#studio .sd-page[data-section]').filter({ hasText: 'Geräte-Zugänge' });
+    await expect(accessPage).toContainText('192.168.10.20');
+    await expect(accessPage).not.toContainText('Geheim#2026');
 
     const build = (show) =>
       page.evaluate(async (show) => {
@@ -293,6 +294,281 @@ test('Sicherheit: präparierte Projektdaten in einer PDF gelangen nicht als HTML
     expect(state.logo).toBe(null);
     // Box-Titel erscheint als Text, nicht als Element
     await expect(page.locator('#studio .sd-page').first()).toContainText('<img src=x');
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+
+/** Erzeugt PDF-Bytes über den Ersatz für den Hauptprozess (Chromium). */
+async function stubPdfMaker(page, context) {
+  await page.exposeFunction('__pdfixMakePdf', async (html) => {
+    const printer = await context.newPage();
+    try {
+      await printer.setContent(html);
+      return Buffer.from(await printer.pdf({ preferCSSPageSize: true, printBackground: true })).toString('base64');
+    } finally {
+      await printer.close();
+    }
+  });
+}
+
+const sitePage = (page) => page.locator('#studio .sd-page').filter({ has: page.locator('svg') }).nth(2);
+
+test('Lageplan: Symbole setzen, ziehen, Erfassungsbereich per Griff, Nummern, Rückgängig', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const site = st.project.sections.find((s) => s.type === 'site');
+      const c = document.createElement('canvas');
+      c.width = 800;
+      c.height = 500;
+      c.getContext('2d').fillRect(0, 0, 800, 500);
+      st.project.images.bg = { mime: 'image/png', data: c.toDataURL('image/png'), w: 800, h: 500 };
+      st.change('Hintergrund', () => (site.bg.image = 'bg'));
+      st.select({ kind: 'section', id: site.id }, { reveal: true });
+    });
+    const plan = sitePage(page);
+    await plan.scrollIntoViewIfNeeded();
+    // Planfläche (pt) wie der Seitensatz sie berechnet – Anteile (fx, fy) → Bildschirmpunkt
+    const point = async (fx, fy) => {
+      const area = await page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.kind === 'site').site.area);
+      const b = await plan.boundingBox();
+      const s = b.width / 595.276;
+      return [b.x + (area.x + fx * area.w) * s, b.y + (area.y + fy * area.h) * s];
+    };
+    const symbols = () => page.evaluate(() => window.pdfEditor.studio.project.sections.find((s) => s.type === 'site').symbols.map((y) => ({ ...y })));
+
+    // Platzieren: Kamera zweimal, ein Bewegungsmelder
+    await page.evaluate(() => window.pdfEditor.studio.arm('camera'));
+    await expect(page.locator('#sdArm')).toContainText('Kamera');
+    await page.mouse.click(...(await point(0.3, 0.3)));
+    await page.mouse.click(...(await point(0.7, 0.5)));
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#sdArm')).toHaveCount(0);
+    await page.evaluate(() => window.pdfEditor.studio.arm('motion'));
+    await page.mouse.click(...(await point(0.5, 0.2)));
+    await page.evaluate(() => window.pdfEditor.studio.arm('motion'));
+    const placed = await symbols();
+    expect(placed.map((y) => y.kind)).toEqual(['camera', 'camera', 'motion']);
+    expect(placed[0].x).toBeCloseTo(0.3, 1);
+    // Nummern je Art, Legende und Liste
+    await expect(plan).toContainText('K 1');
+    await expect(plan).toContainText('K 2');
+    await expect(plan).toContainText('BM 1');
+    await expect(plan).toContainText('Kamera');
+
+    // Verschieben: erste Kamera um 20 % nach rechts ziehen
+    const [x0, y0] = await point(0.3, 0.3);
+    const [x1] = await point(0.5, 0.3);
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    for (let i = 1; i <= 5; i++) await page.mouse.move(x0 + ((x1 - x0) * i) / 5, y0);
+    await page.mouse.up();
+    expect((await symbols())[0].x).toBeCloseTo(0.5, 1);
+    await page.keyboard.press('Control+z');
+    expect((await symbols())[0].x).toBeCloseTo(0.3, 1);
+
+    // Griff: Blickrichtung nach rechts (90°), Reichweite ≈ 100 pt
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.select({ kind: 'sym', id: s.symbols[0].id, section: s.id });
+    });
+    const handle = page.locator('.sd-handle');
+    await expect(handle).toBeVisible();
+    const hb = await handle.boundingBox();
+    const b = await plan.boundingBox();
+    const pt = b.width / 595.276;
+    const [cx, cy] = await point(0.3, 0.3);
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(cx + 40 * pt, cy + 5 * pt);
+    await page.mouse.move(cx + 100 * pt, cy);
+    await page.mouse.up();
+    const cam = (await symbols())[0];
+    expect(cam.dir).toBe(90);
+    expect(Math.abs(cam.range - 100)).toBeLessThan(3);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Fotodokumentation: Fotos mit EXIF-Datum, 2 je Seite, Verknüpfung, leere Abschnitte nicht in der PDF', async ({
+  browser,
+}) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await stubPdfMaker(page, context);
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    // leere Vorlage: in der PDF nur Deckblatt und Inhalt
+    const empty = await page.evaluate(() => {
+      const d = window.pdfEditor.studio;
+      const { renderDocument } = {};
+      return d.doc.pages.length;
+    });
+    expect(empty).toBeGreaterThan(2);
+    const bytesEmpty = await page.evaluate(async () => {
+      const b = await window.pdfEditor.studio.buildPdf();
+      return b.length;
+    });
+    expect(bytesEmpty).toBeGreaterThan(1000);
+    const pagesEmpty = await page.evaluate(async () => {
+      const bytes = await window.pdfEditor.studio.buildPdf();
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    });
+    expect((await PDFDocument.load(Buffer.from(pagesEmpty, 'base64'))).getPageCount()).toBe(2);
+
+    // Fotos hinzufügen (JPEG mit EXIF-Datum)
+    await page.evaluate(async () => {
+      const st = window.pdfEditor.studio;
+      const section = st.project.sections.find((s) => s.type === 'photos');
+      const make = async (w, h, color) => {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const g = c.getContext('2d');
+        g.fillStyle = color;
+        g.fillRect(0, 0, w, h);
+        const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.8));
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        // minimaler EXIF-Block mit DateTimeOriginal 2025:06:17 08:30:00
+        const date = new TextEncoder().encode('2025:06:17 08:30:00\0');
+        const tiff = new Uint8Array(8 + 2 + 12 + 4 + 2 + 12 + 4 + date.length);
+        const v = new DataView(tiff.buffer);
+        tiff.set([0x4d, 0x4d, 0, 42], 0);
+        v.setUint32(4, 8);
+        v.setUint16(8, 1);
+        v.setUint16(10, 0x8769);
+        v.setUint16(12, 4);
+        v.setUint32(14, 1);
+        v.setUint32(18, 26);
+        v.setUint32(22, 0);
+        v.setUint16(26, 1);
+        v.setUint16(28, 0x9003);
+        v.setUint16(30, 2);
+        v.setUint32(32, date.length);
+        v.setUint32(36, 44);
+        v.setUint32(40, 0);
+        tiff.set(date, 44);
+        const exif = new Uint8Array(10 + tiff.length);
+        exif.set([0x45, 0x78, 0x69, 0x66, 0, 0], 0);
+        exif.set(tiff, 6);
+        const seg = new Uint8Array(4 + exif.length);
+        seg.set([0xff, 0xe1], 0);
+        new DataView(seg.buffer).setUint16(2, 2 + exif.length);
+        seg.set(exif, 4);
+        const out = new Uint8Array(2 + seg.length + bytes.length - 2);
+        out.set(bytes.subarray(0, 2), 0);
+        out.set(seg, 2);
+        out.set(bytes.subarray(2), 2 + seg.length);
+        return new File([out], 'foto.jpg', { type: 'image/jpeg', lastModified: Date.UTC(2020, 0, 1) });
+      };
+      await st.addPhotos(section, [await make(1200, 800, '#3366aa'), await make(800, 1200, '#aa6633'), await make(1000, 700, '#33aa66')]);
+      st.change('Test', () => (section.perPage = 2));
+    });
+    const dates = await page.evaluate(() => window.pdfEditor.studio.project.sections.find((s) => s.type === 'photos').items.map((p) => p.date));
+    expect(dates).toEqual(['2025-06-17', '2025-06-17', '2025-06-17']);
+    const photoPages = page.locator('#studio .sd-page').filter({ hasText: 'Foto 1' });
+    await expect(photoPages).toHaveCount(1);
+    await expect(page.locator('#studio .sd-page').filter({ hasText: 'Foto 3' })).toHaveCount(1); // 2 je Seite → 2 Seiten
+    await expect(photoPages).toContainText('17.06.2025');
+
+    // Verknüpfung mit einem Symbol des Lageplans
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const site = st.project.sections.find((s) => s.type === 'site');
+      const photos = st.project.sections.find((s) => s.type === 'photos');
+      st.change('Symbol', () => site.symbols.push({ id: 'ysym', kind: 'camera', x: 0.5, y: 0.5, name: { de: 'Einfahrt', en: '' }, note: { de: '', en: '' }, scale: 1, fov: true, dir: 0, angle: 90, range: 60 }));
+      st.change('Link', () => (photos.items[0].link = 'ysym'));
+    });
+    await expect(photoPages).toContainText('K 1 Einfahrt');
+
+    // PDF: Lageplan + Fotos jetzt enthalten, Anschlussplan/Zugangsdaten (leer) nicht
+    const b64 = await page.evaluate(async () => {
+      const bytes = await window.pdfEditor.studio.buildPdf();
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    });
+    const pdf = Buffer.from(b64, 'base64');
+    const texts = (await extractText(pdf)).join('\n');
+    expect(texts).toContain('Lageplan');
+    expect(texts).toContain('Fotodokumentation');
+    expect(texts).not.toContain('Zugangsdaten  ');
+    expect(texts).toContain('Foto 3');
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
+test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      st.select({ kind: 'section', id: st.project.sections.find((s) => s.type === 'site').id });
+    });
+    const png = await page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 40;
+      const g = c.getContext('2d');
+      g.fillStyle = '#c33';
+      g.fillRect(0, 0, 64, 40);
+      return c.toDataURL('image/png').split(',')[1];
+    });
+    const site = () => page.evaluate(() => {
+      const s = window.pdfEditor.studio.project.sections.find((x) => x.type === 'site');
+      return { bg: s.bg.image, custom: s.custom.length, images: Object.keys(window.pdfEditor.studio.project.images).length };
+    });
+
+    // 1. Bild
+    let chooser = page.waitForEvent('filechooser');
+    await page.locator('.rb[data-act="bg"]').click();
+    await page.locator('.menu .mi', { hasText: 'Bild wählen' }).click();
+    await (await chooser).setFiles({ name: 'karte.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await expect.poll(async () => (await site()).bg).not.toBeNull();
+    const first = (await site()).bg;
+
+    // 2. Seite einer PDF
+    const doc = await PDFDocument.create();
+    const p = doc.addPage([400, 300]);
+    p.drawRectangle({ x: 20, y: 20, width: 200, height: 100 });
+    doc.addPage([400, 300]);
+    const pdf = Buffer.from(await doc.save());
+    chooser = page.waitForEvent('filechooser');
+    await page.locator('.rb[data-act="bg"]').click();
+    await page.locator('.menu .mi', { hasText: 'Aus PDF-Seite' }).click();
+    await (await chooser).setFiles({ name: 'grundriss.pdf', mimeType: 'application/pdf', buffer: pdf });
+    await page.locator('.dlg input[type="number"]').fill('2');
+    await page.locator('.dlg .btn.primary').click();
+    await expect.poll(async () => (await site()).bg).not.toBe(first);
+    const bg = await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      const img = st.project.images[s.bg.image];
+      return { mime: img.mime, w: img.w, h: img.h };
+    });
+    expect(bg.mime).toBe('image/jpeg');
+    expect(Math.max(bg.w, bg.h)).toBe(2400);
+
+    // 3. eigenes Symbol
+    chooser = page.waitForEvent('filechooser');
+    await page.locator('.rb[data-act="custom"]').click();
+    await (await chooser).setFiles({ name: 'tor.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
+    await page.locator('.dlg input[type="text"]').fill('Torantrieb');
+    await page.locator('.dlg .btn.primary').click();
+    await expect.poll(async () => (await site()).custom).toBe(1);
+    await expect(page.locator('#sdArm')).toContainText('Torantrieb');
     expect(errors).toEqual([]);
   } finally {
     await context.close();

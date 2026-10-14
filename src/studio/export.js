@@ -35,7 +35,7 @@ export function printHtml(doc, title = '') {
 html,body{margin:0;padding:0;background:#fff}
 .p{width:${PAGE.w}pt;height:${PAGE.h}pt;overflow:hidden;break-after:page}
 .p:last-child{break-after:auto}
-.p svg{display:block;width:${PAGE.w}pt;height:${PAGE.h}pt}
+.p > svg{display:block;width:${PAGE.w}pt;height:${PAGE.h}pt}
 ${fonts}
 </style></head><body>${pages}</body></html>`;
 }

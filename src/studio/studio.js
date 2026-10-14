@@ -19,9 +19,18 @@ import {
   FONTS,
   LANGS,
   exampleWiring,
+  PHOTO_LAYOUTS,
+  SYMBOLS,
   newAccess,
   newBox,
+  newCustomSymbol,
   newDevice,
+  newPhoto,
+  newPhotos,
+  newSite,
+  newSymbol,
+  symbolInfo,
+  symbolLabels,
   newHint,
   newPin,
   newProject,
@@ -38,6 +47,8 @@ import { documentLabel, renderDocument } from './render.js';
 import { PAGE, typesetter } from './svg.js';
 import { DIAGRAM } from './wiring.js';
 import { blockHasData } from './access.js';
+import { photoDate } from './exif.js';
+import { PdfRenderer } from '../render/pdf-renderer.js';
 import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
 import { ensureBarlow } from './fonts.js';
 import { canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
@@ -440,6 +451,8 @@ export class Studio {
     if (kind === 'device') return s.devices.find((d) => d.id === id) || null;
     if (kind === 'wifi') return s.wifi.find((w) => w.id === id) || null;
     if (kind === 'remote') return s.remote.find((r) => r.id === id) || null;
+    if (kind === 'sym') return s.symbols.find((y) => y.id === id) || null;
+    if (kind === 'photo') return s.items.find((p) => p.id === id) || null;
     return null;
   }
 
@@ -575,12 +588,16 @@ export class Studio {
   renderStarters(host) {
     for (const el of $$('.sd-page', host)) {
       const page = this.doc.pages[+el.dataset.index];
-      const section = page && (page.kind === 'diagram' || page.kind === 'access') ? this.section(page.section) : null;
+      const section = page && ['diagram', 'access', 'site', 'photos'].includes(page.kind) ? this.section(page.section) : null;
       const empty =
         !!section &&
         (section.type === 'wiring'
           ? !section.boxes.length
-          : !section.devices.length && !section.wifi.length && !section.remote.length && !blockHasData(section, ACCESS_BLOCKS.find((b) => b.id === 'network')));
+          : section.type === 'site'
+            ? !section.symbols.length && !section.bg.image
+            : section.type === 'photos'
+              ? !section.items.length
+              : !section.devices.length && !section.wifi.length && !section.remote.length && !blockHasData(section, ACCESS_BLOCKS.find((b) => b.id === 'network')));
       let card = el.querySelector('.sd-start');
       if (!empty || (card && card.dataset.type !== section.type)) {
         if (card) card.remove();
@@ -588,6 +605,30 @@ export class Studio {
         if (!empty) continue;
       }
       if (card) continue;
+      if (section.type === 'site' || section.type === 'photos') {
+        const site = section.type === 'site';
+        card = htmlToElement(
+          `<div class="sd-start top" data-type="${section.type}"><b>${site ? 'Lageplan erstellen' : 'Fotodokumentation'}</b><span>${
+            site
+              ? 'Zuerst Luftbild, Karte oder Grundriss als Hintergrund laden (Bild oder Seite einer PDF), dann Melder, Kameras und Geräte setzen. Kameras zeigen ihren Erfassungsbereich.'
+              : 'Fotos hinzufügen – das Aufnahmedatum wird gelesen. Je Seite 1, 2, 4 oder 6 Fotos, mit Bildunterschrift und Verknüpfung zu Geräten im Lageplan.'
+          }</span><div>${
+            site
+              ? `<button class="btn primary" data-k="image">${icon('image', 's')}Bild wählen</button><button class="btn outline" data-k="pdf">${icon('file', 's')}Aus PDF-Seite</button>`
+              : `<button class="btn primary" data-k="photos">${icon('image', 's')}Fotos hinzufügen</button>`
+          }</div></div>`,
+        );
+        for (const b of card.querySelectorAll('button'))
+          b.addEventListener('click', () => {
+            this.select({ kind: 'section', id: section.id });
+            if (b.dataset.k === 'image') this.pickBackground(section);
+            else if (b.dataset.k === 'pdf') this.pickBackgroundPdf(section);
+            else this.pickPhotos(section);
+          });
+        for (const type of ['pointerdown', 'dblclick']) card.addEventListener(type, (ev) => ev.stopPropagation());
+        el.appendChild(card);
+        continue;
+      }
       if (section.type === 'access') {
         card = htmlToElement(
           `<div class="sd-start top" data-type="access"><b>Zugangsdaten erfassen</b><span>Geräte mit IP-Adresse und Anmeldung, WLAN und Fernzugriff eintragen. Was in die PDF kommt – Bereiche, Spalten, Passwörter –, wählst du rechts je Kunde.</span><div><button class="btn primary" data-k="device">${icon('device', 's')}Gerät</button><button class="btn outline" data-k="wifi">${icon('wifi', 's')}WLAN</button><button class="btn outline" data-k="remote">${icon('remote', 's')}Fernzugriff</button></div></div>`,
@@ -644,11 +685,23 @@ export class Studio {
           (kind === 'pin' && hit.kind === 'conn' && this.pinInConn(hit, id)) ||
           (kind === 'hint' && hit.kind === 'hint' && hit.id === id) ||
           ((kind === 'device' || kind === 'wifi' || kind === 'remote') && hit.kind === kind && hit.id === id) ||
+          (kind === 'sym' && hit.kind === 'sym' && hit.id === id) ||
+          (kind === 'photo' && hit.kind === 'photo' && hit.id === id) ||
           (kind === 'hub' && hit.kind === 'hub');
         if (!match) continue;
         const mark = this.markEl(hit.rect, 'sd-sel');
         if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
         marks.appendChild(mark);
+      }
+      // Griff am Ende des Erfassungsbereichs: ziehen ändert Blickrichtung und Reichweite
+      if (kind === 'sym' && page.site) {
+        const m = page.site.symbols.find((y) => y.id === id);
+        if (m && m.tip) {
+          const handle = htmlToElement('<span class="sd-handle" title="Blickrichtung und Reichweite ziehen"></span>');
+          handle.style.left = m.tip[0] * this.scale + 'px';
+          handle.style.top = m.tip[1] * this.scale + 'px';
+          marks.appendChild(handle);
+        }
       }
     });
   }
@@ -834,15 +887,26 @@ export class Studio {
       [
         { label: 'Deckblatt', icon: 'fitp', disabled: has('cover'), run: () => this.addSection('cover') },
         { label: 'Inhaltsverzeichnis', icon: 'list', disabled: has('toc'), run: () => this.addSection('toc') },
+        { label: 'Lageplan', icon: 'map', run: () => this.addSection('site') },
         { label: 'Anschlussplan', icon: 'wiring', run: () => this.addSection('wiring') },
         { label: 'Zugangsdaten', icon: 'key', run: () => this.addSection('access') },
+        { label: 'Fotodokumentation', icon: 'camera', run: () => this.addSection('photos') },
       ],
       anchor,
     );
   }
 
   addSection(type) {
-    const section = type === 'wiring' ? newWiring() : type === 'access' ? newAccess() : { id: uid('s'), type };
+    const section =
+      type === 'wiring'
+        ? newWiring()
+        : type === 'access'
+          ? newAccess()
+          : type === 'site'
+            ? newSite()
+            : type === 'photos'
+              ? newPhotos()
+              : { id: uid('s'), type };
     this.change(
       'Abschnitt hinzugefügt',
       (p) => {
@@ -917,6 +981,12 @@ export class Studio {
     } else if (kind === 'hint') {
       this.sel = { kind: 'section', id: section };
       this.change('Hinweis gelöscht', () => (s.hints = s.hints.filter((h) => h.id !== id)), { inspector: true });
+    } else if (kind === 'sym') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Symbol gelöscht', () => (s.symbols = s.symbols.filter((y) => y.id !== id)), { inspector: true });
+    } else if (kind === 'photo') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Foto entfernt', () => (s.items = s.items.filter((p) => p.id !== id)), { inspector: true });
     } else if (kind === 'device' || kind === 'wifi' || kind === 'remote') {
       const list = kind === 'device' ? 'devices' : kind;
       this.sel = { kind: 'section', id: section };
@@ -975,7 +1045,15 @@ export class Studio {
     const hasWiring = this.project.sections.some((s) => s.type === 'wiring');
     this.ribbonType = this.currentType();
     const access = this.ribbonType === 'access' ? this.section(this.sel.section || this.sel.id) : null;
-    const context = access
+    const siteSection = this.ribbonType === 'site' ? this.section(this.sel.section || this.sel.id) : null;
+    const photosSection = this.ribbonType === 'photos' ? this.section(this.sel.section || this.sel.id) : null;
+    const context = siteSection
+      ? `<button class="rb c1${this.armed ? ' on' : ''}" data-act="symbols" title="Symbol wählen und im Plan setzen">${icon('map')}Symbol${icon('chev', 's caret')}</button>
+<button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>
+<button class="rb c4" data-act="custom" title="Eigenes Symbol hochladen">${icon('plus')}Eigenes Symbol</button>`
+      : photosSection
+        ? `<button class="rb c3" data-act="addphotos" title="Fotos hinzufügen (Aufnahmedatum wird gelesen)">${icon('image')}Fotos hinzufügen</button>`
+        : access
       ? `<button class="rb c1" data-act="device" title="Gerät mit Zugang hinzufügen">${icon('device')}Gerät</button>
 <button class="rb c6" data-act="wifi" title="WLAN hinzufügen">${icon('wifi')}WLAN</button>
 <button class="rb c2" data-act="remote" title="Fernzugriff hinzufügen (DDNS, Cloud, Portfreigabe)">${icon('remote')}Fernzugriff</button>
@@ -1001,6 +1079,10 @@ ${context}
         else if (act === 'hint') this.addHint();
         else if (act === 'device' || act === 'wifi' || act === 'remote') this.addAccessItem(act);
         else if (act === 'secrets') this.toggleSecrets(access);
+        else if (act === 'symbols') this.symbolMenu(btn, siteSection);
+        else if (act === 'bg') this.backgroundMenu(btn, siteSection);
+        else if (act === 'custom') this.addCustomSymbol(siteSection);
+        else if (act === 'addphotos') this.pickPhotos(photosSection);
         else if (act === 'logo') this.pickLogo();
         else if (act === 'lang')
           showMenu(
@@ -1062,6 +1144,10 @@ ${context}
     if (this.drag) return this.dragMove(ev);
     const hit = this.hitAt(ev);
     this.hover(hit);
+    if (this.armed) {
+      $('#sdScroll').style.cursor = hit && hit.page.site && inArea(hit, hit.page.site.area) ? 'crosshair' : '';
+      return;
+    }
     const mode = this.dragMode(hit);
     $('#sdScroll').style.cursor = mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : hit && hit.item ? 'pointer' : '';
   }
@@ -1072,6 +1158,17 @@ ${context}
     if (!hit) return;
     const { page, item } = hit;
     const section = page.section;
+    // Erfassungsbereich: Griff ziehen
+    if (ev.target.classList && ev.target.classList.contains('sd-handle') && this.sel.kind === 'sym') return this.startSymbolDrag(ev, hit, 'fov');
+    // Symbol setzen (Platzieren ist aktiv)
+    if (this.armed && page.site && inArea(hit, page.site.area)) {
+      ev.preventDefault();
+      return this.placeSymbol(hit);
+    }
+    if (item && item.kind === 'sym' && page.site) {
+      this.select({ kind: 'sym', id: item.id, section });
+      return this.startSymbolDrag(ev, hit, 'move');
+    }
     if (!item) {
       this.select(page.kind === 'cover' ? { kind: 'project' } : { kind: 'section', id: section });
       return;
@@ -1083,6 +1180,7 @@ ${context}
     else if (item.kind === 'hub') this.select({ kind: 'hub', section });
     else if (item.kind === 'device' || item.kind === 'wifi' || item.kind === 'remote')
       this.select({ kind: item.kind, id: item.id, section });
+    else if (item.kind === 'sym' || item.kind === 'photo') this.select({ kind: item.kind, id: item.id, section });
     else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
     else if (item.kind === 'project') this.select({ kind: 'project' });
     else this.select({ kind: 'section', id: section });
@@ -1115,6 +1213,7 @@ ${context}
 
   dragMove(ev) {
     const d = this.drag;
+    if (d.site) return this.siteDragMove(ev);
     const perPt = this.scale * d.scale;
     const dy = (ev.clientY - d.startY) / perPt;
     const dx = (ev.clientX - d.startX) / perPt;
@@ -1142,9 +1241,254 @@ ${context}
     if (d.el.hasPointerCapture(ev.pointerId)) d.el.releasePointerCapture(ev.pointerId);
     if (!d.moved) return;
     if (cancel) return this.restore(d.before);
-    const label = { move: 'Baugruppe verschoben', resize: 'Höhe geändert', pins: 'Leitungen verschoben' }[d.mode];
+    const label = {
+      move: 'Baugruppe verschoben',
+      resize: 'Höhe geändert',
+      pins: 'Leitungen verschoben',
+      sym: 'Symbol verschoben',
+      fov: 'Erfassungsbereich geändert',
+    }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
+  }
+
+  /* ---------- Lageplan: Symbole setzen und ziehen ---------- */
+
+  /** Platzieren ein-/ausschalten: `kind` = Symbolart (oder null). */
+  arm(kind) {
+    this.armed = this.armed === kind ? null : kind;
+    this.updateArmHint();
+    this.app.renderRibbon();
+    if (this.inspector && this.visible) this.inspector.render();
+  }
+
+  updateArmHint() {
+    let chip = $('#sdArm');
+    if (!this.armed) return chip && chip.remove();
+    const site = this.wiringSite();
+    const info = site && symbolInfo(site, this.armed);
+    if (!chip) {
+      chip = htmlToElement(`<div class="sd-armed" id="sdArm" role="status"><span></span><button class="btn ic" title="Beenden (Esc)">${icon('x', 's')}</button></div>`);
+      chip.querySelector('button').addEventListener('click', () => this.arm(this.armed));
+      $('.sd-center').appendChild(chip);
+    }
+    chip.querySelector('span').textContent = `Klicke in den Plan, um „${info ? tx(info.name) : 'Symbol'}“ zu setzen`;
+  }
+
+  /** Lageplan-Abschnitt, in den gesetzt wird: der gewählte, sonst der erste. */
+  wiringSite() {
+    const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
+    const s = id && this.section(id);
+    return s && s.type === 'site' ? s : this.project.sections.find((x) => x.type === 'site') || null;
+  }
+
+  placeSymbol(hit) {
+    const s = this.wiringSite();
+    if (!s || !this.armed) return;
+    const a = hit.page.site.area;
+    const sym = newSymbol(this.armed, Math.max(0, Math.min(1, (hit.x - a.x) / a.w)), Math.max(0, Math.min(1, (hit.y - a.y) / a.h)));
+    this.change('Symbol gesetzt', () => s.symbols.push(sym));
+    this.select({ kind: 'sym', id: sym.id, section: s.id });
+  }
+
+  startSymbolDrag(ev, hit, mode) {
+    const s = this.section(hit.page.section);
+    const sym = s.symbols.find((y) => y.id === this.sel.id);
+    const m = hit.page.site.symbols.find((y) => y.id === this.sel.id);
+    if (!sym || !m) return;
+    ev.preventDefault();
+    hit.el.setPointerCapture(ev.pointerId);
+    this.drag = {
+      site: true,
+      mode: mode === 'move' ? 'sym' : 'fov',
+      sym,
+      area: hit.page.site.area,
+      center: [m.x, m.y],
+      grab: [hit.x - m.x, hit.y - m.y],
+      el: hit.el,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      before: this.snap,
+      moved: false,
+    };
+    $('#sdScroll').classList.add('dragging');
+  }
+
+  siteDragMove(ev) {
+    const d = this.drag;
+    if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) < 3) return;
+    d.moved = true;
+    const r = d.el.getBoundingClientRect();
+    const px = ((ev.clientX - r.left) / r.width) * PAGE.w;
+    const py = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    const sym = d.sym;
+    if (d.mode === 'sym') {
+      sym.x = Math.max(0, Math.min(1, (px - d.grab[0] - d.area.x) / d.area.w));
+      sym.y = Math.max(0, Math.min(1, (py - d.grab[1] - d.area.y) / d.area.h));
+    } else {
+      const dx = px - d.center[0];
+      const dy = py - d.center[1];
+      let dir = (Math.atan2(dx, -dy) * 180) / Math.PI;
+      if (ev.shiftKey) dir = Math.round(dir / 15) * 15;
+      sym.dir = Math.round(((dir % 360) + 360) % 360);
+      sym.range = Math.max(10, Math.min(600, Math.round(Math.hypot(dx, dy))));
+    }
+    this.schedule();
+  }
+
+  /* ---------- Lageplan: Hintergrund, eigene Symbole ---------- */
+
+  symbolMenu(anchor, site) {
+    if (!site) return;
+    const info = [...SYMBOLS, ...site.custom.map((c) => ({ id: 'custom:' + c.id, name: c.name }))];
+    showMenu(
+      info.map((i) => ({ label: tx(i.name), checked: this.armed === i.id, run: () => this.arm(i.id) })),
+      anchor,
+    );
+  }
+
+  backgroundMenu(anchor, site) {
+    if (!site) return;
+    showMenu(
+      [
+        { label: 'Bild wählen …', icon: 'image', run: () => this.pickBackground(site) },
+        { label: 'Aus PDF-Seite …', icon: 'file', run: () => this.pickBackgroundPdf(site) },
+        '-',
+        { label: 'Entfernen', icon: 'trash', disabled: !site.bg.image, run: () => this.change('Hintergrund entfernt', () => (site.bg.image = null), { inspector: true }) },
+      ],
+      anchor,
+    );
+  }
+
+  setBackground(site, image) {
+    const id = uid('img');
+    this.project.images[id] = image;
+    this.change('Hintergrund gesetzt', () => (site.bg.image = id), { inspector: true });
+  }
+
+  async pickBackground(site, file = null) {
+    file ||= await pickFiles('image/png,image/jpeg,image/webp');
+    if (!file) return;
+    try {
+      this.setBackground(site, await withBusy(() => readImage(file, { max: 2400, jpeg: true })));
+    } catch {
+      toast('Das Bild konnte nicht gelesen werden.', 'err', 5000);
+    }
+  }
+
+  /** Eine Seite einer PDF (Grundriss, Lageplan der Bauzeichnung) als Hintergrund. */
+  async pickBackgroundPdf(site) {
+    const file = await pickFiles('.pdf,application/pdf');
+    if (!file) return;
+    const renderer = new PdfRenderer();
+    try {
+      await withBusy(async () => renderer.load(new Uint8Array(await file.arrayBuffer())), 100);
+      let index = 0;
+      const count = renderer.doc.numPages;
+      if (count > 1) {
+        // Auswahl außerhalb der Warteanzeige (sonst läge sie über dem Dialog)
+        const body = htmlToElement(
+          `<label class="dlg-row">Seite (1–${count}) <input class="fld" type="number" min="1" max="${count}" value="1" style="width:80px"></label>`,
+        );
+        const choice = await showDialog({
+          title: 'Seite der PDF wählen',
+          icon: 'file',
+          body,
+          buttons: [
+            { label: 'Abbrechen', value: null },
+            { label: 'Übernehmen', primary: true, value: (b) => Number(b.querySelector('input').value) },
+          ],
+        });
+        if (!choice) return;
+        index = Math.max(1, Math.min(count, Math.round(choice))) - 1;
+      }
+      await withBusy(async () => {
+        const page = await renderer.doc.getPage(index + 1);
+        const vp = page.getViewport({ scale: 1 });
+        const scale = 2400 / Math.max(vp.width, vp.height);
+        const canvas = document.createElement('canvas');
+        await renderer.render(index, canvas, scale, { dpr: 1, maxPx: 8e6 });
+        const flat = document.createElement('canvas');
+        flat.width = canvas.width;
+        flat.height = canvas.height;
+        const g = flat.getContext('2d');
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, flat.width, flat.height);
+        g.drawImage(canvas, 0, 0);
+        this.setBackground(site, { mime: 'image/jpeg', data: flat.toDataURL('image/jpeg', 0.9), w: flat.width, h: flat.height });
+      }, 100);
+    } catch (err) {
+      console.warn('PDF als Hintergrund', err);
+      toast('Die PDF konnte nicht gelesen werden.', 'err', 5000);
+    } finally {
+      renderer.destroy();
+    }
+  }
+
+  /** Eigenes Symbol: Bild hochladen, benennen, danach direkt setzen. */
+  async addCustomSymbol(site) {
+    if (!site) return;
+    const file = await pickFiles('image/png,image/jpeg,image/svg+xml,image/webp');
+    if (!file) return;
+    let image;
+    try {
+      image = await readImage(file, { max: 256 });
+    } catch {
+      return toast('Das Bild konnte nicht gelesen werden.', 'err', 5000);
+    }
+    const body = htmlToElement(`<label class="dlg-row">Name <input class="fld" type="text" value="${escapeHtml(file.name.replace(/\.[^.]+$/, ''))}" style="width:220px"></label>`);
+    const name = await showDialog({
+      title: 'Eigenes Symbol',
+      icon: 'plus',
+      body,
+      buttons: [
+        { label: 'Abbrechen', value: null },
+        { label: 'Hinzufügen', primary: true, value: (b) => b.querySelector('input').value.trim() || 'Eigenes Symbol' },
+      ],
+    });
+    if (!name) return;
+    const imgId = uid('img');
+    this.project.images[imgId] = image;
+    const custom = newCustomSymbol(imgId);
+    custom.name = { de: name, en: name };
+    this.change('Eigenes Symbol hinzugefügt', () => site.custom.push(custom), { inspector: true });
+    this.arm('custom:' + custom.id);
+  }
+
+  /* ---------- Fotos ---------- */
+
+  async pickPhotos(section) {
+    const files = await pickFiles('image/jpeg,image/png,image/webp', true);
+    if (files && files.length) await this.addPhotos(section, files);
+  }
+
+  async addPhotos(section, files) {
+    if (!section) return;
+    const items = [];
+    await withBusy(async () => {
+      for (const file of files) {
+        try {
+          const [image, date] = await Promise.all([readImage(file, { max: 2000, jpeg: true }), photoDate(file)]);
+          const id = uid('img');
+          this.project.images[id] = image;
+          items.push(newPhoto(id, date));
+        } catch {
+          toast(`„${file.name}“ konnte nicht gelesen werden.`, 'warn', 4000);
+        }
+      }
+    }, 100);
+    if (!items.length) return;
+    this.change(items.length === 1 ? 'Foto hinzugefügt' : 'Fotos hinzugefügt', () => section.items.push(...items), { inspector: true });
+    this.select({ kind: 'photo', id: items[0].id, section: section.id }, { reveal: true });
+  }
+
+  /** Bilder aus Drag & Drop: auf Fotodokumentation → Fotos, auf Lageplan → Hintergrund. */
+  async dropImages(files) {
+    const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
+    const section = id && this.section(id);
+    if (section && section.type === 'photos') return this.addPhotos(section, files);
+    if (section && section.type === 'site') return this.pickBackground(section, files[0]);
+    toast('Bilder auf einen Lageplan (Hintergrund), die Fotodokumentation oder das Feld „Logo“ ziehen.');
   }
 
   /* ---------- Tastatur ---------- */
@@ -1178,6 +1522,8 @@ ${context}
     } else if (!inField && !mod && (key === 'delete' || key === 'backspace') && this.sel.kind !== 'project') {
       ev.preventDefault();
       this.removeSelected();
+    } else if (!inField && key === 'escape' && this.armed) {
+      this.arm(this.armed);
     } else if (!inField && key === 'escape') {
       const { kind, section } = this.sel;
       if (section && kind !== 'section') this.select({ kind: 'section', id: section });
@@ -1253,7 +1599,8 @@ ${context}
   async buildPdf(showSecrets = null) {
     if (this.project.font === 'barlow') await ensureBarlow();
     const source = this.withSecrets(showSecrets);
-    const doc = renderDocument(source);
+    const doc = renderDocument(source, { skipEmpty: true });
+    if (doc.skipped.length) toast(`Leere Abschnitte nicht aufgenommen: ${doc.skipped.join(', ')}`, '', 5000);
     const ts = typesetter(this.project);
     const html = printHtml({ pages: doc.pages, font: this.project.font, lang: ts.lang }, doc.label);
     const raw = await makePdf(html);
@@ -1326,7 +1673,7 @@ ${context}
       return;
     }
     // Browser: Druckfassung in einem unsichtbaren Rahmen drucken
-    const doc = renderDocument(this.withSecrets(show));
+    const doc = renderDocument(this.withSecrets(show), { skipEmpty: true });
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
     frame.sandbox = 'allow-same-origin allow-modals'; // keine Skripte in der Druckfassung
@@ -1342,6 +1689,9 @@ ${context}
   }
 }
 
+/** Liegt der Zeigerpunkt in der Planfläche? */
+const inArea = (hit, a) => hit.x >= a.x && hit.x <= a.x + a.w && hit.y >= a.y && hit.y <= a.y + a.h;
+
 /** Nächster freier Pin-Name nach dem letzten (D2 → D3, A0 → A1); sonst leer. */
 function nextPinName(pins) {
   const last = pins[pins.length - 1];
@@ -1352,8 +1702,11 @@ function nextPinName(pins) {
   return m[1] + n;
 }
 
-/** Bild für Logo: Rastergrafiken verkleinert (höchstens 1600 px breit), SVG unverändert. */
-async function readImage(file) {
+/**
+ * Bild lesen: Rastergrafiken werden auf höchstens `max` px verkleinert (als PNG bzw. mit `jpeg`
+ * als JPEG auf weißem Grund, kleiner für Fotos und Pläne), SVG bleibt unverändert.
+ */
+async function readImage(file, { max = 1600, jpeg = false } = {}) {
   if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
     const text = await file.text();
     const data = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
@@ -1363,16 +1716,20 @@ async function readImage(file) {
     return { mime: 'image/svg+xml', data, w: img.naturalWidth || 300, h: img.naturalHeight || 100 };
   }
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 1600 / bitmap.width);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const g = canvas.getContext('2d');
+  if (jpeg) {
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  g.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  return { mime: 'image/png', data: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height };
+  const mime = jpeg ? 'image/jpeg' : 'image/png';
+  return { mime, data: canvas.toDataURL(mime, 0.86), w: canvas.width, h: canvas.height };
 }
-
-
 /* ---------- Firma für neue Projekte merken ---------- */
 
 const COMPANY_KEY = 'pdfix.studio.company';

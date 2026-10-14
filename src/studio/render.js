@@ -8,7 +8,9 @@
 import { C, PAGE, esc, line, n, rect, text, typesetter } from './svg.js';
 import { DIAGRAM, layoutWiring, legendSvg, terminalPages, wiringDiagramSvg } from './wiring.js';
 import { accessPages } from './access.js';
-import { sectionTitle } from './model.js';
+import { sitePages } from './site.js';
+import { photoPages } from './photos.js';
+import { isEmptySection, sectionTitle } from './model.js';
 
 const LOGO_BOX = { x: 378.276, y: 42, w: 175, h: 44.144 };
 
@@ -187,13 +189,19 @@ function tocBody(ts, entries) {
  * Seiten eines Projekts. Zwei Durchgänge: erst die Seiten je Abschnitt (für die Seitenzahlen im
  * Inhaltsverzeichnis und im Hinweis „siehe Seite …“), dann Kopf- und Fußzeilen.
  */
-export function renderDocument(project) {
+export function renderDocument(project, { skipEmpty = false } = {}) {
   const ts = typesetter(project);
   const label = documentLabel(project, ts);
   const pages = [];
   const tocAt = [];
+  const skipped = [];
 
   for (const section of project.sections) {
+    // für die fertige PDF: leere Abschnitte (nur Kopfzeile) weglassen
+    if (skipEmpty && isEmptySection(section)) {
+      skipped.push(sectionTitleInline(section, ts));
+      continue;
+    }
     if (section.type === 'cover') {
       pages.push({ section: section.id, kind: 'cover', make: () => coverBody(project, ts), plain: true });
     } else if (section.type === 'toc') {
@@ -225,6 +233,34 @@ export function renderDocument(project) {
           subtitle: sub('wiringTerminals'),
           make: () => p,
           tocSub: i === 0 ? ts.label('wiringTerminals') : null,
+        }),
+      );
+    } else if (section.type === 'site') {
+      const title = ts.inline(section.title) || ts.label('site');
+      const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
+      sitePages(section, ts, project.images).forEach((p, i) =>
+        pages.push({
+          section: section.id,
+          kind: p.kind === 'plan' ? 'site' : 'sitelist',
+          title,
+          subtitle: p.kind === 'list' ? ts.label('deviceList') : subtitle,
+          site: p.site || null,
+          make: () => p,
+          toc: i === 0 ? { title, id: section.id, plain: true } : null,
+          tocSub: i === 1 ? ts.label('deviceList') : null,
+        }),
+      );
+    } else if (section.type === 'photos') {
+      const title = ts.inline(section.title) || ts.label('photos');
+      const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
+      photoPages(section, ts, project).forEach((p, i) =>
+        pages.push({
+          section: section.id,
+          kind: 'photos',
+          title,
+          subtitle,
+          make: () => p,
+          toc: i === 0 ? { title, id: section.id, plain: true } : null,
         }),
       );
     } else if (section.type === 'access') {
@@ -277,6 +313,7 @@ export function renderDocument(project) {
   const total = pages.length;
   return {
     label,
+    skipped,
     pages: pages.map((p, i) => {
       const body = p.make();
       const head = p.plain ? '' : headerSvg(project, ts, p.title, p.subtitle);
@@ -285,6 +322,7 @@ export function renderDocument(project) {
         section: p.section,
         kind: p.kind,
         layout: p.layout || null,
+        site: p.site || null,
         hits: body.hits || [],
         svg: svgPage(ts, head + body.svg + foot),
       };

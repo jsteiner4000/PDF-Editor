@@ -70,6 +70,13 @@ export const STRINGS = {
   version: T('Version', 'Version'),
   access: T('Zugangsdaten', 'Access data'),
   continued: T('Fortsetzung', 'continued'),
+  site: T('Lageplan', 'Site plan'),
+  deviceList: T('Geräteliste', 'Device list'),
+  nr: T('Nr.', 'No.'),
+  type: T('Typ', 'Type'),
+  name: T('Bezeichnung', 'Designation'),
+  photos: T('Fotodokumentation', 'Photo documentation'),
+  photo: T('Foto', 'Photo'),
   setting: T('Einstellung', 'Setting'),
   value: T('Wert', 'Value'),
   secretsHidden: T(
@@ -207,6 +214,132 @@ export function exampleWiring() {
   return w;
 }
 
+/* ---------- Lageplan ---------- */
+
+/**
+ * Symbole für den Lageplan. `code` = Kürzel für die Nummerierung (K 1, BM 2 …), `fov` = hat einen
+ * Erfassungsbereich (Winkel/Reichweite in pt auf der Seite), `glyph` = Name des Bildzeichens in
+ * site.js.
+ */
+export const SYMBOLS = [
+  { id: 'camera', code: 'K', name: T('Kamera', 'Camera'), color: '#1d4ed8', glyph: 'camera', fov: { angle: 90, range: 90 } },
+  { id: 'motion', code: 'BM', name: T('Bewegungsmelder', 'Motion detector'), color: '#b91c1c', glyph: 'motion', fov: { angle: 90, range: 60 } },
+  { id: 'smoke', code: 'RM', name: T('Rauchmelder', 'Smoke detector'), color: '#c2410c', glyph: 'smoke' },
+  { id: 'contact', code: 'MK', name: T('Öffnungsmelder', 'Door/window contact'), color: '#0f766e', glyph: 'contact' },
+  { id: 'glass', code: 'GB', name: T('Glasbruchmelder', 'Glass-break detector'), color: '#0e7490', glyph: 'glass' },
+  { id: 'barrier', code: 'LS', name: T('Lichtschranke', 'Light barrier'), color: '#15803d', glyph: 'barrier' },
+  { id: 'siren', code: 'SI', name: T('Sirene', 'Siren'), color: '#a21caf', glyph: 'siren' },
+  { id: 'keypad', code: 'BT', name: T('Bedienteil', 'Keypad'), color: '#475569', glyph: 'keypad' },
+  { id: 'panel', code: 'AZ', name: T('Alarmzentrale', 'Alarm panel'), color: '#1f3b4d', glyph: 'panel' },
+  { id: 'keyswitch', code: 'SS', name: T('Schlüsselschalter', 'Key switch'), color: '#7c3aed', glyph: 'keyswitch' },
+  { id: 'access', code: 'ZK', name: T('Zutrittsleser', 'Access reader'), color: '#0369a1', glyph: 'access' },
+  { id: 'opener', code: 'TÖ', name: T('Türöffner', 'Door opener'), color: '#9a3412', glyph: 'opener' },
+  { id: 'intercom', code: 'TS', name: T('Türsprechstelle', 'Door intercom'), color: '#4d7c0f', glyph: 'intercom' },
+  { id: 'router', code: 'NW', name: T('Router / Switch', 'Router / switch'), color: '#334155', glyph: 'router' },
+  { id: 'recorder', code: 'NVR', name: T('Rekorder', 'Recorder'), color: '#1e3a8a', glyph: 'recorder' },
+];
+
+/** Leerer Lageplan. */
+export const newSite = () => ({
+  id: uid('s'),
+  type: 'site',
+  title: T('Lageplan', 'Site plan'),
+  bg: { image: null, rotate: 0, fit: 'contain', fade: 0 },
+  symbols: [],
+  custom: [],
+  showNumbers: true,
+  showList: true,
+});
+
+/** Neues Symbol an der Stelle (x, y) – Anteile der Planfläche (0–1). */
+export function newSymbol(kind, x = 0.5, y = 0.5) {
+  const info = SYMBOLS.find((s) => s.id === kind);
+  return {
+    id: uid('y'),
+    kind,
+    x,
+    y,
+    name: T('', ''),
+    note: T('', ''),
+    scale: 1,
+    fov: !!(info && info.fov),
+    dir: 0,
+    angle: info && info.fov ? info.fov.angle : 90,
+    range: info && info.fov ? info.fov.range : 60,
+  };
+}
+
+/** Eigenes Symbol (Bild aus `project.images`). */
+export const newCustomSymbol = (image) => ({ id: uid('u'), image, name: T('Eigenes Symbol', 'Custom symbol'), code: 'ES' });
+
+/** Angaben zu einem Symbolart: { code, name, color, glyph, fov, image } oder null. */
+export function symbolInfo(site, kind) {
+  const base = SYMBOLS.find((s) => s.id === kind);
+  if (base) return base;
+  const id = typeof kind === 'string' && kind.startsWith('custom:') ? kind.slice(7) : null;
+  const custom = id && site.custom.find((c) => c.id === id);
+  return custom ? { code: custom.code || 'ES', name: custom.name, color: '#475569', glyph: null, image: custom.image } : null;
+}
+
+/** Nummern der Symbole: Kennung → „K 1“ (je Art fortlaufend in der Reihenfolge der Liste). */
+export function symbolLabels(site) {
+  const count = new Map();
+  const out = new Map();
+  for (const sym of site.symbols) {
+    const info = symbolInfo(site, sym.kind);
+    if (!info) continue;
+    const n = (count.get(sym.kind) || 0) + 1;
+    count.set(sym.kind, n);
+    out.set(sym.id, `${info.code} ${n}`);
+  }
+  return out;
+}
+
+/* ---------- Fotodokumentation ---------- */
+
+export const PHOTO_LAYOUTS = [1, 2, 4, 6];
+
+export const newPhotos = () => ({
+  id: uid('s'),
+  type: 'photos',
+  title: T('Fotodokumentation', 'Photo documentation'),
+  perPage: 4,
+  showDate: true,
+  items: [],
+});
+
+export const newPhoto = (image, date = '') => ({ id: uid('f'), image, caption: T('', ''), date, link: null });
+
+/** Alle Symbole des Projekts mit ihrer Nummer: [{ id, label, name, section }] (für Fotoverknüpfungen). */
+export function projectSymbols(project, lang = 'de') {
+  const out = [];
+  for (const s of project.sections) {
+    if (s.type !== 'site') continue;
+    const labels = symbolLabels(s);
+    for (const sym of s.symbols) {
+      const info = symbolInfo(s, sym.kind);
+      if (!info) continue;
+      out.push({ id: sym.id, label: labels.get(sym.id), name: tx(sym.name, lang) || tx(info.name, lang), section: s.id });
+    }
+  }
+  return out;
+}
+
+/** Hat ein Abschnitt keinen Inhalt? (leere Abschnitte bleiben in der fertigen PDF weg) */
+export function isEmptySection(section) {
+  if (section.type === 'wiring') return !section.boxes.length && !section.hub.pins.length && !section.hints.length;
+  if (section.type === 'access')
+    return (
+      !section.devices.length &&
+      !section.wifi.length &&
+      !section.remote.length &&
+      !Object.entries(section.network).some(([, v]) => (typeof v === 'object' ? tx(v) : String(v || '').trim()))
+    );
+  if (section.type === 'site') return !section.symbols.length && !section.bg.image;
+  if (section.type === 'photos') return !section.items.length;
+  return false;
+}
+
 /* ---------- Zugangsdaten ---------- */
 
 /**
@@ -334,8 +467,15 @@ export const TEMPLATES = [
   {
     id: 'documentation',
     title: T('Anlagendokumentation', 'System documentation'),
-    desc: 'Deckblatt, Inhaltsverzeichnis, Anschlussplan, Zugangsdaten',
-    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, newWiring(), newAccess()],
+    desc: 'Deckblatt, Inhalt, Lageplan, Anschlussplan, Zugangsdaten, Fotos',
+    sections: () => [
+      { id: uid('s'), type: 'cover' },
+      { id: uid('s'), type: 'toc' },
+      newSite(),
+      newWiring(),
+      newAccess(),
+      newPhotos(),
+    ],
   },
   {
     id: 'wiring',
@@ -431,6 +571,8 @@ export function normalizeProject(raw) {
     if (s.type === 'cover' || s.type === 'toc') project.sections.push({ id: id(s.id, 's'), type: s.type });
     else if (s.type === 'wiring') project.sections.push(cleanWiring(s, id));
     else if (s.type === 'access') project.sections.push(cleanAccess(s, id));
+    else if (s.type === 'site') project.sections.push(cleanSite(s, id, images));
+    else if (s.type === 'photos') project.sections.push(cleanPhotos(s, id, images));
   }
   return project;
 }
@@ -498,6 +640,70 @@ function cleanWiring(s, id) {
   };
 }
 
+const clamp = (v, lo, hi, fallback) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function cleanSite(s, id, images) {
+  const d = newSite();
+  const bg = s.bg && typeof s.bg === 'object' ? s.bg : {};
+  const custom = (Array.isArray(s.custom) ? s.custom : [])
+    .filter((c) => c && typeof c === 'object' && typeof c.image === 'string' && images[c.image])
+    .map((c) => ({ id: id(c.id, 'u'), image: c.image, name: toT(c.name), code: str_(c.code, 6) || 'ES' }));
+  const customIds = new Set(custom.map((c) => c.id));
+  const kinds = new Set(SYMBOLS.map((x) => x.id));
+  const symbols = (Array.isArray(s.symbols) ? s.symbols : [])
+    .filter((y) => y && typeof y === 'object' && (kinds.has(y.kind) || (typeof y.kind === 'string' && customIds.has(y.kind.replace(/^custom:/, '')) && y.kind.startsWith('custom:'))))
+    .map((y) => ({
+      id: id(y.id, 'y'),
+      kind: y.kind,
+      x: clamp(y.x, 0, 1, 0.5),
+      y: clamp(y.y, 0, 1, 0.5),
+      name: toT(y.name),
+      note: toT(y.note),
+      scale: clamp(y.scale, 0.5, 2.5, 1),
+      fov: bool(y.fov),
+      dir: clamp(y.dir, -360, 720, 0),
+      angle: clamp(y.angle, 5, 360, 90),
+      range: clamp(y.range, 10, 600, 60),
+    }));
+  return {
+    id: id(s.id, 's'),
+    type: 'site',
+    title: toT(s.title || d.title),
+    bg: {
+      image: typeof bg.image === 'string' && images[bg.image] ? bg.image : null,
+      rotate: oneOf(bg.rotate, [0, 90, 180, 270], 0),
+      fit: oneOf(bg.fit, ['contain', 'cover'], 'contain'),
+      fade: clamp(bg.fade, 0, 0.8, 0),
+    },
+    symbols,
+    custom,
+    showNumbers: s.showNumbers !== false,
+    showList: s.showList !== false,
+  };
+}
+
+function cleanPhotos(s, id, images) {
+  const d = newPhotos();
+  const items = (Array.isArray(s.items) ? s.items : [])
+    .filter((p) => p && typeof p === 'object' && typeof p.image === 'string' && images[p.image])
+    .map((p) => ({
+      id: id(p.id, 'f'),
+      image: p.image,
+      caption: toT(p.caption),
+      date: typeof p.date === 'string' && DATE_RE.test(p.date) ? p.date : '',
+      link: typeof p.link === 'string' && ID_RE.test(p.link) ? p.link : null,
+    }));
+  return {
+    id: id(s.id, 's'),
+    type: 'photos',
+    title: toT(s.title || d.title),
+    perPage: oneOf(s.perPage, PHOTO_LAYOUTS, 4),
+    showDate: s.showDate !== false,
+    items,
+  };
+}
+
 function cleanAccess(s, id) {
   const d = newAccess();
   const blocks = s.blocks && typeof s.blocks === 'object' ? s.blocks : {};
@@ -539,6 +745,8 @@ export function sectionTitle(section, lang = 'de') {
     return str('wiring', lang) + (sys ? ' ' + sys : '');
   }
   if (section.type === 'access') return tx(section.title, lang) || str('access', lang);
+  if (section.type === 'site') return tx(section.title, lang) || str('site', lang);
+  if (section.type === 'photos') return tx(section.title, lang) || str('photos', lang);
   return section.type;
 }
 

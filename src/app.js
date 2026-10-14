@@ -746,7 +746,7 @@ export class App {
     const file = files[0];
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
-    if (isImage && this.view === 'studio') return toast('Bilder bitte auf das Feld „Logo“ ziehen.');
+    if (isImage && this.view === 'studio') return this.studio.dropImages(files.filter((f) => /^image\//.test(f.type)));
     const inDoc = this.session && this.view === 'doc';
     if (inDoc && isImage) return this.edit.dropImage(file, ev);
     if (inDoc && isPdf && this.tool === 'organize')

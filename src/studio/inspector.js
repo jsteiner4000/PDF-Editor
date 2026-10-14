@@ -8,7 +8,22 @@
  */
 import { icon } from '../ui/icons.js';
 import { escapeHtml, htmlToElement } from '../ui/dom.js';
-import { ACCESS_BLOCKS, FONTS, LANGS, T, langsOf, sectionTitle, tx, uid } from './model.js';
+import {
+  ACCESS_BLOCKS,
+  FONTS,
+  LANGS,
+  PHOTO_LAYOUTS,
+  SYMBOLS,
+  T,
+  langsOf,
+  projectSymbols,
+  sectionTitle,
+  symbolInfo,
+  symbolLabels,
+  tx,
+  uid,
+} from './model.js';
+import { symbolIconSvg } from './site.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
 
@@ -21,6 +36,8 @@ const KIND_TITLE = {
   device: 'Gerät',
   wifi: 'WLAN',
   remote: 'Fernzugriff',
+  sym: 'Symbol',
+  photo: 'Foto',
 };
 
 /** Vorschläge für Fernzugriff-Dienste (frei änderbar). */
@@ -75,6 +92,8 @@ export class Inspector {
     else if (sel.kind === 'pin') this.pinForm(section, item);
     else if (sel.kind === 'hint') this.hintForm(section, item);
     else if (sel.kind === 'hub') this.hubForm(section);
+    else if (sel.kind === 'sym') this.symForm(section, item);
+    else if (sel.kind === 'photo') this.photoForm(section, item);
     else if (sel.kind === 'device') this.deviceForm(section, item);
     else if (sel.kind === 'wifi') this.wifiForm(section, item);
     else if (sel.kind === 'remote') this.remoteForm(section, item);
@@ -304,6 +323,8 @@ export class Inspector {
       this.group('Inhaltsverzeichnis', this.note('Entsteht automatisch aus den Abschnitten der Projektmappe – mit Seitenzahlen.'));
     } else if (section.type === 'wiring') this.wiringForm(section);
     else if (section.type === 'access') this.accessForm(section);
+    else if (section.type === 'site') this.siteForm(section);
+    else if (section.type === 'photos') this.photosForm(section);
     this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(section.id), true]);
   }
 
@@ -772,6 +793,206 @@ Object.assign(Inspector.prototype, {
       this.bi('Bemerkung', r, 'note'),
     );
     this.itemActions(s.remote, r);
+  },
+});
+
+/* ---------- Lageplan und Fotos ---------- */
+
+Object.assign(Inspector.prototype, {
+  /** Regler mit Zahlenfeld (Werte in Anzeigeeinheit; `scale` rechnet in den gespeicherten Wert um). */
+  slider(label, obj, prop, { min, max, step = 1, scale = 1, unit = '' }) {
+    const studio = this.studio;
+    const key = `r:${prop}:${studio.sel.id || studio.sel.kind}`;
+    const shown = () => Math.round(obj[prop] * scale * 100) / 100;
+    const range = htmlToElement(`<input type="range" min="${min}" max="${max}" step="${step}" value="${shown()}">`);
+    const num = htmlToElement(`<input class="fld num" type="number" min="${min}" max="${max}" step="${step}" value="${shown()}" aria-label="${escapeHtml(label)} (${unit})">`);
+    const set = (raw) => {
+      const v = Math.max(min, Math.min(max, Number(raw)));
+      if (!Number.isFinite(v)) return;
+      studio.change(label + ' geändert', () => (obj[prop] = v / scale), { key });
+    };
+    range.addEventListener('input', () => {
+      num.value = range.value;
+      set(range.value);
+    });
+    num.addEventListener('input', () => {
+      range.value = num.value;
+      set(num.value);
+    });
+    num.addEventListener('keydown', (ev) => ev.key === 'Enter' && num.blur());
+    const wrap = htmlToElement('<div class="sd-range"></div>');
+    wrap.append(range, num);
+    return this.field(unit ? `${label} (${unit})` : label, wrap);
+  },
+
+  siteForm(s) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    const labels = symbolLabels(s);
+    this.group(
+      'Lageplan',
+      this.bi('Überschrift', s, 'title'),
+      this.check('Nummern an den Symbolen', s.showNumbers, (v) => studio.change('Nummern geändert', () => (s.showNumbers = v))),
+      this.check('Geräteliste auf einer Folgeseite', s.showList, (v) => studio.change('Geräteliste geändert', () => (s.showList = v))),
+    );
+    // Hintergrund
+    const img = s.bg.image && this.project.images[s.bg.image];
+    const bg = this.group('Hintergrund');
+    bg.appendChild(
+      htmlToElement(
+        `<div class="sd-thumbrow">${img ? `<img alt="Hintergrund" src="${escapeHtml(img.data)}">` : `<span class="sd-empty" style="padding:0">Noch kein Bild</span>`}</div>`,
+      ),
+    );
+    const buttons = htmlToElement('<div class="sd-acts" style="padding-top:8px"></div>');
+    for (const [label, iconName, run] of [
+      ['Bild …', 'image', () => studio.pickBackground(s)],
+      ['PDF-Seite …', 'file', () => studio.pickBackgroundPdf(s)],
+    ]) {
+      const b = htmlToElement(`<button type="button" class="btn outline">${icon(iconName, 's')}${label}</button>`);
+      b.addEventListener('click', run);
+      buttons.appendChild(b);
+    }
+    bg.appendChild(buttons);
+    if (img) {
+      bg.appendChild(
+        this.seg('Drehung', [[0, '0°'], [90, '90°'], [180, '180°'], [270, '270°']], s.bg.rotate, (v) =>
+          studio.change('Hintergrund gedreht', () => (s.bg.rotate = v), { inspector: true }),
+        ),
+      );
+      bg.appendChild(
+        this.seg('Darstellung', [['contain', 'Einpassen'], ['cover', 'Füllen']], s.bg.fit, (v) =>
+          studio.change('Hintergrund geändert', () => (s.bg.fit = v), { inspector: true }),
+        ),
+      );
+      bg.appendChild(this.slider('Aufhellen', s.bg, 'fade', { min: 0, max: 80, scale: 0.01, unit: '%' }));
+    }
+    // Symbole
+    const palette = htmlToElement('<div class="sd-symbols"></div>');
+    const kinds = [...SYMBOLS, ...s.custom.map((c) => ({ id: 'custom:' + c.id, ...symbolInfo(s, 'custom:' + c.id) }))];
+    for (const kind of kinds) {
+      const info = symbolInfo(s, kind.id);
+      const b = htmlToElement(
+        `<button type="button" class="sd-symbol${studio.armed === kind.id ? ' on' : ''}" aria-pressed="${studio.armed === kind.id}" title="${escapeHtml(tx(info.name, 'de'))}">${symbolIconSvg(info, this.project.images)}<span>${escapeHtml(tx(info.name, lang))}</span></button>`,
+      );
+      b.addEventListener('click', () => studio.arm(kind.id));
+      palette.appendChild(b);
+    }
+    const symbols = this.group('Symbole', palette, this.note('Symbol wählen, dann in den Plan klicken – so oft wie nötig. Esc beendet. Eigene Symbole oben im Werkzeugband.'));
+    void symbols;
+    this.group(
+      `Im Plan (${s.symbols.length})`,
+      this.rows(s.symbols, {
+        empty: 'Noch kein Symbol gesetzt.',
+        render: (y) => {
+          const info = symbolInfo(s, y.kind);
+          return `<b class="pin">${escapeHtml(labels.get(y.id) || '')}</b><span class="t">${escapeHtml(tx(y.name, lang) || (info ? tx(info.name, lang) : ''))}</span>`;
+        },
+        onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true]);
+  },
+
+  symForm(s, y) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    const info = symbolInfo(s, y.kind);
+    const labels = symbolLabels(s);
+    const kinds = [...SYMBOLS.map((k) => [k.id, tx(k.name, lang)]), ...s.custom.map((c) => ['custom:' + c.id, tx(c.name, lang)])];
+    this.group(
+      `${labels.get(y.id) || 'Symbol'}`,
+      this.bi('Bezeichnung', y, 'name', { placeholder: info ? tx(info.name, lang) : '' }),
+      this.bi('Bemerkung', y, 'note'),
+      this.select('Art', kinds, y.kind, (v) =>
+        studio.change(
+          'Art geändert',
+          () => {
+            const next = symbolInfo(s, v);
+            y.kind = v;
+            y.fov = !!(next && next.fov);
+            if (next && next.fov) {
+              y.angle = next.fov.angle;
+              y.range = next.fov.range;
+            }
+          },
+          { inspector: true },
+        ),
+      ),
+      this.seg('Größe', [[0.75, 'Klein'], [1, 'Mittel'], [1.5, 'Groß']], y.scale, (v) =>
+        studio.change('Größe geändert', () => (y.scale = v), { inspector: true }),
+      ),
+    );
+    if (info && info.fov) {
+      const group = this.group(
+        'Erfassungsbereich',
+        this.check('Erfassungsbereich zeigen', y.fov, (v) => studio.change('Erfassungsbereich geändert', () => (y.fov = v), { inspector: true })),
+      );
+      if (y.fov)
+        group.append(
+          this.slider('Blickrichtung', y, 'dir', { min: 0, max: 359, unit: '°' }),
+          this.slider('Öffnungswinkel', y, 'angle', { min: 10, max: 360, unit: '°' }),
+          this.slider('Reichweite', y, 'range', { min: 20, max: 400, unit: 'pt' }),
+          this.note('Im Plan den Punkt am Ende ziehen: Richtung und Reichweite zugleich (mit Umschalt in 15°-Schritten).'),
+        );
+    }
+    // Fotos, die auf dieses Symbol verweisen
+    const photos = [];
+    for (const sec of this.project.sections)
+      if (sec.type === 'photos') for (const p of sec.items) if (p.link === y.id) photos.push({ p, sec });
+    if (photos.length)
+      this.group(
+        `Fotos (${photos.length})`,
+        this.rows(photos, {
+          render: ({ p }) => `<span class="t">${escapeHtml(tx(p.caption, lang) || 'Foto')}</span>`,
+          onOpen: ({ p, sec }) => studio.select({ kind: 'photo', id: p.id, section: sec.id }, { reveal: true }),
+        }),
+      );
+    this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
+  },
+
+  photosForm(s) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    this.group(
+      'Fotodokumentation',
+      this.bi('Überschrift', s, 'title'),
+      this.seg('Fotos je Seite', PHOTO_LAYOUTS.map((n) => [n, String(n)]), s.perPage, (v) =>
+        studio.change('Fotos je Seite geändert', () => (s.perPage = v), { inspector: true }),
+      ),
+      this.check('Aufnahmedatum zeigen', s.showDate, (v) => studio.change('Datum geändert', () => (s.showDate = v))),
+    );
+    const list = this.group(
+      `Fotos (${s.items.length})`,
+      this.rows(s.items, {
+        empty: 'Noch kein Foto.',
+        render: (p) => {
+          const img = this.project.images[p.image];
+          return `${img ? `<img alt="" src="${escapeHtml(img.data)}" style="width:34px;height:26px;object-fit:cover;border-radius:3px;flex:none">` : ''}<span class="t">${escapeHtml(tx(p.caption, lang) || 'Ohne Unterschrift')}</span><small>${escapeHtml(p.date || '')}</small>`;
+        },
+        onOpen: (p) => studio.select({ kind: 'photo', id: p.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    list.appendChild(this.addButton('Fotos hinzufügen', () => studio.pickPhotos(s)));
+    this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(s.id), true]);
+  },
+
+  photoForm(s, p) {
+    const studio = this.studio;
+    const img = this.project.images[p.image];
+    const links = projectSymbols(this.project, langsOf(this.project)[0]);
+    const group = this.group('Foto');
+    if (img) group.appendChild(htmlToElement(`<img class="sd-photo" alt="Foto" src="${escapeHtml(img.data)}">`));
+    group.append(
+      this.bi('Bildunterschrift', p, 'caption', { multiline: true }),
+      this.text('Aufnahmedatum', p, 'date', { type: 'date' }),
+      this.select(
+        'Gerät im Lageplan',
+        [[null, '– keine Verknüpfung –'], ...links.map((l) => [l.id, `${l.label} ${l.name}`])],
+        p.link,
+        (v) => studio.change('Verknüpfung geändert', () => (p.link = v)),
+      ),
+    );
+    this.itemActions(s.items, p);
   },
 });
 

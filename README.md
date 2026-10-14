@@ -60,6 +60,7 @@ src/
   platform/desktop-bridge.js  Anbindung an die Desktop-App (im Browser wirkungslos)
   studio/                 „Dokumentation erstellen“: Projekt (model.js), Seitensatz als SVG (render.js,
                           wiring.js: Anschlussplan), Arbeitsbereich (studio.js, inspector.js),
+                          Lageplan (site.js), Fotos (photos.js, exif.js), Zugangsdaten (access.js),
                           Entwürfe (store.js, IndexedDB „pdfix-studio“), PDF mit Projekt (export.js)
   storage/idb.js          IndexedDB „pdf-editor“ v2 (eigene Schriften, zuletzt geöffnet, Unterschriften)
   signature/

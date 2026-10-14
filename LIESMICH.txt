@@ -3,7 +3,8 @@ PDFix
 
 PDFix – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
 einfügen, löschen und ordnen, Dokumente unterschreiben. Unter „Neu“ entstehen
-Kundendokumentationen (Deckblatt, Inhalt, Anschlussplan) als PDF. Alles bleibt auf Ihrem
+Kundendokumentationen (Deckblatt, Inhalt, Lageplan, Anschlussplan, Zugangsdaten,
+Fotos) als PDF. Alles bleibt auf Ihrem
 Rechner – es werden keine Daten ins Internet übertragen.
 
 
@@ -11,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.4.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.5.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
