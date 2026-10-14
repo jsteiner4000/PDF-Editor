@@ -170,7 +170,7 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   startet im Leerlauf vorab (`warmUpRenderer`), nicht erst beim ersten Öffnen.
 - **Schnelldruck**: Der Installer trägt für die ProgID die Verben `print` und `printto` ein
   (`--pdfix-print=<Datei>`, `--pdfix-printer=<Drucker>`). PDFix rendert die Seiten mit pdf.js
-  (200 dpi, Druck-Anmerkungen, Querformat gedreht), stellt sie unter
+  (600 dpi bis 20 Seiten, 300 dpi bis 60, sonst 200; Druck-Anmerkungen, Querformat gedreht), stellt sie unter
   `app://pdf-editor/print/<Kennung>/` bereit und druckt sie in einem unsichtbaren Fenster ohne
   JavaScript still auf den Standard- bzw. genannten Drucker. Läuft PDFix noch nicht, beendet es
   sich danach wieder; sonst bleibt das offene Dokument unberührt. `PDF_EDITOR_PRINT_TO_PDF=<Pfad>`

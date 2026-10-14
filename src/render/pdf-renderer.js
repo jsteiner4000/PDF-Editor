@@ -108,7 +108,7 @@ export class PdfRenderer {
    * Seite `n` (ab 1) zum Drucken: PNG mit `dpi` (höchstens `maxPx` Pixel), Anmerkungen wie beim
    * Drucken (Druck-Flag). Querformat-Seiten werden hochkant gedreht, damit sie das Papier füllen.
    */
-  async printImage(n, dpi = 200, maxPx = 16e6) {
+  async printImage(n, dpi = 600, maxPx = 40e6) {
     const doc = this.doc;
     if (!doc || n < 1 || n > doc.numPages) throw new Error('Seite nicht vorhanden');
     const page = await doc.getPage(n);

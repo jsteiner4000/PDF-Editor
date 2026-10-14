@@ -153,7 +153,7 @@ const COMMANDS = {
   printOpen: (data) => (data instanceof Uint8Array ? app.printOpen(data) : null),
   printPage: (data) =>
     data && Number.isInteger(data.n) && Number.isFinite(data.dpi)
-      ? app.printPage(data.id, data.n, Math.min(300, Math.max(72, data.dpi)))
+      ? app.printPage(data.id, data.n, Math.min(600, Math.max(72, data.dpi)))
       : null,
   printClose: (id) => app.printClose(id),
   printed: (name) => toast(`„${String(name || '')}“ wurde an den Drucker gesendet.`),

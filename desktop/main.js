@@ -150,8 +150,10 @@ function start() {
           throw new Error(
             `Die Datei hat zu viele Seiten für den Schnelldruck (höchstens ${MAX_PRINT_PAGES}).`,
           );
-        // seitenweise (keine riesige Einzelnachricht); bei vielen Seiten etwas geringere Auflösung
-        const dpi = info.pages > 20 ? 150 : 200;
+        // seitenweise (keine riesige Einzelnachricht)
+        // Druckerauflösung (600 dpi): Schrift und Linien bleiben scharf; bei vielen Seiten weniger,
+        // damit Speicher und Druckauftrag überschaubar bleiben
+        const dpi = info.pages <= 20 ? 600 : info.pages <= 60 ? 300 : 200;
         const pages = [];
         for (let n = 1; n <= info.pages; n++)
           pages.push(

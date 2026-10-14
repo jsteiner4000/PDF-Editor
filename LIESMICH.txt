@@ -10,7 +10,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.3.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.3.1.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -21,7 +21,7 @@ ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
 Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
 „Immer“.
 
-Ohne Installation: „PDFix-2.3.0-portable.exe“ starten (z. B. vom
+Ohne Installation: „PDFix-2.3.1-portable.exe“ starten (z. B. vom
 USB-Stick). Der Start dauert etwas länger, weil sich das Programm jedes Mal
 erst entpackt. Dateizuordnung und Verknüpfungen gibt es hier nicht.
 
