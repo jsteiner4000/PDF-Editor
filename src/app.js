@@ -142,6 +142,7 @@ export class App {
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
   <div class="ws" role="radiogroup" aria-label="Arbeitsbereich">
+    <span class="ws-thumb" aria-hidden="true"></span>
     <button type="button" class="ws-b" id="wsPdf" data-ws="pdf" role="radio" aria-checked="false" title="PDF – Dateien öffnen, bearbeiten, ausfüllen und unterschreiben">${icon('file', 's')}<span>PDF</span><i class="ws-dot" title="Eine PDF ist geöffnet"></i></button>
     <button type="button" class="ws-b" id="wsDocs" data-ws="docs" role="radio" aria-checked="false" title="Dokumentation – Anlagendokumentation, Anleitungen und Pläne erstellen">${icon('binder', 's')}<span>Dokumentation</span><i class="ws-dot" title="Eine Dokumentation ist geöffnet"></i></button>
   </div>
@@ -327,7 +328,7 @@ export class App {
       <div class="hs-new">
         ${templates}
         <div class="tpl drop" id="continueZone">
-          <div class="tpl-thumb"><span class="big">${icon('open')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
+          <div class="tpl-thumb"><span class="big">${icon('folderopen')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
           <b>Aus PDF fortsetzen</b><span>Eine fertige Dokumentation weiterbearbeiten</span>
         </div>
       </div>
@@ -339,7 +340,7 @@ export class App {
       : `<p class="hs-sub">PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.</p>
     <section class="hs-sec" id="hsNew">
       <div class="hs-drop" id="dropZone">
-        <span class="big">${icon('open')}</span>
+        <span class="big">${icon('folderopen')}</span>
         <div><b>PDF öffnen</b><span>Datei hierher ziehen oder auswählen</span></div>
         <button class="btn primary" id="hOpen">Datei öffnen</button>
       </div>
@@ -777,6 +778,25 @@ export class App {
     this.updateHist();
     this.syncWorkspace();
   }
+  /**
+   * Schieber des Umschalters unter den aktiven Bereich gleiten lassen (Breite und Lage gemessen –
+   * die Beschriftungen sind unterschiedlich lang). Beim ersten Mal ohne Bewegung.
+   */
+  moveWsThumb() {
+    const bar = $('.ws');
+    const on = bar && $(`.ws-b[data-ws="${this.workspace}"]`, bar);
+    if (!on || !on.offsetWidth) return;
+    const thumb = $('.ws-thumb', bar);
+    thumb.style.width = on.offsetWidth + 'px';
+    thumb.style.transform = `translateX(${on.offsetLeft - 2}px)`;
+    if (!bar.classList.contains('ready'))
+      requestAnimationFrame(() => requestAnimationFrame(() => bar.classList.add('ready')));
+    if (!this.wsObserver && window.ResizeObserver) {
+      // Schrift geladen, Fenster schmaler: Schieber folgt der neuen Breite (ohne Bewegung)
+      this.wsObserver = new ResizeObserver(() => this.moveWsThumb());
+      this.wsObserver.observe(bar);
+    }
+  }
   /** Umschalter, Reiter und Akzentfarbe passend zum Arbeitsbereich. */
   syncWorkspace() {
     const ws = this.workspace;
@@ -789,6 +809,7 @@ export class App {
       b.setAttribute('aria-checked', String(on));
       b.tabIndex = on ? 0 : -1;
     }
+    this.moveWsThumb();
     // Punkt am anderen Bereich: dort ist noch etwas geöffnet
     $('#wsPdf').classList.toggle('open', ws !== 'pdf' && !!this.session);
     $('#wsDocs').classList.toggle('open', ws !== 'docs' && !!this.studio.project);
