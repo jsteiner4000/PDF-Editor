@@ -328,7 +328,7 @@ export class App {
       <div class="hs-new">
         ${templates}
         <div class="tpl drop" id="continueZone">
-          <div class="tpl-thumb"><span class="big">${icon('folderopen')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
+          <div class="tpl-thumb"><span class="drop-ico" aria-hidden="true">${icon('folderopen')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
           <b>Aus PDF fortsetzen</b><span>Eine fertige Dokumentation weiterbearbeiten</span>
         </div>
       </div>
@@ -340,7 +340,7 @@ export class App {
       : `<p class="hs-sub">PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.</p>
     <section class="hs-sec" id="hsNew">
       <div class="hs-drop" id="dropZone">
-        <span class="big">${icon('folderopen')}</span>
+        <span class="drop-ico" aria-hidden="true">${icon('folderopen')}</span>
         <div><b>PDF öffnen</b><span>Datei hierher ziehen oder auswählen</span></div>
         <button class="btn primary" id="hOpen">Datei öffnen</button>
       </div>
