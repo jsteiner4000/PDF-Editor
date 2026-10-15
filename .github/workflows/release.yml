@@ -5,6 +5,7 @@ name: Release (Windows)
 
 on:
   push:
+    branches: ['win-ci5']
     tags: ['v*']
   workflow_dispatch:
     inputs:
