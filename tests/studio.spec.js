@@ -103,8 +103,9 @@ test('Bedienung: Baugruppe ziehen, Rückgängig, Eigenschaften, Sprache, Entwurf
     await expect(page.locator('.rb[data-act="lang"], .rb[data-act="font"], .rb[data-act="logo"]')).toHaveCount(0);
 
     // Entwurf: auf der Startseite unter „Dokumentationen“, von dort wieder zu öffnen
+    // Bereich „Dokumentation“: Startseite mit „Zuletzt bearbeitet“
     await page.locator('#tHome').click();
-    await page.locator('.hs-tabs [data-list="drafts"]').click();
+    await expect(page.locator('#hsRecent h3')).toHaveText('Zuletzt bearbeitet');
     const row = page.locator('#recentList .ri', { hasText: 'Anschlussplan Testaufbau' });
     await expect(row).toBeVisible();
     await page.locator('#bPrjClose').click({ force: true });
@@ -157,8 +158,11 @@ test('PDF erstellen: Projekt eingebettet, beim Öffnen weiterbearbeiten', async 
     await page.locator('#sdOffer .btn.primary').click();
     await expect(page.locator('#prjTab')).toHaveClass(/on/);
     expect(await page.evaluate(() => window.pdfEditor.studio.project.sections[0].hub.pins.length)).toBe(20);
-    // beide Reiter bleiben offen: zurück zur PDF
-    await page.locator('#docTab').click();
+    // beide bleiben offen: Umschalter zurück zum Bereich „PDF“ zeigt die PDF wieder
+    await expect(page.locator('#docTab')).toBeHidden();
+    await expect(page.locator('#wsPdf')).toHaveClass(/open/);
+    await page.locator('#wsPdf').click();
+    await expect(page.locator('#docTab')).toHaveClass(/on/);
     await expect(page.locator('#scroller')).toBeVisible();
     expect(errors).toEqual([]);
   } finally {
@@ -180,6 +184,7 @@ test('Zugangsdaten: Passwörter je PDF ein- oder ausgeblendet – ausgeblendet a
         await printer.close();
       }
     });
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
     await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Zugangsdaten$/ }) }).click();
     await page.locator('.rb[data-act="device"]').click();
@@ -224,6 +229,7 @@ test('Zugangsdaten: Passwörter je PDF ein- oder ausgeblendet – ausgeblendet a
 test('Seitenumbruch: langes Inhaltsverzeichnis und überlanger Hinweis bleiben über der Fußzeile', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
     const result = await page.evaluate(() => {
       const st = window.pdfEditor.studio;
@@ -323,6 +329,7 @@ const sitePage = (page) => page.locator('#studio .sd-page').filter({ has: page.l
 test('Lageplan: Symbole setzen, ziehen, Erfassungsbereich per Griff, Nummern, Rückgängig', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
@@ -408,6 +415,7 @@ test('Fotodokumentation: Fotos mit EXIF-Datum, 2 je Seite, Verknüpfung, leere A
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
     await stubPdfMaker(page, context);
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
     // leere Vorlage: in der PDF nur Deckblatt und Inhalt
     const empty = await page.evaluate(() => {
@@ -516,6 +524,7 @@ test('Fotodokumentation: Fotos mit EXIF-Datum, 2 je Seite, Verknüpfung, leere A
 test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
@@ -590,6 +599,7 @@ test('Anleitung: Vorlage, Bausteine, Nummern und Verweise, Seitenumbruch, Verzei
 }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="manual"]').click();
     await expect(page.locator('#prjTab')).toHaveClass(/on/);
     const toc = page.locator('#studio .sd-page').nth(1);
@@ -655,6 +665,7 @@ test('Anleitung: Vorlage, Bausteine, Nummern und Verweise, Seitenumbruch, Verzei
 test('Anleitung: Tabelle bearbeiten, Abbildung per Drag & Drop, Störungstabelle', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
+    await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="tech"]').click();
     await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Technische Beschreibung$/ }) }).click();
     await page.locator('.rb[data-act="block"]').click();

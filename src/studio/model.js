@@ -107,12 +107,12 @@ export const langsOf = (project) => (project.lang === 'de+en' ? ['de', 'en'] : [
 
 /* ---------- Anschlussplan ---------- */
 
-/** Leitungsarten wie im Anschlussplan-Vorbild (Farben exakt übernommen). */
+/** Leitungsarten eines neuen Plans (neutral benannt, im Plan frei änderbar). */
 export const DEFAULT_CATEGORIES = () => [
-  { id: 'sig', name: T('Signalleitung', 'Signal line'), color: '#1f3b4d' },
-  { id: 'ls', name: T('Lichtschranke', 'Light barrier'), color: '#15803d' },
-  { id: 'led', name: T('Leuchten', 'Lights'), color: '#b91c1c' },
-  { id: 'pwr', name: T('Ton und Versorgung', 'Sound and supply'), color: '#b45309' },
+  { id: 'sig', name: T('Signal', 'Signal'), color: '#1f3b4d' },
+  { id: 'ls', name: T('Eingang', 'Input'), color: '#15803d' },
+  { id: 'led', name: T('Ausgang', 'Output'), color: '#b91c1c' },
+  { id: 'pwr', name: T('Versorgung', 'Supply'), color: '#b45309' },
 ];
 
 /**
@@ -570,7 +570,7 @@ export function newProject(templateId = 'documentation', opts = {}) {
     lang: opts.lang || 'de',
     font: opts.font || 'helvetica',
     title: template.title,
-    company: { name: 'Doitronic', tagline: T('Sicherheits- und Kommunikationstechnik', 'Security and communication technology'), logo: null },
+    company: { name: '', tagline: T('', ''), logo: null },
     meta: {
       customer: '',
       address: '',

@@ -87,6 +87,20 @@ function readStripSetting() {
   }
 }
 
+/**
+ * Arbeitsbereiche: „PDF“ (Dateien öffnen, bearbeiten, unterschreiben) und „Dokumentation“
+ * (Projektdokumentation erstellen). Jeder hat seine Startseite, seinen Reiter und seine Akzentfarbe;
+ * Geöffnetes bleibt beim Umschalten erhalten. Der zuletzt genutzte Bereich wird gemerkt.
+ */
+const WS_KEY = 'pdfix.workspace';
+function readWorkspace() {
+  try {
+    return localStorage.getItem(WS_KEY) === 'docs' ? 'docs' : 'pdf';
+  } catch {
+    return 'pdf';
+  }
+}
+
 /** Werkzeuge mit eigener Befehlsleiste: Sie ersetzt das Werkzeugband, solange sie aktiv sind. */
 const MODE_TOOLS = new Set(['edit', 'organize', 'formdesign']);
 
@@ -115,6 +129,7 @@ export class App {
     this.fontsPanel = new FontsPanel(this);
     this.studio = new Studio(this);
     this.view = 'home';
+    this.workspace = readWorkspace();
     this.build();
     this.loadFonts();
     this.showHome();
@@ -126,8 +141,13 @@ export class App {
   <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PD<em>Fix</em></span></div>
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
+  <div class="ws" role="radiogroup" aria-label="Arbeitsbereich">
+    <button type="button" class="ws-b" id="wsPdf" data-ws="pdf" role="radio" aria-checked="false" title="PDF – Dateien öffnen, bearbeiten, ausfüllen und unterschreiben">${icon('file', 's')}<span>PDF</span><i class="ws-dot" title="Eine PDF ist geöffnet"></i></button>
+    <button type="button" class="ws-b" id="wsDocs" data-ws="docs" role="radio" aria-checked="false" title="Dokumentation – Anlagendokumentation, Anleitungen und Pläne erstellen">${icon('binder', 's')}<span>Dokumentation</span><i class="ws-dot" title="Eine Dokumentation ist geöffnet"></i></button>
+  </div>
+  <div class="sep"></div>
   <nav class="tabs" id="tabs" aria-label="Geöffnet">
-    <button class="tab on" id="tHome" title="Startseite">${icon('home', 's')}Start</button>
+    <button class="tab on" id="tHome" title="Startseite" aria-label="Startseite">${icon('home', 's')}</button>
     <div class="doctab hidden" id="docTab" role="button" tabindex="0"><span class="ti c1">${icon('file', 's')}</span><span class="nm" id="docName"></span><span class="dot hidden" id="dirtyDot" title="Ungespeicherte Änderungen"></span><button class="btn ic" id="bClose" title="Dokument schließen">${icon('close', 's')}</button></div>
     <div class="doctab hidden" id="prjTab" role="button" tabindex="0"><span class="ti c6">${icon('binder', 's')}</span><span class="nm" id="prjName"></span><button class="btn ic" id="bPrjClose" title="Dokumentation schließen">${icon('close', 's')}</button></div>
   </nav>
@@ -171,6 +191,16 @@ export class App {
       this.closeDocument();
     });
     on('tHome', 'click', () => this.showStart());
+    for (const b of $$('.ws-b')) {
+      b.addEventListener('click', () => this.switchWorkspace(b.dataset.ws));
+      b.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return;
+        ev.preventDefault();
+        const other = b.dataset.ws === 'pdf' ? 'docs' : 'pdf';
+        $(`.ws-b[data-ws="${other}"]`).focus();
+        this.switchWorkspace(other);
+      });
+    }
     on('prjTab', 'click', () => this.showStudio());
     on('bPrjClose', 'click', (ev) => {
       ev.stopPropagation();
@@ -268,35 +298,50 @@ export class App {
     });
     window.addEventListener('drop', (ev) => this.onDrop(ev));
   }
-  /** Startseite wie in Acrobat/Office: Navigation links, „Neu“ mit Vorlagen, Werkzeuge, Zuletzt verwendet. */
+  /**
+   * Startseite des Arbeitsbereichs (wie in Acrobat/Office: Navigation links). „PDF“: öffnen,
+   * Werkzeuge, zuletzt geöffnete Dateien. „Dokumentation“: Vorlagen, aus einer PDF fortsetzen,
+   * zuletzt bearbeitete Dokumentationen.
+   */
   async showHome() {
     const home = $('#home');
+    const docs = this.workspace === 'docs';
     const hour = new Date().getHours();
     const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Guten Tag' : 'Guten Abend';
-    const recentKind = this.recentKind || 'files';
+    const nav = docs
+      ? `<button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
+    <button class="hs-item" data-go="hsNew">${icon('plus')}Neue Dokumentation</button>
+    <button class="hs-item" id="hNavContinue">${icon('open')}Aus PDF fortsetzen</button>
+    <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt bearbeitet</button>`
+      : `<button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
+    <button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
+    <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt geöffnet</button>`;
     const templates = STUDIO_TEMPLATES.map(
       (t) =>
         `<button class="tpl" data-tpl="${t.id}"><div class="tpl-thumb" data-thumb="${t.id}"></div><b>${escapeHtml(t.title)}</b><span>${escapeHtml(t.desc)}</span></button>`,
     ).join('');
-    home.innerHTML = `
-<div class="hs">
-  <nav class="hs-nav" aria-label="Startseite">
-    <button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
-    <button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
-    <button class="hs-item" data-go="hsNew">${icon('plus')}Neu erstellen</button>
-    <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt verwendet</button>
-  </nav>
-  <div class="hs-main" id="hsMain"><div class="hs-in">
-    <h2 class="hs-greet" id="hsTop">${greet}</h2>
-    <p class="hs-sub">PDFs bearbeiten, ordnen und unterschreiben – und Dokumentationen erstellen.</p>
+    const body = docs
+      ? `<p class="hs-sub">Anlagendokumentationen, Anleitungen und Pläne erstellen – als PDF, jederzeit weiterbearbeitbar.</p>
     <section class="hs-sec" id="hsNew">
-      <h3>Neu</h3>
+      <h3>Neue Dokumentation</h3>
       <div class="hs-new">
-        <div class="tpl drop" id="dropZone">
-          <div class="tpl-thumb"><span class="big">${icon('open')}</span><span>Datei auswählen oder hierher ziehen</span><button class="btn primary" id="hOpen">Datei öffnen</button></div>
-          <b>PDF öffnen</b><span>Bearbeiten, ausfüllen, unterschreiben</span>
-        </div>
         ${templates}
+        <div class="tpl drop" id="continueZone">
+          <div class="tpl-thumb"><span class="big">${icon('open')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
+          <b>Aus PDF fortsetzen</b><span>Eine fertige Dokumentation weiterbearbeiten</span>
+        </div>
+      </div>
+    </section>
+    <section class="hs-sec recent" id="hsRecent">
+      <h3>Zuletzt bearbeitet</h3>
+      <div class="rl" id="recentList"></div>
+    </section>`
+      : `<p class="hs-sub">PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.</p>
+    <section class="hs-sec" id="hsNew">
+      <div class="hs-drop" id="dropZone">
+        <span class="big">${icon('open')}</span>
+        <div><b>PDF öffnen</b><span>Datei hierher ziehen oder auswählen</span></div>
+        <button class="btn primary" id="hOpen">Datei öffnen</button>
       </div>
     </section>
     <section class="hs-sec">
@@ -309,26 +354,40 @@ export class App {
       </div>
     </section>
     <section class="hs-sec recent" id="hsRecent">
-      <div class="hs-tabs" role="tablist" aria-label="Zuletzt verwendet">
-        <button role="tab" data-list="files"${recentKind === 'files' ? ' class="on"' : ''} aria-selected="${recentKind === 'files'}">Zuletzt geöffnet</button>
-        <button role="tab" data-list="drafts"${recentKind === 'drafts' ? ' class="on"' : ''} aria-selected="${recentKind === 'drafts'}">Dokumentationen</button>
-      </div>
+      <h3>Zuletzt geöffnet</h3>
       <div class="rl" id="recentList"></div>
-    </section>
+    </section>`;
+    home.innerHTML = `
+<div class="hs">
+  <nav class="hs-nav" aria-label="Startseite">
+    ${nav}
+  </nav>
+  <div class="hs-main" id="hsMain"><div class="hs-in">
+    <h2 class="hs-greet" id="hsTop">${greet}</h2>
+    ${body}
   </div></div>
 </div>`;
-    $('#hOpen').addEventListener('click', () => this.openDialog());
-    $('#hNavOpen').addEventListener('click', () => this.openDialog());
-    // Kacheln: PDF wählen und danach direkt mit dem passenden Werkzeug loslegen
-    for (const [id, tool] of [
-      ['hEdit', 'edit'],
-      ['hImages', 'edit'],
-      ['hPages', 'organize'],
-    ])
-      $('#' + id).addEventListener('click', () => this.openThenTool(tool));
-    $('#hSig').addEventListener('click', (ev) => SignatureTool.of(this.edit).openPop(ev.currentTarget));
-    for (const btn of $$('.tpl[data-tpl]', home))
-      btn.addEventListener('click', () => this.newProject(btn.dataset.tpl));
+    if (docs) {
+      for (const id of ['hContinue', 'hNavContinue']) $('#' + id).addEventListener('click', () => this.continueDocumentation());
+      for (const btn of $$('.tpl[data-tpl]', home)) btn.addEventListener('click', () => this.newProject(btn.dataset.tpl));
+      // Vorschaubilder der Vorlagen erst, wenn der Rechner Zeit hat (Start bleibt schnell)
+      const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+      idle(() => {
+        for (const el of $$('.tpl-thumb[data-thumb]', home))
+          if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', templatePreview(el.dataset.thumb));
+      });
+    } else {
+      $('#hOpen').addEventListener('click', () => this.openDialog());
+      $('#hNavOpen').addEventListener('click', () => this.openDialog());
+      // Kacheln: PDF wählen und danach direkt mit dem passenden Werkzeug loslegen
+      for (const [id, tool] of [
+        ['hEdit', 'edit'],
+        ['hImages', 'edit'],
+        ['hPages', 'organize'],
+      ])
+        $('#' + id).addEventListener('click', () => this.openThenTool(tool));
+      $('#hSig').addEventListener('click', (ev) => SignatureTool.of(this.edit).openPop(ev.currentTarget));
+    }
     const main = $('#hsMain');
     for (const item of $$('.hs-item[data-go]', home))
       item.addEventListener('click', () => {
@@ -337,34 +396,19 @@ export class App {
         else main.scrollTop = target.offsetTop - 24;
         for (const other of $$('.hs-item', home)) other.classList.toggle('on', other === item);
       });
-    const dropZone = $('#dropZone');
-    dropZone.addEventListener('dragenter', () => dropZone.classList.add('over'));
-    dropZone.addEventListener('dragleave', (ev) => {
-      if (!dropZone.contains(ev.relatedTarget)) dropZone.classList.remove('over');
+    const zone = $(docs ? '#continueZone' : '#dropZone');
+    zone.addEventListener('dragenter', () => zone.classList.add('over'));
+    zone.addEventListener('dragleave', (ev) => {
+      if (!zone.contains(ev.relatedTarget)) zone.classList.remove('over');
     });
-    dropZone.addEventListener('drop', () => dropZone.classList.remove('over'));
-    for (const tab of $$('.hs-tabs button', home))
-      tab.addEventListener('click', () => {
-        for (const other of $$('.hs-tabs button', home)) {
-          other.classList.toggle('on', other === tab);
-          other.setAttribute('aria-selected', String(other === tab));
-        }
-        this.renderRecent(tab.dataset.list);
-      });
-    // Vorschaubilder der Vorlagen erst, wenn der Rechner Zeit hat (Start bleibt schnell)
-    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
-    idle(() => {
-      for (const el of $$('.tpl-thumb[data-thumb]', home))
-        if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', templatePreview(el.dataset.thumb));
-    });
-    await this.renderRecent(recentKind);
+    zone.addEventListener('drop', () => zone.classList.remove('over'));
+    await this.renderRecent(docs ? 'drafts' : 'files');
   }
-  /** Liste „Zuletzt geöffnet“ (PDF-Dateien) bzw. „Dokumentationen“ (Entwürfe aus „Neu erstellen“). */
+  /** Liste „Zuletzt geöffnet“ (PDF-Dateien) bzw. „Zuletzt bearbeitet“ (Dokumentationen). */
   async renderRecent(kind) {
     const list = $('#recentList');
     if (!list) return;
     const token = (this._recentToken = (this._recentToken || 0) + 1);
-    this.recentKind = kind;
     const fmt = (time) =>
       new Date(time).toLocaleString('de-DE', {
         day: '2-digit',
@@ -393,14 +437,14 @@ export class App {
               open: () => this.openHandle(item.handle),
               remove: () => idbDelete('recent', item.name),
             }));
-    if (token !== this._recentToken) return; // inzwischen anderer Reiter gewählt
+    if (token !== this._recentToken) return; // inzwischen neu aufgebaut
     list.innerHTML = '';
     if (!items.length) {
       list.appendChild(
         htmlToElement(
           `<div class="rl-empty">${
             kind === 'drafts'
-              ? 'Noch keine Dokumentation erstellt – oben unter „Neu“ eine Vorlage wählen.'
+              ? 'Noch keine Dokumentation – oben eine Vorlage wählen.'
               : 'Noch keine Dateien geöffnet. Zuletzt geöffnete PDFs erscheinen hier.'
           }</div>`,
         ),
@@ -626,11 +670,9 @@ export class App {
         $('#bSave').disabled = true;
         $('#bPrint').disabled = true;
         document.title = 'PDFix';
-        if (this.studio.project) this.setView('studio');
-        else {
-          this.showHome();
-          this.setView('home');
-        }
+        // im Arbeitsbereich „PDF“ bleiben – eine offene Dokumentation läuft im anderen Bereich weiter
+        this.showHome();
+        this.setView('home');
       }
     }
   }
@@ -641,6 +683,56 @@ export class App {
     if (this.view === 'studio') await this.studio.flush();
     this.showHome();
     this.setView('home');
+  }
+  /**
+   * Arbeitsbereich wechseln: dort weiter, wo man war (geöffnetes Dokument bzw. Startseite). Nichts
+   * wird geschlossen – eine offene PDF bleibt beim Wechsel zur Dokumentation geöffnet und umgekehrt.
+   */
+  async switchWorkspace(ws) {
+    if (ws !== 'pdf' && ws !== 'docs') return;
+    if (ws === this.workspace) {
+      // erneuter Klick auf den aktiven Bereich: zu seiner Startseite bzw. seinem Dokument
+      if (this.view === 'home') return;
+      return this.showStart();
+    }
+    await this.finishEdit();
+    if (this.view === 'studio') await this.studio.flush();
+    if (ws === 'pdf' && this.session) return this.showDocument();
+    if (ws === 'docs' && this.studio.project) return this.showStudio();
+    this.workspace = ws;
+    await this.showHome();
+    this.setView('home');
+  }
+  /** Mit PDFix erstellte PDF wählen (oder abgelegte `file`) und die Dokumentation darin weiterbearbeiten. */
+  async continueDocumentation(file = null) {
+    let handle = null;
+    if (!file) {
+      if (window.showOpenFilePicker)
+        try {
+          [handle] = await window.showOpenFilePicker({
+            types: [{ description: 'PDF-Dokumente', accept: { 'application/pdf': ['.pdf'] } }],
+          });
+          file = handle ? await handle.getFile() : null;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+          throw err;
+        }
+      else file = await pickFiles('.pdf,application/pdf');
+    }
+    if (!file) return;
+    const bytes = new Uint8Array(await withBusy(() => file.arrayBuffer()));
+    const found = await this.studio.continueFromPdf(bytes);
+    if (found !== 'none') return;
+    const choice = await showDialog({
+      title: 'Keine Dokumentation in dieser PDF',
+      icon: 'info',
+      body: `<b>${escapeHtml(file.name)}</b> wurde nicht mit PDFix als Dokumentation erstellt. Sie können die Datei im Bereich „PDF“ öffnen und bearbeiten.`,
+      buttons: [
+        { label: 'Abbrechen', value: false },
+        { label: 'Als PDF öffnen', primary: true, value: true },
+      ],
+    });
+    if (choice) await (handle ? this.openHandle(handle) : this.openFile(file, null));
   }
   /** Reiter der Dokumentation: zurück zu „Dokumentation erstellen“. */
   async showStudio() {
@@ -668,6 +760,8 @@ export class App {
    */
   setView(view) {
     this.view = view;
+    if (view === 'doc') this.workspace = 'pdf';
+    else if (view === 'studio') this.workspace = 'docs';
     for (const v of ['home', 'doc', 'studio']) this.root.classList.toggle('view-' + v, view === v);
     $('#home').classList.toggle('hidden', view !== 'home');
     $('#tHome').classList.toggle('on', view === 'home');
@@ -681,6 +775,25 @@ export class App {
     $('#bSave').title = studio ? 'PDF erstellen (Strg+S)' : 'Speichern (Strg+S)';
     this.renderRibbon();
     this.updateHist();
+    this.syncWorkspace();
+  }
+  /** Umschalter, Reiter und Akzentfarbe passend zum Arbeitsbereich. */
+  syncWorkspace() {
+    const ws = this.workspace;
+    try {
+      localStorage.setItem(WS_KEY, ws);
+    } catch {}
+    document.documentElement.dataset.ws = ws;
+    for (const b of $$('.ws-b')) {
+      const on = b.dataset.ws === ws;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+    // Punkt am anderen Bereich: dort ist noch etwas geöffnet
+    $('#wsPdf').classList.toggle('open', ws !== 'pdf' && !!this.session);
+    $('#wsDocs').classList.toggle('open', ws !== 'docs' && !!this.studio.project);
+    $('#docTab').classList.toggle('hidden', !(this.session && ws === 'pdf'));
+    $('#prjTab').classList.toggle('hidden', !(this.studio.project && ws === 'docs'));
   }
   /**
    * Werkzeugband: Werkzeuge der PDF bzw. Befehle von „Dokumentation erstellen“. In einem Werkzeug mit
@@ -754,6 +867,8 @@ export class App {
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
     if (isImage && this.view === 'studio') return this.studio.dropImages(files.filter((f) => /^image\//.test(f.type)));
+    // Arbeitsbereich „Dokumentation“: eine abgelegte PDF ist eine fertige Dokumentation zum Fortsetzen
+    if (isPdf && this.workspace === 'docs' && this.view !== 'doc') return this.continueDocumentation(file);
     const inDoc = this.session && this.view === 'doc';
     if (inDoc && isImage) return this.edit.dropImage(file, ev);
     if (inDoc && isPdf && this.tool === 'organize')

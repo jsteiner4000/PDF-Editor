@@ -54,7 +54,7 @@ test('Abbrechen im Öffnen-Dialog: Startseite bleibt, kein Werkzeug', async ({ b
 
 test('Startseite: neuer Untertitel, kein „komplett offline“', async ({ browser }) => {
   const { page, context } = await launch(browser, 'neubau');
-  await expect(page.locator('#home .hs-sub')).toContainText('PDFs bearbeiten, ordnen und unterschreiben');
+  await expect(page.locator('#home .hs-sub')).toContainText('PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben');
   await expect(page.locator('#home')).not.toContainText('offline');
   await context.close();
 });

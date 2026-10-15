@@ -113,6 +113,22 @@
   --page-ring: rgba(0, 0, 0, 0.5);
   color-scheme: dark;
 }
+/* Arbeitsbereich „Dokumentation“: eigene Akzentfarbe (Petrol) – man sieht sofort, wo man ist.
+   Kontrast weiße Schrift auf --acc ≥ 4,5 : 1 in beiden Darstellungen. */
+:root[data-ws='docs'] {
+  --acc: #0e7a6e;
+  --acc-h: #0b6a60;
+  --acc-soft: #e2f4f1;
+  --acc-line: #7ccbbf;
+  --acc-ink: #0e7a6e;
+}
+:root[data-theme='dark'][data-ws='docs'] {
+  --acc: #0f8073;
+  --acc-h: #12907f;
+  --acc-soft: #12302c;
+  --acc-line: #2f7d72;
+  --acc-ink: #5fd3c4;
+}
 /* bis das Skript die Darstellung gesetzt hat: kein heller Blitz bei dunklem System */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) body {
@@ -305,6 +321,68 @@ kbd {
 .btn .caret {
   margin-left: -2px;
   opacity: 0.6;
+}
+/* Umschalter der Arbeitsbereiche (Segmente wie in macOS/Office): PDF | Dokumentation */
+.ws {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--press);
+  flex: none;
+}
+.ws-b {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink2);
+  font-weight: 550;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.14s var(--ease),
+    color 0.14s var(--ease),
+    box-shadow 0.14s var(--ease);
+}
+.ws-b:hover {
+  color: var(--ink);
+}
+.ws-b[aria-checked='true'] {
+  background: var(--panel);
+  color: var(--acc-ink);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh1);
+}
+.ws-b:active {
+  transform: translateY(1px);
+}
+.ws-b:focus-visible {
+  outline: 2px solid var(--acc-line);
+  outline-offset: 1px;
+}
+/* im anderen Bereich ist etwas geöffnet */
+.ws-dot {
+  display: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink3);
+}
+.ws-b.open .ws-dot {
+  display: block;
+}
+#tHome {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
 }
 /* Reiter wie in Acrobat: „Start“ und das geöffnete Dokument bzw. Projekt */
 .tabs {
@@ -1702,6 +1780,53 @@ body.editing #nav {
   height: 30px;
   padding: 0 12px;
 }
+/* Startseite „PDF“: breite Ablagefläche */
+.hs-drop {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 24px;
+  border: 1.5px dashed var(--line2);
+  border-radius: 12px;
+  background: var(--panel);
+  transition:
+    border-color 0.14s var(--ease),
+    background-color 0.14s var(--ease);
+}
+.hs-drop .big {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+}
+.hs-drop > div {
+  flex: 1;
+  min-width: 0;
+}
+.hs-drop b {
+  display: block;
+  font-size: 15px;
+  font-weight: 650;
+}
+.hs-drop span {
+  color: var(--ink3);
+}
+.hs-drop.over {
+  border-color: var(--acc);
+  background: var(--acc-soft);
+}
+.hs-drop .btn.primary {
+  height: 36px;
+  padding: 0 16px;
+}
+.drop .btn.outline {
+  height: 30px;
+  padding: 0 12px;
+}
 .feats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -1759,44 +1884,7 @@ button.feat:focus-visible {
   font-size: 12px;
   line-height: 1.45;
 }
-/* Zuletzt verwendet: Reiter und Tabelle wie in Office */
-.hs-tabs {
-  display: flex;
-  gap: 18px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-}
-.hs-tabs button {
-  position: relative;
-  height: 34px;
-  padding: 0 2px;
-  border: 0;
-  background: none;
-  color: var(--ink3);
-  font-weight: 500;
-  cursor: pointer;
-}
-.hs-tabs button:hover {
-  color: var(--ink);
-}
-.hs-tabs button.on {
-  color: var(--ink);
-  font-weight: 600;
-}
-.hs-tabs button.on::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--acc);
-}
-.hs-tabs button:focus-visible {
-  outline: 2px solid var(--acc-line);
-  outline-offset: 2px;
-}
+/* Zuletzt verwendet: Tabelle wie in Office */
 .rl {
   background: var(--panel);
   border-radius: 10px;

@@ -1,7 +1,7 @@
 {
   "name": "pdf-editor",
   "productName": "PDFix",
-  "version": "2.8.0",
+  "version": "2.9.0",
   "private": true,
   "description": "PDFix: PDFs bearbeiten, ordnen und unterschreiben – Desktop-App für Windows (Electron).",
   "author": {

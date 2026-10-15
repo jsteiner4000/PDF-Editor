@@ -287,21 +287,26 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
           .items.filter((i) => i.visible)
           .map((i) => i.label),
       );
-      expect(await page.locator('.menubar .mb:not(.mb-all)').allInnerTexts()).toEqual(native);
-      // Klick öffnet das Untermenü (bis es geschlossen wird, gilt der Knopf als aufgeklappt)
-      const datei = page.locator('.menubar .mb', { hasText: 'Datei' });
-      await datei.click();
-      await expect(datei).toHaveAttribute('aria-expanded', 'true');
-      await app.evaluate(({ Menu, BrowserWindow }) =>
-        Menu.getApplicationMenu().items[0].submenu.closePopup(BrowserWindow.getAllWindows()[0]),
-      );
-      await expect(datei).toHaveAttribute('aria-expanded', 'false');
+      expect(await page.locator('.menubar .mb:not(.mb-all)').allTextContents()).toEqual(native);
+      // Klick öffnet das Untermenü (bis es geschlossen wird, gilt der Knopf als aufgeklappt). Auf
+      // kleinen Bildschirmen (z. B. 1024 px im CI) steht statt der fünf Menüs ein Menüknopf.
+      const compact = await page.locator('.menubar .mb-all').isVisible();
+      const first = compact ? page.locator('.menubar .mb-all') : page.locator('.menubar .mb', { hasText: 'Datei' });
+      await first.click();
+      await expect(first).toHaveAttribute('aria-expanded', 'true');
+      await app.evaluate(({ Menu, BrowserWindow }, compact) => {
+        const menu = Menu.getApplicationMenu();
+        (compact ? menu : menu.items[0].submenu).closePopup(BrowserWindow.getAllWindows()[0]);
+      }, compact);
+      await expect(first).toHaveAttribute('aria-expanded', 'false');
       // F10 setzt den Fokus in die Menüleiste, Pfeil rechts wechselt, Esc kehrt zurück
       await page.locator('#scroller').focus();
       await page.keyboard.press('F10');
-      await expect(datei).toBeFocused();
-      await page.keyboard.press('ArrowRight');
-      await expect(page.locator('.menubar .mb', { hasText: 'Bearbeiten' })).toBeFocused();
+      await expect(first).toBeFocused();
+      if (!compact) {
+        await page.keyboard.press('ArrowRight');
+        await expect(page.locator('.menubar .mb', { hasText: 'Bearbeiten' })).toBeFocused();
+      }
       await page.keyboard.press('Escape');
       await expect(page.locator('#scroller')).toBeFocused();
     }

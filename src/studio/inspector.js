@@ -47,7 +47,7 @@ const KIND_TITLE = {
 };
 
 /** Vorschläge für Fernzugriff-Dienste (frei änderbar). */
-const SERVICES = ['DDNS', 'Portfreigabe', 'VPN', 'Hik-Connect', 'DMSS (Dahua)', 'Telenot compasX', 'Ajax PRO', 'TeamViewer', 'AnyDesk'];
+const SERVICES = ['DDNS', 'Portfreigabe', 'VPN', 'Hersteller-Cloud', 'Fernwartung', 'Weboberfläche'];
 
 export class Inspector {
   constructor(studio, head, body) {
@@ -307,7 +307,10 @@ export class Inspector {
       remove.addEventListener('click', () => studio.change('Logo entfernt', () => (p.company.logo = null), { inspector: true }));
       company.appendChild(remove);
     }
-    company.append(this.text('Firmenname', p.company, 'name'), this.bi('Zusatz', p.company, 'tagline'));
+    company.append(
+      this.text('Firmenname', p.company, 'name', { placeholder: 'Wird in der Kopfzeile jeder Seite gezeigt' }),
+      this.bi('Zusatz', p.company, 'tagline', { placeholder: 'z. B. Fachgebiet oder Abteilung' }),
+    );
     const m = p.meta;
     const two = (a, b) => {
       const el = htmlToElement('<div class="sd-two"></div>');
@@ -429,9 +432,9 @@ export class Inspector {
       this.bi('Kurzname', s.hub, 'short', {
         id: 'hubshort' + s.id,
         placeholder: tx(s.hub.name, 'de'),
-        hint: 'Für die Überschrift des Klemmenplans, z. B. „Arduino“.',
+        hint: 'Für die Überschrift des Klemmenplans, z. B. „Zentrale“.',
       }),
-      this.bi('Typ', s.hub, 'model', { id: 'hubmodel' + s.id, placeholder: 'z. B. ATmega328P' }),
+      this.bi('Typ', s.hub, 'model', { id: 'hubmodel' + s.id, placeholder: 'Hersteller und Modell' }),
       this.bi('Hinweis in der Steuerung', s.hub, 'note', { id: 'hubnote' + s.id, multiline: true }),
     );
   }
@@ -545,7 +548,7 @@ export class Inspector {
     const lang = langsOf(this.project)[0];
     const two = htmlToElement('<div class="sd-two"></div>');
     two.append(
-      this.text('Pin', pin, 'name', { id: 'pin' + pin.id, placeholder: 'z. B. D2' }),
+      this.text('Pin', pin, 'name', { id: 'pin' + pin.id, placeholder: 'z. B. E1' }),
       this.text('Im Plan', pin, 'label', { id: 'pinlabel' + pin.id, placeholder: pin.name || 'wie Pin' }),
     );
     this.group(
@@ -558,7 +561,7 @@ export class Inspector {
         pin.box,
         (v) => studio.change('Baugruppe zugeordnet', () => (pin.box = v), { inspector: true }),
       ),
-      this.bi('Angeschlossen an', pin, 'terminal', { placeholder: 'z. B. Display TX' }),
+      this.bi('Angeschlossen an', pin, 'terminal', { placeholder: 'z. B. Klemme 1' }),
       this.bi('Bemerkung', pin, 'note'),
     );
     const index = s.hub.pins.indexOf(pin);
@@ -762,7 +765,7 @@ Object.assign(Inspector.prototype, {
     );
     this.group(
       'Gerätedaten',
-      this.text('Hersteller / Typ', d, 'model', { placeholder: 'z. B. Hikvision DS-7608NXI' }),
+      this.text('Hersteller / Typ', d, 'model', { placeholder: 'Hersteller und Modell' }),
       this.pair(this.mono('Seriennummer', d, 'serial'), this.mono('MAC-Adresse', d, 'mac', { placeholder: 'AA:BB:CC:DD:EE:FF' })),
       this.pair(this.mono('Firmware', d, 'firmware'), this.bi('Standort', d, 'location')),
     );
@@ -787,14 +790,14 @@ Object.assign(Inspector.prototype, {
   },
 
   remoteForm(s, r) {
-    const service = this.text('Dienst', r, 'service', { placeholder: 'z. B. DDNS, Hik-Connect, Portfreigabe' });
+    const service = this.text('Dienst', r, 'service', { placeholder: 'z. B. DDNS, VPN, Portfreigabe' });
     const list = htmlToElement(`<datalist id="sdServices">${SERVICES.map((v) => `<option value="${escapeHtml(v)}">`).join('')}</datalist>`);
     service.querySelector('input').setAttribute('list', 'sdServices');
     service.appendChild(list);
     this.group(
       'Fernzugriff',
       service,
-      this.mono('Adresse / ID', r, 'address', { placeholder: 'z. B. kunde.ddns.net:8443 oder Geräte-ID' }),
+      this.mono('Adresse / ID', r, 'address', { placeholder: 'z. B. name.ddns.net:8443 oder Geräte-ID' }),
       this.pair(this.mono('Benutzer', r, 'user'), this.secret('Passwort', r, 'password')),
       this.bi('Bemerkung', r, 'note'),
     );

@@ -53,6 +53,7 @@ import { PdfRenderer } from '../render/pdf-renderer.js';
 import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
 import { ensureBarlow } from './fonts.js';
 import { TooLargeError, assertPrintable, canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
+import { PDFDocument } from 'pdf-lib';
 import { Inspector } from './inspector.js';
 import { symbolIconSvg } from './site.js';
 
@@ -232,12 +233,9 @@ export class Studio {
     this.doc = null;
     if (this.root) $('#sdPages').innerHTML = '';
     $('#prjTab').classList.add('hidden');
-    if (this.app.view === 'home') this.app.renderRecent(this.app.recentKind || 'files');
-    else if (this.app.session) this.app.showDocument();
-    else {
-      await this.app.showHome();
-      this.app.setView('home');
-    }
+    // im Arbeitsbereich „Dokumentation“ bleiben (eine offene PDF läuft im Bereich „PDF“ weiter)
+    await this.app.showHome();
+    this.app.setView('home');
   }
 
   /** Stand für den Verlauf: ohne Bilder (getrennt gehalten) und ohne Änderungszeit. */
@@ -296,26 +294,48 @@ export class Studio {
     const [go, hide] = bar.querySelectorAll('button');
     hide.addEventListener('click', () => bar.remove());
     go.addEventListener('click', async () => {
-      const found = readProject(session.doc);
-      if (!found) return toast('Die Projektdaten in dieser PDF sind nicht lesbar.', 'err', 5000);
-      if (found.changed) {
-        const ok = await showDialog({
-          title: 'Dokumentation weiterbearbeiten',
-          icon: 'info',
-          body: 'Die PDF wurde nach dem Erstellen verändert. Diese Änderungen sind im Projekt nicht enthalten – sie fehlen, wenn die PDF neu erstellt wird.',
-          buttons: [
-            { label: 'Abbrechen', value: false },
-            { label: 'Weiterbearbeiten', primary: true, value: true },
-          ],
-        });
-        if (!ok) return;
-      }
-      if (found.project.sections.some((s) => s.secretsRemoved))
-        toast('Diese PDF wurde ohne Passwörter erstellt – sie fehlen im Projekt.', 'warn', 6000);
-      if (!(await this.openImported(found.project))) return;
-      bar.remove();
+      if (await this.importFrom(session.doc)) bar.remove();
     });
     $('#center').appendChild(bar);
+  }
+
+  /** Projekt aus einer geladenen PDF (pdf-lib) übernehmen – mit den nötigen Rückfragen. */
+  async importFrom(doc) {
+    const found = readProject(doc);
+    if (!found) {
+      toast('Die Projektdaten in dieser PDF sind nicht lesbar.', 'err', 5000);
+      return false;
+    }
+    if (found.changed) {
+      const ok = await showDialog({
+        title: 'Dokumentation weiterbearbeiten',
+        icon: 'info',
+        body: 'Die PDF wurde nach dem Erstellen verändert. Diese Änderungen sind im Projekt nicht enthalten – sie fehlen, wenn die PDF neu erstellt wird.',
+        buttons: [
+          { label: 'Abbrechen', value: false },
+          { label: 'Weiterbearbeiten', primary: true, value: true },
+        ],
+      });
+      if (!ok) return false;
+    }
+    if (found.project.sections.some((s) => s.secretsRemoved))
+      toast('Diese PDF wurde ohne Passwörter erstellt – sie fehlen im Projekt.', 'warn', 6000);
+    return this.openImported(found.project);
+  }
+
+  /**
+   * „Aus PDF fortsetzen“ (Arbeitsbereich Dokumentation): die Bytes einer PDF prüfen und die darin
+   * gespeicherte Dokumentation öffnen. Ergebnis: 'opened', 'cancel' oder 'none' (keine Dokumentation).
+   */
+  async continueFromPdf(bytes) {
+    let doc;
+    try {
+      doc = await withBusy(() => PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false }));
+    } catch {
+      return 'none';
+    }
+    if (!hasProject(doc)) return 'none';
+    return (await this.importFrom(doc)) ? 'opened' : 'cancel';
   }
 
   /**

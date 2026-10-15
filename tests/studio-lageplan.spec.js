@@ -9,6 +9,7 @@ const tick = (page) => page.evaluate(() => new Promise((r) => requestAnimationFr
 
 /** Neues Dokument mit Hintergrundbild im Lageplan. */
 async function setup(page) {
+  await page.locator('#wsDocs').click();
   await page.locator('.tpl[data-tpl="documentation"]').click();
   await page.evaluate(() => {
     const st = window.pdfEditor.studio;

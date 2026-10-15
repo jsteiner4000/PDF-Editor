@@ -2,7 +2,7 @@ PDFix
 ==========
 
 PDFix – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
-einfügen, löschen und ordnen, Dokumente unterschreiben. Unter „Neu“ entstehen
+einfügen, löschen und ordnen, Dokumente unterschreiben. Im Bereich „Dokumentation“ entstehen
 Kundendokumentationen (Lageplan, Anschlussplan, Zugangsdaten, Fotos) sowie
 Bedienungsanleitungen und Technische Beschreibungen als PDF. Alles bleibt auf Ihrem
 Rechner – es werden keine Daten ins Internet übertragen.
@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.8.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.9.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -46,9 +46,19 @@ von Hand gelöscht werden.
 PDFix stellt keine Verbindung zum Internet her, sucht nicht nach
 Updates und sendet keine Daten.
 
+Zwei Arbeitsbereiche – oben links umschalten:
+- „PDF“: PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.
+- „Dokumentation“: Anlagendokumentationen, Anleitungen und Pläne erstellen und
+  als PDF ausgeben; „Aus PDF fortsetzen“ öffnet eine so erstellte PDF wieder
+  zum Bearbeiten.
+Jeder Bereich hat seine eigene Startseite und Farbe (PDF blau, Dokumentation
+petrol). Beim Umschalten bleibt alles geöffnet; ein Punkt am Umschalter zeigt,
+dass im anderen Bereich noch etwas offen ist. PDFix startet im zuletzt
+genutzten Bereich, beim Öffnen einer PDF-Datei immer im Bereich „PDF“.
+
 Bedienung: PDFix startet bildschirmfüllend (F11 = Vollbild). Oben in einer Zeile:
-Menüs „Datei“ bis „Hilfe“ (Alt oder F10 wechselt per Tastatur hinein), die
-Reiter der geöffneten Dokumente und Speichern. Darunter das Werkzeugband. Wählt
+Menüs „Datei“ bis „Hilfe“ (Alt oder F10 wechselt per Tastatur hinein), der
+Umschalter, die Reiter der geöffneten Dokumente und Speichern. Darunter das Werkzeugband. Wählt
 man ein Werkzeug (z. B. „Bearbeiten“), tritt seine Befehlsleiste an die Stelle
 des Werkzeugbands; links stehen dann seine Einstellungen. „Fertig“ führt zurück.
 
