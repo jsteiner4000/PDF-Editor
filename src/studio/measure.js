@@ -8,25 +8,29 @@
  */
 
 const REF = 100;
-let ctx = null;
+const ctxs = {};
 const cache = new Map();
 
-function context() {
-  if (!ctx) {
-    ctx = document.createElement('canvas').getContext('2d');
-    if ('fontKerning' in ctx) ctx.fontKerning = 'none';
+/** Messkontext ohne bzw. mit Unterschneidung (Bedienungsanleitung: wie das Vorbild mit). */
+function context(kern = false) {
+  const k = kern ? 'normal' : 'none';
+  if (!ctxs[k]) {
+    ctxs[k] = document.createElement('canvas').getContext('2d');
+    if ('fontKerning' in ctxs[k]) ctxs[k].fontKerning = k;
   }
-  return ctx;
+  return ctxs[k];
 }
 
-/** Breite von `text` in pt bei Schriftgrad `size` (pt); `style` = { family, weight, italic }. */
+/**
+ * Breite von `text` in pt bei Schriftgrad `size` (pt); `style` = { family, weight, italic, kern }.
+ */
 export function textWidth(text, size, style) {
   if (!text) return 0;
   const font = `${style.italic ? 'italic ' : ''}${style.weight || 400} ${REF}px ${style.family}`;
-  const key = font + '\u0000' + text;
+  const key = (style.kern ? 'k' : '') + font + '\u0000' + text;
   let w = cache.get(key);
   if (w === undefined) {
-    const c = context();
+    const c = context(style.kern);
     if (c.font !== font) c.font = font;
     w = c.measureText(text).width;
     if (cache.size > 20000) cache.clear();

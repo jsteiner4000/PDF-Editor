@@ -4,10 +4,11 @@
  * die Entwürfe unter „Dokumentationen“.
  *
  * Stores: `meta` (Kennung → { id, name, sub, modified }) für die Liste, `data` (Kennung → Projekt
- * samt Bildern) – so lädt die Liste keine Bilder.
+ * samt Bildern) – so lädt die Liste keine Bilder. Eigene Vorlagen genauso in `tmeta` (mit kleinem
+ * Vorschaubild) und `tdata`.
  */
 const DB_NAME = 'pdfix-studio';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -17,8 +18,7 @@ function db() {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = () => {
         const d = request.result;
-        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'id' });
-        if (!d.objectStoreNames.contains('data')) d.createObjectStore('data', { keyPath: 'id' });
+        for (const name of ['meta', 'data', 'tmeta', 'tdata']) if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, { keyPath: 'id' });
       };
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => {
@@ -33,11 +33,11 @@ function db() {
   return dbPromise;
 }
 
-function run(mode, fn) {
+function run(mode, fn, stores = ['meta', 'data']) {
   return db().then(
     (d) =>
       new Promise((resolve, reject) => {
-        const tx = d.transaction(['meta', 'data'], mode);
+        const tx = d.transaction(stores, mode);
         let result;
         Promise.resolve(fn(tx, (r) => (result = r))).catch(reject);
         tx.oncomplete = () => resolve(result);
@@ -76,4 +76,45 @@ export function deleteDraft(id) {
     tx.objectStore('meta').delete(id);
     tx.objectStore('data').delete(id);
   });
+}
+
+/* ---------- Eigene Vorlagen ---------- */
+
+const TPL = ['tmeta', 'tdata'];
+
+/** Sichert eine Vorlage. `info`: { id, name, sub, thumb } (thumb: SVG der ersten Seite). */
+export function saveTemplate(project, info) {
+  return run(
+    'readwrite',
+    (tx) => {
+      tx.objectStore('tmeta').put({ id: info.id, name: info.name, sub: info.sub || '', thumb: info.thumb || '', modified: Date.now() });
+      tx.objectStore('tdata').put({ id: info.id, project });
+    },
+    TPL,
+  );
+}
+
+/** Alle eigenen Vorlagen, neueste zuerst (ohne Projektinhalt). */
+export async function listTemplates() {
+  try {
+    const all = await run('readonly', (tx, done) => req(tx.objectStore('tmeta').getAll()).then(done), TPL);
+    return (all || []).sort((a, b) => b.modified - a.modified);
+  } catch {
+    return [];
+  }
+}
+
+export function loadTemplate(id) {
+  return run('readonly', (tx, done) => req(tx.objectStore('tdata').get(id)).then((r) => done(r && r.project)), TPL);
+}
+
+export function deleteTemplate(id) {
+  return run(
+    'readwrite',
+    (tx) => {
+      tx.objectStore('tmeta').delete(id);
+      tx.objectStore('tdata').delete(id);
+    },
+    TPL,
+  );
 }

@@ -11,6 +11,7 @@ import { accessPages } from './access.js';
 import { sitePages } from './site.js';
 import { photoPages } from './photos.js';
 import { chapterPages } from './chapters.js';
+import { BODY, manualCover, manualFrame, manualPages, manualToc } from './manual.js';
 import { isEmptySection, sectionTitle } from './model.js';
 
 const LOGO_BOX = { x: 378.276, y: 42, w: 175, h: 44.144 };
@@ -83,9 +84,8 @@ function footerSvg(project, ts, label, num, total) {
   );
 }
 
-function svgPage(ts, body) {
-  const family = esc(ts.font.css);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PAGE.w} ${PAGE.h}" width="${PAGE.w}pt" height="${PAGE.h}pt" style="font-family:${family};font-kerning:none;text-rendering:geometricPrecision">${rect(0, 0, PAGE.w, PAGE.h, { fill: '#fff' })}${body}</svg>`;
+function svgPage(ts, body, family = esc(ts.font.css), kerning = 'none') {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${PAGE.w} ${PAGE.h}" width="${PAGE.w}pt" height="${PAGE.h}pt" style="font-family:${family};font-kerning:${kerning};text-rendering:geometricPrecision">${rect(0, 0, PAGE.w, PAGE.h, { fill: '#fff' })}${body}</svg>`;
 }
 
 /** Titel für Fußzeile und Dateiname: bei einem einzelnen Plan dessen Titel, sonst Projekttitel + Anlage. */
@@ -196,6 +196,9 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
   const pages = [];
   const tocAt = [];
   const skipped = [];
+  // Bedienungsanleitung im Stil des Vorbilds: eigenes Deckblatt, Kapitel mit Kopf- und Fußzeile
+  const manual = project.design === 'manual';
+  const manualState = { h1: 0, fig: 0 };
 
   for (const section of project.sections) {
     // für die fertige PDF: leere Abschnitte (nur Kopfzeile) weglassen
@@ -204,10 +207,23 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
       continue;
     }
     if (section.type === 'cover') {
-      pages.push({ section: section.id, kind: 'cover', make: () => coverBody(project, ts), plain: true });
+      pages.push({ section: section.id, kind: 'cover', make: () => (manual ? manualCover(project) : coverBody(project, ts)), plain: true, manual });
+    } else if (section.type === 'chapters' && manual) {
+      const title = ts.inline(section.title) || ts.label('chapters');
+      manualPages(section, project, manualState).forEach((p, i) =>
+        pages.push({
+          section: section.id,
+          kind: 'chapters',
+          make: () => p,
+          heads: p.heads,
+          chapter: p.chapter,
+          manual: true,
+          toc: i === 0 && !p.heads.length ? { title, id: section.id, plain: true } : null,
+        }),
+      );
     } else if (section.type === 'toc') {
       tocAt.push(pages.length);
-      pages.push({ section: section.id, kind: 'toc', title: ts.label('toc'), subtitle: label, make: null });
+      pages.push({ section: section.id, kind: 'toc', title: ts.label('toc'), subtitle: label, make: null, manual });
     } else if (section.type === 'wiring') {
       const system = ts.inline(section.system);
       const sub = (key) => [system, ts.label(key)].filter(Boolean).join('  -  ');
@@ -321,7 +337,7 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     pages.forEach((p) => {
       if (p.kind === 'toc') {
         const chunk = chunks[Math.min(k++, chunks.length - 1)] || [];
-        p.make = () => tocBody(ts, chunk);
+        p.make = () => (p.manual ? manualToc(project, chunk) : tocBody(ts, chunk));
       }
     });
   }
@@ -332,6 +348,16 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     skipped,
     pages: pages.map((p, i) => {
       const body = p.make();
+      if (p.manual)
+        return {
+          section: p.section,
+          kind: p.kind,
+          manual: true,
+          layout: null,
+          site: null,
+          hits: body.hits || [],
+          svg: svgPage(ts, body.svg + (p.plain ? '' : manualFrame(project, p.chapter || null, i + 1, total)), esc(BODY), 'normal'),
+        };
       const head = p.plain ? '' : headerSvg(project, ts, p.title, p.subtitle);
       const foot = footerSvg(project, ts, p.plain ? '' : label, p.plain ? 0 : i + 1, total);
       return {

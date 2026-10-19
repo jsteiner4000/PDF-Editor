@@ -27,7 +27,7 @@ export const canMakePdf = () => !!maker();
 
 /** Vollständige Druckfassung: eine HTML-Seite je Dokumentseite, ohne Skripte. */
 export function printHtml(doc, title = '') {
-  const fonts = doc.font === 'barlow' ? barlowCss() : '';
+  const fonts = doc.font === 'barlow' || doc.design === 'manual' ? barlowCss() : '';
   const pages = doc.pages.map((p) => `<div class="p">${p.svg}</div>`).join('');
   const lang = doc.lang === 'en' ? 'en' : 'de';
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><title>${title.replace(/[<&]/g, '')}</title><style>

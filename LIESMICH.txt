@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.11.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.12.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -393,6 +393,37 @@ Rolle) pflegt man am Symbol oder in den Zugangsdaten – es sind dieselben Daten
 SSID und WLAN-Schlüssel einer Richtfunkstrecke erscheinen unter „WLAN“.
 Ein Klick auf ein Gerät in einer Liste (Geräteliste, „Im Plan“, „Im Lageplan
 zeigen“) zeigt es im Plan und lässt es kurz aufleuchten.
+
+
+BEDIENUNGSANLEITUNG (BEREICH DOKUMENTATION)
+-------------------------------------------
+Vorlage „Bedienungsanleitung“: Deckblatt, Sicherheit, Geräteübersicht,
+Inbetriebnahme mit Fotos und Störungstabelle – Deutsch und Englisch
+nebeneinander, im Satzspiegel eines gedruckten Handbuchs (Schrift Barlow,
+Kapitelköpfe mit Nummer, Fußzeile mit Seitenzahl).
+
+Deckblatt (Projekt wählen): Titel (Produkt), Dokumentart, Produktfoto,
+Ausführung, Version und Stand (erscheinen nur, wenn ausgefüllt), Hinweis unten
+rechts und Farben. Logo und Firmenname stehen unter „Firma“. Abschnitt 1.1
+(Zeichenerklärung) entsteht automatisch, alle übrigen Texte sind Platzhalter
+zum Überschreiben. „Gestaltung“ schaltet jederzeit zwischen „Bedienungsanleitung“
+und „Klassisch“ um.
+
+Positionen im Bild: Abbildung wählen, „Positionen im Bild setzen“ und im Bild
+auf die Stelle klicken – der nummerierte Kreis mit Linie entsteht automatisch,
+die Bezeichnung lässt sich gleich eintippen. Weitere Klicks setzen weitere
+Positionen; Esc beendet. Punkt und Kreis lassen sich im Bild ziehen, rechts
+gibt es Seite (automatisch, links, rechts), Beschreibung und Legende. Im Text
+verweist {7} auf Position 7 (im Kreis), **fett** setzt fett.
+
+Schritte mit Fotos: Baustein „Schritte mit Fotos“ – je Schritt Foto, Titel und
+Text. Tabellen haben bei zweisprachigen Dokumenten eine englische Zeile unter
+jeder Zeile.
+
+Eigene Vorlagen: Projekt wählen › „Als Vorlage speichern …“. Die Vorlage steht
+danach auf der Startseite unter „Eigene Vorlagen“ – mit Logo, Firma,
+Gestaltung und allen Inhalten (ohne Passwörter); ein Klick startet eine neue
+Dokumentation damit. Entfernen: Papierkorb auf der Kachel oder Entf.
 
 
 TASTENKÜRZEL

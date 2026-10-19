@@ -57,6 +57,7 @@ export const siteTools = {
     if (tool === 'line') return 'Ziehe im Plan eine gerade Linie – mit Umschalt in 45°-Schritten';
     if (tool === 'free') return 'Zeichne mit gedrückter Maustaste im Plan';
     if (tool === 'scale') return 'Ziehe eine Strecke, deren Länge du kennst – z. B. von Haus A zu Haus B';
+    if (tool === 'mark') return 'Klicke im Bild auf die Stelle, auf die die nächste Position zeigt · Esc beendet';
     if (tool === 'measure') {
       const mpp = d && d.done && metersPerPt(this.section(d.section));
       return mpp ? `Länge: ${formatLength(Math.hypot(d.pts[1][0] - d.pts[0][0], d.pts[1][1] - d.pts[0][1]) * mpp)}` : 'Ziehe eine Strecke im Plan – die Länge erscheint sofort';
@@ -140,7 +141,7 @@ export const siteTools = {
   /** Werkzeug fertig: Hinweis weg, merken für „Erneut“, Werkzeugband aktualisieren. */
   disarm() {
     const tool = toolOf(this.armed);
-    if (this.armed && tool !== 'add' && tool !== 'scale') this.lastArmed = this.armed;
+    if (this.armed && tool !== 'add' && tool !== 'scale' && tool !== 'mark') this.lastArmed = this.armed;
     this.armed = null;
     this.draft = null;
     this.loupe(null);

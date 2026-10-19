@@ -1757,6 +1757,28 @@ body.editing #nav {
   font-size: 12px;
   line-height: 1.4;
 }
+/* Eigene Vorlagen: Entfernen erscheint beim Darüberfahren */
+.tpl.own .tpl-x {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line), var(--sh1);
+  opacity: 0;
+  transition: opacity 0.16s var(--ease);
+}
+.tpl.own:hover .tpl-x,
+.tpl.own:focus-within .tpl-x {
+  opacity: 1;
+}
+.tpl.own:focus-visible .tpl-thumb {
+  box-shadow:
+    0 0 0 2px var(--acc),
+    var(--sh2);
+}
+.tpl.own:focus-visible {
+  outline: none;
+}
 /* Kachel „PDF öffnen“: gestrichelte Ablagefläche im Format der Vorlagen */
 .drop {
   width: 176px;

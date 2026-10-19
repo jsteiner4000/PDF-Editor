@@ -24,7 +24,7 @@ import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
 import { THEMES, readTheme, setTheme } from './ui/theme.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
-import { STUDIO_TEMPLATES, Studio, deleteDraft, listDrafts, templatePreview } from './studio/studio.js';
+import { STUDIO_TEMPLATES, Studio, deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates, templatePreview } from './studio/studio.js';
 
 /**
  * Zoomstufen für Strg+Plus/Minus und Strg+Mausrad (1 = 100 %).
@@ -311,6 +311,7 @@ export class App {
     const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Guten Tag' : 'Guten Abend';
     const nav = docs
       ? `<button class="hs-item" data-go="hsNew">${icon('plus')}Neue Dokumentation</button>
+    <button class="hs-item" data-go="hsOwn" id="hNavOwn" hidden>${icon('binder')}Eigene Vorlagen</button>
     <button class="hs-item" id="hNavContinue">${icon('open')}Aus PDF fortsetzen</button>
     <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt bearbeitet</button>`
       : `<button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
@@ -330,6 +331,10 @@ export class App {
           <b>Aus PDF fortsetzen</b><span>Eine fertige Dokumentation weiterbearbeiten</span>
         </div>
       </div>
+    </section>
+    <section class="hs-sec" id="hsOwn" hidden>
+      <h3>Eigene Vorlagen</h3>
+      <div class="hs-new" id="ownList"></div>
     </section>
     <section class="hs-sec recent" id="hsRecent">
       <h3>Zuletzt bearbeitet</h3>
@@ -371,10 +376,12 @@ export class App {
       for (const btn of $$('.tpl[data-tpl]', home)) btn.addEventListener('click', () => this.newProject(btn.dataset.tpl));
       // Vorschaubilder der Vorlagen erst, wenn der Rechner Zeit hat (Start bleibt schnell)
       const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
-      idle(() => {
+      idle(async () => {
+        await ensureBarlow().catch(() => {});
         for (const el of $$('.tpl-thumb[data-thumb]', home))
           if (!el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', templatePreview(el.dataset.thumb));
       });
+      this.renderOwnTemplates();
     } else {
       $('#hOpen').addEventListener('click', () => this.openDialog());
       $('#hNavOpen').addEventListener('click', () => this.openDialog());
@@ -402,6 +409,53 @@ export class App {
     });
     zone.addEventListener('drop', () => zone.classList.remove('over'));
     await this.renderRecent(docs ? 'drafts' : 'files');
+  }
+  /** Eigene Vorlagen („Als Vorlage speichern“) neben den mitgelieferten Vorlagen. */
+  async renderOwnTemplates() {
+    const box = $('#ownList');
+    if (!box) return;
+    const list = await listTemplates();
+    if (!box.isConnected) return;
+    box.innerHTML = '';
+    box.parentElement.hidden = !list.length;
+    $('#hNavOwn').hidden = !list.length;
+    for (const t of list) {
+      const el = htmlToElement(
+        `<div class="tpl own" role="button" tabindex="0" data-utpl="${escapeHtml(t.id)}"><div class="tpl-thumb">${t.thumb || ''}<button class="btn ic tpl-x" title="Vorlage entfernen" aria-label="Vorlage entfernen">${icon('trash', 's')}</button></div><b></b><span></span></div>`,
+      );
+      el.querySelector('b').textContent = t.name;
+      el.querySelector(':scope > span').textContent = t.sub || 'Eigene Vorlage';
+      const remove = async () => {
+        const ok = await showDialog({
+          title: 'Vorlage entfernen?',
+          icon: 'trash',
+          body: `<p class="dlg-text">„${escapeHtml(t.name)}“ wird von der Startseite entfernt. Damit erstellte Dokumentationen bleiben erhalten.</p>`,
+          buttons: [
+            { label: 'Abbrechen', value: false },
+            { label: 'Entfernen', primary: true, value: true },
+          ],
+        });
+        if (!ok) return;
+        await deleteTemplate(t.id);
+        this.renderOwnTemplates();
+      };
+      el.addEventListener('click', () => this.studio.createFromTemplate(t.id));
+      el.addEventListener('keydown', (ev) => {
+        if (ev.target !== el) return;
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          this.studio.createFromTemplate(t.id);
+        } else if (ev.key === 'Delete' || ev.key === 'Backspace') {
+          ev.preventDefault();
+          remove();
+        }
+      });
+      el.querySelector('.tpl-x').addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        remove();
+      });
+      box.appendChild(el);
+    }
   }
   /** Liste „Zuletzt geöffnet“ (PDF-Dateien) bzw. „Zuletzt bearbeitet“ (Dokumentationen). */
   async renderRecent(kind) {
