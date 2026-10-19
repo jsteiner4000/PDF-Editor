@@ -239,7 +239,7 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     } else if (section.type === 'site') {
       const title = ts.inline(section.title) || ts.label('sitePlan');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
-      sitePages(section, ts, project.images).forEach((p, i) =>
+      sitePages(section, ts, project.images, project).forEach((p, i) =>
         pages.push({
           section: section.id,
           kind: p.kind === 'plan' ? 'site' : 'sitelist',

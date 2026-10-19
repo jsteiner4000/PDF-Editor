@@ -16,12 +16,16 @@ import {
   LANGS,
   PHOTO_LAYOUTS,
   SHAPE_COLORS,
+  SHAPE_TYPES,
   SYMBOLS,
   T,
   TONES,
   STRINGS,
   langsOf,
   projectSymbols,
+  deviceOf,
+  newUser,
+  ROLES,
   sectionTitle,
   symbolInfo,
   symbolLabels,
@@ -708,7 +712,7 @@ Object.assign(Inspector.prototype, {
         empty: 'Noch kein Gerät.',
         render: (d) =>
           `<span class="t">${escapeHtml(tx(d.name, lang) || 'Ohne Namen')}</span><small class="mono">${escapeHtml(d.ip || '')}</small>`,
-        onOpen: (d) => studio.select({ kind: 'device', id: d.id, section: s.id }, { reveal: true }),
+        onOpen: (d) => studio.select({ kind: 'device', id: d.id, section: s.id }, { reveal: true, pulse: true }),
       }),
     );
     if (s.blocks.network) {
@@ -739,6 +743,47 @@ Object.assign(Inspector.prototype, {
     );
   },
 
+  /**
+   * Benutzer eines Geräts: der erste in user/password/role, weitere in `users`. Je Benutzer Name,
+   * Passwort und Rolle; „Benutzer hinzufügen“ und Entfernen.
+   */
+  usersEditor(group, d) {
+    const studio = this.studio;
+    const list = [d, ...d.users];
+    if (!document.getElementById('sdRoles'))
+      document.body.appendChild(htmlToElement(`<datalist id="sdRoles">${ROLES.map((r) => `<option value="${escapeHtml(r)}">`).join('')}</datalist>`));
+    group.appendChild(htmlToElement(`<span class="sd-l sd-users-h">Benutzer (${list.filter((u) => u.user || u.password).length || 0})</span>`));
+    list.forEach((u, i) => {
+      const row = htmlToElement('<div class="sd-user"></div>');
+      const name = this.mono('Benutzer', u, 'user', { id: `u${i}${d.id}`, placeholder: i ? '' : 'admin' });
+      const role = this.text('Rolle', u, 'role', { id: `r${i}${d.id}`, placeholder: 'z. B. Administrator' });
+      role.querySelector('input').setAttribute('list', 'sdRoles');
+      const pass = this.secret('Passwort', u, 'password');
+      pass.querySelector('input').dataset.f = `p${i}${d.id}`;
+      row.append(this.pair(name, pass), role);
+      if (i > 0 || d.users.length) {
+        const del = htmlToElement(`<button type="button" class="btn ic sd-user-del" title="Benutzer entfernen" aria-label="Benutzer ${escapeHtml(u.user || String(i + 1))} entfernen">${icon('trash', 's')}</button>`);
+        del.addEventListener('click', () =>
+          studio.change(
+            'Benutzer entfernt',
+            () => {
+              if (i > 0) d.users.splice(i - 1, 1);
+              else {
+                // erster Benutzer: der nächste rückt nach
+                const next = d.users.shift();
+                Object.assign(d, { user: next.user, password: next.password, role: next.role });
+              }
+            },
+            { inspector: true },
+          ),
+        );
+        row.appendChild(del);
+      }
+      group.appendChild(row);
+    });
+    group.appendChild(this.addButton('Benutzer hinzufügen', () => studio.change('Benutzer hinzugefügt', () => d.users.push(newUser()), { inspector: true })));
+  },
+
   /** Reihenfolge-Knöpfe und Löschen für Listeneinträge. */
   itemActions(list, item) {
     const studio = this.studio;
@@ -763,13 +808,24 @@ Object.assign(Inspector.prototype, {
   },
 
   deviceForm(s, d) {
-    this.group(
+    const studio = this.studio;
+    // verknüpft mit dem Lageplan: Name kommt vom Symbol und wird dort mitgeändert
+    const found = d.sym && studio.findSymbol(d.sym);
+    const group = this.group(
       'Zugang',
-      this.bi('Gerät', d, 'name', { placeholder: 'z. B. Rekorder (NVR)' }),
+      found
+        ? this.bi('Gerät', found.y, 'name', { placeholder: tx(d.name, 'de'), id: 'dn' + d.id })
+        : this.bi('Gerät', d, 'name', { placeholder: 'z. B. Rekorder (NVR)' }),
       this.pair(this.mono('IP-Adresse', d, 'ip', { placeholder: '192.168.1.20' }), this.mono('Port / Web', d, 'web', { placeholder: '443 / https://…' })),
-      this.pair(this.mono('Benutzer', d, 'user', { placeholder: 'admin' }), this.secret('Passwort', d, 'password')),
-      this.bi('Bemerkung', d, 'note'),
     );
+    if (found) {
+      group.prepend(htmlToElement(`<div class="sd-linked">${icon('map', 's')}<span>Verknüpft mit <b>${escapeHtml(found.label)}</b> im Lageplan</span></div>`));
+      const show = htmlToElement(`<button type="button" class="btn sd-linkbtn">Im Lageplan zeigen</button>`);
+      show.addEventListener('click', () => studio.select({ kind: 'sym', id: found.y.id, section: found.s.id }, { reveal: true, pulse: true }));
+      group.firstElementChild.appendChild(show);
+    }
+    this.usersEditor(group, d);
+    group.appendChild(this.bi('Bemerkung', d, 'note'));
     this.group(
       'Gerätedaten',
       this.text('Hersteller / Typ', d, 'model', { placeholder: 'Hersteller und Modell' }),
@@ -781,10 +837,13 @@ Object.assign(Inspector.prototype, {
 
   wifiForm(s, w) {
     const studio = this.studio;
-    this.group(
+    // WLAN einer Richtfunkstrecke: SSID und Schlüssel gehören der Strecke
+    const found = w.link && studio.findLink(w.link);
+    const src = found ? found.l : w;
+    const group = this.group(
       'WLAN',
-      this.mono('WLAN-Name (SSID)', w, 'ssid'),
-      this.secret('Schlüssel', w, 'key'),
+      this.mono('WLAN-Name (SSID)', src, 'ssid'),
+      this.secret('Schlüssel', src, 'key'),
       this.select(
         'Verschlüsselung',
         ['WPA2', 'WPA3', 'WPA2/WPA3', 'WPA', 'WEP', 'Offen'].map((v) => [v, v]),
@@ -793,6 +852,13 @@ Object.assign(Inspector.prototype, {
       ),
       this.bi('Bemerkung', w, 'note', { placeholder: 'z. B. Gäste-WLAN, 2,4 GHz' }),
     );
+    if (found) {
+      const head = htmlToElement(`<div class="sd-linked">${icon('wifi', 's')}<span>Gehört zur Richtfunkstrecke <b>${escapeHtml(found.title)}</b></span></div>`);
+      const show = htmlToElement(`<button type="button" class="btn sd-linkbtn">Strecke zeigen</button>`);
+      show.addEventListener('click', () => studio.select({ kind: 'link', id: found.l.id, section: found.s.id }, { reveal: true, pulse: true }));
+      head.appendChild(show);
+      group.prepend(head);
+    }
     this.itemActions(s.wifi, w);
   },
 
@@ -856,9 +922,20 @@ Object.assign(Inspector.prototype, {
     const bg = this.group('Hintergrund');
     bg.appendChild(
       htmlToElement(
-        `<div class="sd-thumbrow">${img ? `<img alt="Hintergrund" src="${escapeHtml(img.data)}">` : `<span class="sd-empty" style="padding:0">Noch kein Bild – „Hintergrund“ oben im Werkzeugband: Luftbild, Karte oder Grundriss (auch aus einer PDF-Seite).</span>`}</div>`,
+        `<div class="sd-thumbrow">${img ? `<img alt="Hintergrund" src="${escapeHtml(img.data)}">` : `<span class="sd-empty" style="padding:0">Noch kein Bild – Luftbild, Karte oder Grundriss wählen, auch eine Seite aus einer PDF.</span>`}</div>`,
       ),
     );
+    // Bild wählen, Seite einer PDF, Entfernen – nur hier (nicht im Werkzeugband)
+    const pick = htmlToElement(
+      `<div class="sd-acts sd-bg-acts"><button type="button" class="btn outline" data-bg="image">${icon('image', 's')}${img ? 'Anderes Bild …' : 'Bild wählen …'}</button><button type="button" class="btn outline" data-bg="pdf">${icon('file', 's')}Aus PDF-Seite …</button>${img ? `<button type="button" class="btn outline danger ic" data-bg="remove" title="Hintergrund entfernen" aria-label="Hintergrund entfernen">${icon('trash', 's')}</button>` : ''}</div>`,
+    );
+    for (const b of pick.querySelectorAll('button'))
+      b.addEventListener('click', () => {
+        if (b.dataset.bg === 'image') studio.pickBackground(s);
+        else if (b.dataset.bg === 'pdf') studio.pickBackgroundPdf(s);
+        else studio.change('Hintergrund entfernt', () => (s.bg.image = null), { inspector: true });
+      });
+    bg.appendChild(pick);
     if (img) {
       bg.appendChild(
         this.seg('Drehung', [[0, '0°'], [90, '90°'], [180, '180°'], [270, '270°']], s.bg.rotate, (v) =>
@@ -916,15 +993,16 @@ Object.assign(Inspector.prototype, {
           const info = symbolInfo(s, y.kind);
           return `<b class="pin">${escapeHtml(labels.get(y.id) || '')}</b><span class="t">${escapeHtml(tx(y.name, lang) || (info ? tx(info.name, lang) : ''))}</span>`;
         },
-        onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true }),
+        onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true, pulse: true }),
       }),
     );
+    this.thinGroup(s);
     if (s.links.length)
       this.group(
         `Richtfunk (${s.links.length})`,
         this.rows(s.links, {
           render: (l) => `<span class="t">${escapeHtml(linkTitle(s, l, labels))}</span><small>${escapeHtml(l.band || '')}</small>`,
-          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true }),
+          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true, pulse: true }),
         }),
       );
     if (s.shapes.length)
@@ -932,8 +1010,84 @@ Object.assign(Inspector.prototype, {
         `Zeichnungen (${s.shapes.length})`,
         this.rows(s.shapes, {
           render: (z) => `<i class="sd-dot" style="background:${safeColor(z.color)}"></i><span class="t">${escapeHtml(tx(z.name, lang) || studio.shapeName(z))}</span><small>${escapeHtml(mpp ? shapeMeasure(z, mpp) : '')}</small>`,
-          onOpen: (z) => studio.select({ kind: 'shape', id: z.id, section: s.id }, { reveal: true }),
+          onOpen: (z) => studio.select({ kind: 'shape', id: z.id, section: s.id }, { reveal: true, pulse: true }),
         }),
+      );
+  },
+
+  /** „Darstellung“: Deckkraft, Ebene; bei Symbolen Beschriftung und Erfassungsbereich als Umriss. */
+  lookGroup(obj, kind, cone = false) {
+    const studio = this.studio;
+    const group = this.group(
+      'Darstellung',
+      this.seg('Deckkraft', [[0, '100 %'], [0.4, '60 %'], [0.7, '30 %']], obj.fade || 0, (v) => studio.setFade(v)),
+    );
+    const layers = htmlToElement(
+      `<div class="sd-layers" role="group" aria-label="Ebene">${[
+        ['back', 'In den Hintergrund', 'Ganz hinten'],
+        ['backward', 'Eine Ebene nach hinten (Strg+Umschalt+↓)', 'Hinten'],
+        ['forward', 'Eine Ebene nach vorne (Strg+Umschalt+↑)', 'Vorne'],
+        ['front', 'In den Vordergrund', 'Ganz vorne'],
+      ]
+        .map(([to, title, text]) => `<button type="button" class="btn outline" data-to="${to}" title="${title}">${text}</button>`)
+        .join('')}</div>`,
+    );
+    for (const b of layers.querySelectorAll('button')) b.addEventListener('click', () => studio.moveLayer(b.dataset.to));
+    group.appendChild(this.field('Ebene', layers));
+    if (kind === 'sym') {
+      group.appendChild(
+        this.select(
+          'Beschriftung',
+          [['auto', 'Automatisch'], ['right', 'Rechts'], ['left', 'Links'], ['top', 'Oben'], ['bottom', 'Unten'], ['none', 'Keine']],
+          obj.labelPos || 'auto',
+          (v) =>
+            studio.change('Beschriftung geändert', () => {
+              if (v && v !== 'auto') obj.labelPos = v;
+              else delete obj.labelPos;
+            }),
+        ),
+      );
+      if (cone)
+        group.appendChild(
+          this.check('Erfassungsbereich nur als Umriss', obj.cone === 'outline', (v) =>
+            studio.change('Erfassungsbereich geändert', () => {
+              if (v) obj.cone = 'outline';
+              else delete obj.cone;
+            }),
+          ),
+        );
+    }
+  },
+
+  /** „Plan ausdünnen“: ganze Arten blass oder aus (die Legende bleibt vollständig). */
+  thinGroup(s) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    const kinds = [];
+    const seen = new Set();
+    const add = (key, name) => !seen.has(key) && (seen.add(key), kinds.push([key, name]));
+    for (const y of s.symbols) {
+      const info = symbolInfo(s, y.kind);
+      if (info) add(y.kind, tx(info.name, lang));
+    }
+    if (s.links.length) add('link', 'Richtfunkstrecken');
+    for (const z of s.shapes) add(z.closed ? 'zone' : z.type, tx(SHAPE_TYPES[z.closed ? 'zone' : z.type], lang));
+    if (kinds.length < 2) return;
+    const group = this.group('Plan ausdünnen');
+    group.appendChild(this.note('Arten blass stellen oder ausblenden, damit Wichtiges hervortritt. Die Legende bleibt vollständig.'));
+    for (const [key, name] of kinds)
+      group.appendChild(
+        this.seg(name, [['', 'Normal'], ['faded', 'Blass'], ['hidden', 'Aus']], (s.thin || {})[key] || '', (v) =>
+          studio.change(
+            'Plan ausgedünnt',
+            () => {
+              s.thin ||= {};
+              if (v) s.thin[key] = v;
+              else delete s.thin[key];
+            },
+            { inspector: true },
+          ),
+        ),
       );
   },
 
@@ -983,9 +1137,11 @@ Object.assign(Inspector.prototype, {
     );
     if (mpp) {
       group.append(this.field(z.closed ? 'Umfang · Fläche' : 'Länge', htmlToElement(`<span class="sd-val">${escapeHtml(shapeMeasure(z, mpp))}</span>`)));
-      group.append(this.check(z.closed ? 'Fläche im Plan zeigen' : 'Länge im Plan zeigen', z.showLen, (v) => studio.change('Anzeige geändert', () => (z.showLen = v))));
+      if (z.type !== 'dim')
+        group.append(this.check(z.closed ? 'Fläche im Plan zeigen' : 'Länge im Plan zeigen', z.showLen, (v) => studio.change('Anzeige geändert', () => (z.showLen = v))));
     } else group.append(this.note('Längen in Metern erscheinen, sobald der Lageplan einen Maßstab hat.'));
     if (z.type !== 'free') group.append(this.note('Eckpunkte im Plan ziehen; die ganze Zeichnung an der Linie verschieben.'));
+    this.lookGroup(z, 'shape');
     this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
@@ -1001,6 +1157,7 @@ Object.assign(Inspector.prototype, {
       }),
       this.text('Frequenz / Band', l, 'band', { placeholder: 'z. B. 5 GHz' }),
       this.text('SSID', l, 'ssid', { placeholder: 'optional' }),
+      this.secret('WLAN-Schlüssel', l, 'key'),
     );
     if (!document.getElementById('sdBands'))
       document.body.appendChild(htmlToElement('<datalist id="sdBands"><option value="2,4 GHz"><option value="5 GHz"><option value="6 GHz"><option value="24 GHz"><option value="60 GHz"></datalist>'));
@@ -1015,11 +1172,12 @@ Object.assign(Inspector.prototype, {
           const y = byId.get(r.id);
           return `<b class="pin">${escapeHtml(labels.get(r.id) || '')}</b><span class="t">${escapeHtml(r.role)}${y && y.ip ? ' · ' + escapeHtml(y.ip) : ''}</span><small>${escapeHtml(r.len)}</small>`;
         },
-        onOpen: (r) => studio.select({ kind: 'sym', id: r.id, section: s.id }, { reveal: true }),
+        onOpen: (r) => studio.select({ kind: 'sym', id: r.id, section: s.id }, { reveal: true, pulse: true }),
       }),
     );
     if (l.mode === 'ptmp') stations.appendChild(this.addButton('Gegenstelle hinzufügen', () => studio.arm('tool:add:' + l.id)));
     stations.appendChild(this.note('IP-Adressen stehen bei der jeweiligen Antenne. Antennen lassen sich im Plan verschieben – die Strecke folgt.'));
+    this.lookGroup(l, 'link');
     this.actions(['Strecke löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
@@ -1054,15 +1212,26 @@ Object.assign(Inspector.prototype, {
         studio.change('Größe geändert', () => (y.scale = v), { inspector: true }),
       ),
     );
+    // Netzwerkgerät: Zugang (IP, Benutzer) – dieselben Daten wie unter Zugangsdaten
+    const dev = deviceOf(this.project, y.id);
+    if (dev) {
+      const acc = this.project.sections.find((x) => x.type === 'access' && x.devices.includes(dev));
+      const group = this.group(
+        'Zugang',
+        this.pair(this.mono('IP-Adresse', dev, 'ip', { id: 'ip' + dev.id, placeholder: '192.168.1.20' }), this.mono('Port / Web', dev, 'web', { id: 'web' + dev.id, placeholder: '443' })),
+      );
+      this.usersEditor(group, dev);
+      group.appendChild(this.note('Steht genauso unter „Zugangsdaten › Geräte-Zugänge“ – Änderungen gelten an beiden Stellen.'));
+      group.appendChild(this.addButton('In Zugangsdaten zeigen', () => studio.select({ kind: 'device', id: dev.id, section: acc.id }, { reveal: true, pulse: true })));
+    }
     if (y.kind === 'radio') {
       const links = s.links.filter((l) => l.from === y.id || l.to.includes(y.id));
       this.group(
         'Richtfunk',
-        this.text('IP-Adresse', y, 'ip', { placeholder: 'z. B. 192.168.1.20' }),
         this.rows(links, {
           empty: 'Gehört zu keiner Strecke.',
           render: (l) => `<span class="t">${escapeHtml(linkTitle(s, l, labels))}</span><small>${escapeHtml(l.band || '')}</small>`,
-          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true }),
+          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true, pulse: true }),
         }),
       );
     }
@@ -1093,6 +1262,7 @@ Object.assign(Inspector.prototype, {
           onOpen: ({ p, sec }) => studio.select({ kind: 'photo', id: p.id, section: sec.id }, { reveal: true }),
         }),
       );
+    this.lookGroup(y, 'sym', info && info.fov && y.fov);
     this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
   },
 

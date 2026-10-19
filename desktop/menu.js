@@ -121,6 +121,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
             siteItem('free', 'Freihand'),
             { type: 'separator' },
             siteItem('scale', 'Maßstab festlegen …'),
+            siteItem('measure', 'Messen'),
           ],
         },
       ],
@@ -149,7 +150,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
 
 /** Werkzeuge der PDF (Menü „Werkzeuge“): aktiv, solange eine PDF geöffnet ist. */
 /** Befehle für den Lageplan (Menü „Werkzeuge › Lageplan“). */
-export const SITE_TOOLS = ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale'];
+export const SITE_TOOLS = ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale', 'measure'];
 
 export const PDF_TOOLS = ['edit', 'addtext', 'addimage', 'organize', 'insert', 'formdesign', 'signature', 'fonts'];
 
