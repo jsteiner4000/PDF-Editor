@@ -501,7 +501,9 @@ kbd {
 /* Werkzeugband (wie das vereinfachte Menüband in Office): eine Zeile, Gruppen mit Trennlinien */
 #ribbon {
   grid-row: 2;
-  padding: 0 8px 8px;
+  /* oben 2px: Rahmen und Schatten des Werkzeugbands liegen außerhalb der Fläche und würden sonst
+     von der Kopfzeile (darüber gestapelt) abgeschnitten */
+  padding: 2px 8px 8px;
   background: var(--bg);
   position: relative;
   z-index: 25;
