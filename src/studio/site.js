@@ -1,21 +1,31 @@
 /**
- * Lageplan: Planfläche mit Hintergrundbild (Foto, Karte, Grundriss), darauf Symbole mit
- * Nummerierung und – bei Kameras und Meldern – dem Erfassungsbereich als Sektor. Darunter die
- * Legende der verwendeten Symbole; auf Folgeseiten die Geräteliste.
+ * Lageplan: Planfläche mit Hintergrundbild (Foto, Karte, Grundriss), darauf Zeichnungen (Linien,
+ * Zäune, Zonen), Richtfunkstrecken und Symbole mit Nummerierung und – bei Kameras und Meldern – dem
+ * Erfassungsbereich als Sektor. Mit Maßstab stehen Längen und Flächen in Metern im Plan. Darunter
+ * die Legende; auf Folgeseiten die Geräteliste.
  *
  * Positionen der Symbole sind Anteile der Planfläche (0–1) – sie bleiben an ihrer Stelle, wenn das
  * Hintergrundbild getauscht wird.
  */
 import { C, PAGE, color, esc, line, n, rect, text } from './svg.js';
-import { STRINGS, symbolInfo, symbolLabels, tx } from './model.js';
+import { STRINGS, str, symbolInfo, symbolLabels, tx } from './model.js';
 import { wrap } from './measure.js';
-
-export const SITE_TOP = 116;
-const BOTTOM = 770;
-const LEGEND_ROW = 16;
-/** Feste Legendenhöhe (4 Zeilen): die Planfläche bleibt immer gleich groß, Symbole behalten ihre Stelle. */
-const LEGEND_ROWS = 4;
-const LEGEND_H = 24 + LEGEND_ROWS * LEGEND_ROW;
+import {
+  LEGEND_ROW,
+  LEGEND_ROWS,
+  SITE_AREA,
+  SITE_BOTTOM as BOTTOM,
+  centroid,
+  formatArea,
+  formatLength,
+  metersPerPt,
+  midpoint,
+  pathLength,
+  polygonArea,
+  ratio,
+  scaleBar,
+  toPt,
+} from './geo.js';
 
 /** Bildzeichen (24 × 24, weiße Linien auf der Farbfläche). */
 const GLYPHS = {
@@ -35,6 +45,7 @@ const GLYPHS = {
   intercom: '<circle cx="12" cy="9" r="3.2"/><path d="M6 19.5a6 6 0 0 1 12 0z"/>',
   router: '<rect x="4" y="13.5" width="16" height="5.5" rx="1.5"/><path d="M8 16.2h.1M11.5 16.2h.1M7 10.5a7 7 0 0 1 10 0M9.5 8a3.5 3.5 0 0 1 5 0"/>',
   recorder: '<rect x="4" y="7" width="16" height="10" rx="1.5"/><circle cx="15.5" cy="12" r="2"/><path d="M7 12h4"/>',
+  radio: '<path d="M6.5 6.5a8 8 0 0 0 11 11z"/><path d="M12 12l4.5-4.5"/><path d="M15.5 4.5a4 4 0 0 1 4 4"/><path d="M9 20h6"/>',
 };
 
 /** Symbol (Kreis mit Bildzeichen bzw. eigenes Bild) mit Mittelpunkt (x, y) und Radius r. */
@@ -72,10 +83,92 @@ function fovSvg(c, x, y, dir, angle, range) {
   return `<path d="M${n(x)} ${n(y)}L${n(x0)} ${n(y0)}A${n(range)} ${n(range)} 0 ${angle > 180 ? 1 : 0} 1 ${n(x1)} ${n(y1)}Z" ${style} stroke-linejoin="round"/>`;
 }
 
-/** Symbole mit weißem Rand um die Schrift (bleibt auf Karten und Fotos lesbar). */
-function label(x, y, value, anchor) {
-  const common = `x="${n(x)}" y="${n(y)}" font-size="7.5" font-weight="700"${anchor === 'end' ? ' text-anchor="end"' : ''}`;
-  return `<text ${common} fill="#fff" stroke="#fff" stroke-width="2.8" stroke-linejoin="round">${esc(value)}</text><text ${common} fill="${C.navy}">${esc(value)}</text>`;
+/** Beschriftung mit weißem Rand um die Schrift (bleibt auf Karten und Fotos lesbar). */
+function label(x, y, value, anchor, { weight = 700, fill = C.navy } = {}) {
+  const common = `x="${n(x)}" y="${n(y)}" font-size="7.5" font-weight="${weight}"${anchor && anchor !== 'start' ? ` text-anchor="${anchor}"` : ''}`;
+  return `<text ${common} fill="#fff" stroke="#fff" stroke-width="2.8" stroke-linejoin="round">${esc(value)}</text><text ${common} fill="${fill}">${esc(value)}</text>`;
+}
+
+const RADIO = '#0891b2';
+const polyPts = (pts) => pts.map(([x, y]) => `${n(x)},${n(y)}`).join(' ');
+
+/** Zaunpfosten entlang eines Linienzugs (alle ~12 pt). */
+function posts(pts, closed, col) {
+  const ring = closed ? [...pts, pts[0]] : pts;
+  const len = pathLength(ring);
+  const count = Math.max(2, Math.round(len / 12));
+  let out = '';
+  for (let k = 0; k <= count; k++) {
+    if (closed && k === count) break;
+    let want = (len * k) / count;
+    for (let i = 1; i < ring.length; i++) {
+      const [x0, y0] = ring[i - 1];
+      const [x1, y1] = ring[i];
+      const d = Math.hypot(x1 - x0, y1 - y0);
+      if (want <= d || i === ring.length - 1) {
+        const t = d ? Math.min(1, want / d) : 0;
+        out += `<circle cx="${n(x0 + (x1 - x0) * t)}" cy="${n(y0 + (y1 - y0) * t)}" r="1.7"/>`;
+        break;
+      }
+      want -= d;
+    }
+  }
+  return `<g fill="#fff" stroke="${col}" stroke-width="1">${out}</g>`;
+}
+
+/** Zeichnung (Linie, Freihand, Zaun, Zone) als SVG; `fills` = nur die Fläche einer Zone. */
+function shapeSvg(z, pts, fills) {
+  const col = color(z.color);
+  if (fills) return z.closed ? `<polygon points="${polyPts(pts)}" fill="${col}" fill-opacity="0.1"/>` : '';
+  const tag = z.closed ? 'polygon' : 'polyline';
+  const width = z.type === 'fence' ? 1.5 : 1.6;
+  let out = `<${tag} points="${polyPts(pts)}" fill="none" stroke="${col}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  if (z.type === 'fence') out += posts(pts, z.closed, col);
+  return out;
+}
+
+/** Beschriftungen einer Zeichnung: Name, Länge bzw. Fläche (mit Maßstab). */
+function shapeLabel(z, pts, mpp, ts) {
+  const lang = ts.lang === 'en' ? 'en' : 'de';
+  const name = ts.inline(z.name);
+  if (z.closed) {
+    const [cx, cy] = centroid(pts);
+    const size = mpp && z.showLen ? formatArea(polygonArea(pts) * mpp * mpp, lang) : '';
+    if (!name && !size) return '';
+    return (name ? label(cx, cy + (size ? -1.5 : 2.6), name, 'middle', { fill: color(z.color) }) : '') + (size ? label(cx, cy + (name ? 8 : 2.6), size, 'middle', { weight: 400 }) : '');
+  }
+  const len = mpp && z.showLen ? formatLength(pathLength(pts) * mpp, lang) : '';
+  const value = [name, len].filter(Boolean).join(' · ');
+  if (!value) return '';
+  const m = midpoint(pts);
+  return label(m.x, m.y - 4, value, 'middle');
+}
+
+/** Maßstabsleiste unten links in der Planfläche. */
+function scaleBarSvg(area, mpp, ts) {
+  const lang = ts.lang === 'en' ? 'en' : 'de';
+  const bar = scaleBar(mpp);
+  const x = area.x + 8;
+  const y = area.y + area.h - 10;
+  const half = bar.pt / 2;
+  const caption = `1 : ${ratio(mpp).toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE')}`;
+  return (
+    `<rect x="${n(x - 5)}" y="${n(y - 15)}" width="${n(bar.pt + 10 + 6 + ts.width(caption, 7, 400) + 8)}" height="22" rx="3" fill="#fff" fill-opacity="0.88"/>` +
+    `<rect x="${n(x)}" y="${n(y)}" width="${n(half)}" height="3" fill="${C.navy}"/>` +
+    `<rect x="${n(x + half)}" y="${n(y)}" width="${n(half)}" height="3" fill="#fff" stroke="${C.navy}" stroke-width="0.6"/>` +
+    text(x, y - 3.5, '0', { size: 7, fill: C.body }) +
+    text(x + bar.pt, y - 3.5, formatLength(bar.m, lang), { size: 7, fill: C.body, anchor: 'middle' }) +
+    text(x + bar.pt + 10, y + 3, caption, { size: 7, fill: C.muted })
+  );
+}
+
+/** Funkstrecke (gestrichelt) zwischen zwei Stationen mit Band und Länge. */
+function linkSvg(a, b, l, mpp, ts) {
+  const lang = ts.lang === 'en' ? 'en' : 'de';
+  let out = `<line x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}" stroke="${RADIO}" stroke-width="1.5" stroke-dasharray="5 3" stroke-linecap="round"/>`;
+  const value = [l.band, mpp ? formatLength(Math.hypot(b[0] - a[0], b[1] - a[1]) * mpp, lang) : ''].filter(Boolean).join(' · ');
+  if (value) out += label((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4, value, 'middle', { fill: RADIO });
+  return out;
 }
 
 /** Hintergrundbild eingepasst (drehbar, einpassen oder füllen), auf die Fläche beschnitten. */
@@ -124,13 +217,53 @@ function usedKinds(site) {
  */
 export function sitePages(section, ts, images) {
   const kinds = usedKinds(section);
-  const area = { x: PAGE.left, y: SITE_TOP, w: PAGE.right - PAGE.left, h: BOTTOM - SITE_TOP - LEGEND_H - 8 };
+  const area = SITE_AREA;
   const labels = symbolLabels(section);
+  const mpp = metersPerPt(section);
+  const clip = (inner) =>
+    inner
+      ? `<svg x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}" viewBox="${n(area.x)} ${n(area.y)} ${n(area.w)} ${n(area.h)}" overflow="hidden">${inner}</svg>`
+      : '';
 
   let svg = rect(area.x, area.y, area.w, area.h, { fill: '#fff' }) + backgroundSvg(section.bg, images, area);
   svg += rect(area.x, area.y, area.w, area.h, { stroke: C.rule, width: 0.7 });
   const hits = [{ kind: 'plan', rect: [area.x, area.y, area.w, area.h] }];
   const marks = [];
+  const pos = new Map();
+  for (const sym of section.symbols) pos.set(sym.id, toPt([sym.x, sym.y], area));
+
+  // Zeichnungen: Flächen der Zonen zuunterst, dann Linien und Zäune
+  const shapes = section.shapes.map((z) => ({ z, pts: z.pts.map((q) => toPt(q, area)) }));
+  let fills = '';
+  let strokes = '';
+  let notes = '';
+  for (const { z, pts } of shapes) {
+    fills += shapeSvg(z, pts, true);
+    strokes += shapeSvg(z, pts, false);
+    notes += shapeLabel(z, pts, mpp, ts);
+  }
+  const bbox = (pts) => {
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+  };
+  for (const { z, pts } of shapes) if (z.closed) hits.push({ kind: 'shape', id: z.id, rect: bbox(pts), pts, closed: true });
+  for (const { z, pts } of shapes) if (!z.closed) hits.push({ kind: 'shape', id: z.id, rect: bbox(pts), pts, closed: false });
+
+  // Richtfunkstrecken
+  let radio = '';
+  const links = [];
+  for (const l of section.links) {
+    const a = pos.get(l.from);
+    if (!a) continue;
+    const segs = l.to.map((t) => pos.get(t)).filter(Boolean).map((b) => [a, b]);
+    for (const [p, q] of segs) radio += linkSvg(p, q, l, mpp, ts);
+    if (!segs.length) continue;
+    const all = segs.flat();
+    hits.push({ kind: 'link', id: l.id, rect: bbox(all), segs });
+    links.push({ id: l.id, segs });
+  }
+
   let cones = '';
   let dots = '';
   let names = '';
@@ -138,8 +271,7 @@ export function sitePages(section, ts, images) {
     const info = symbolInfo(section, sym.kind);
     if (!info) continue;
     const r = 8 * sym.scale;
-    const x = area.x + sym.x * area.w;
-    const y = area.y + sym.y * area.h;
+    const [x, y] = pos.get(sym.id);
     let tip = null;
     if (info.fov && sym.fov) {
       cones += fovSvg(info.color, x, y, sym.dir, sym.angle, sym.range);
@@ -156,34 +288,84 @@ export function sitePages(section, ts, images) {
     hits.push({ kind: 'sym', id: sym.id, rect: [x - r - 2, y - r - 2, 2 * r + 4, 2 * r + 4] });
     marks.push({ id: sym.id, x, y, r, tip, fov: !!tip });
   }
-  // Erfassungsbereiche enden am Planrand
-  if (cones)
-    svg += `<svg x="${n(area.x)}" y="${n(area.y)}" width="${n(area.w)}" height="${n(area.h)}" viewBox="${n(area.x)} ${n(area.y)} ${n(area.w)} ${n(area.h)}" overflow="hidden">${cones}</svg>`;
+  // Zeichnungen und Erfassungsbereiche enden am Planrand
+  svg += clip(fills + cones + strokes + radio + notes);
   svg += dots + names;
+  if (mpp && section.scaleBar) svg += scaleBarSvg(area, mpp, ts);
 
-  // Legende der verwendeten Symbole
-  if (kinds.length) {
-    const cols = Math.min(6, Math.max(3, Math.ceil(kinds.length / LEGEND_ROWS)));
+  // Legende: Symbole, dann Zaun und Richtfunk
+  const entries = kinds.map(({ info, count }) => ({
+    head: `${info.code}  ${ts.inline(info.name)}`,
+    tail: `  (${count})`,
+    draw: (x, y) => symbolSvg(info, x + 6, y - 3, 6, images),
+  }));
+  const fences = section.shapes.filter((z) => z.type === 'fence');
+  if (fences.length) {
+    const col = color(fences[0].color);
+    entries.push({
+      head: ts.label('fence'),
+      tail: mpp ? `  (${formatLength(fences.reduce((sum, z) => sum + pathLength(z.pts.map((q) => toPt(q, area)), z.closed), 0) * mpp, ts.lang === 'en' ? 'en' : 'de')})` : '',
+      draw: (x, y) => `<line x1="${n(x)}" y1="${n(y - 3)}" x2="${n(x + 12)}" y2="${n(y - 3)}" stroke="${col}" stroke-width="1.5"/>` + posts([[x, y - 3], [x + 12, y - 3]], false, col),
+    });
+  }
+  if (links.length)
+    entries.push({
+      head: ts.label('radioLink'),
+      tail: `  (${links.length})`,
+      draw: (x, y) => `<line x1="${n(x)}" y1="${n(y - 3)}" x2="${n(x + 12)}" y2="${n(y - 3)}" stroke="${RADIO}" stroke-width="1.5" stroke-dasharray="3 2"/>`,
+    });
+  if (entries.length) {
+    const cols = Math.min(6, Math.max(3, Math.ceil(entries.length / LEGEND_ROWS)));
     const colW = (area.w + 10) / cols;
-    const shown = kinds.slice(0, cols * LEGEND_ROWS);
+    const shown = entries.slice(0, cols * LEGEND_ROWS);
     const top = area.y + area.h + 8 + 12;
     svg += text(PAGE.left, top, ts.label('legend'), { size: 9.5, weight: 700 });
-    shown.forEach(({ info, count }, i) => {
+    shown.forEach(({ head, tail, draw }, i) => {
       const x = PAGE.left + (i % cols) * colW;
       const y = top + 16 + Math.floor(i / cols) * LEGEND_ROW;
-      const tail = `  (${count})`;
-      const head = ellipsize(ts, `${info.code}  ${ts.inline(info.name)}`, 8.5, colW - 17 - 8 - ts.width(tail, 8.5, 400));
-      svg += symbolSvg(info, x + 6, y - 3, 6, images);
-      svg += text(x + 17, y, head + tail, { size: 8.5, fill: C.body });
+      const cut = ellipsize(ts, head, 8.5, colW - 17 - 8 - ts.width(tail, 8.5, 400));
+      svg += draw(x, y);
+      svg += text(x + 17, y, cut + tail, { size: 8.5, fill: C.body });
     });
-    if (shown.length < kinds.length)
-      svg += text(PAGE.right, top, `+ ${kinds.length - shown.length}`, { size: 8.5, fill: C.muted, anchor: 'end' });
+    if (shown.length < entries.length)
+      svg += text(PAGE.right, top, `+ ${entries.length - shown.length}`, { size: 8.5, fill: C.muted, anchor: 'end' });
   }
-  const pages = [{ kind: 'plan', svg, hits, site: { area, symbols: marks } }];
+  const pages = [
+    {
+      kind: 'plan',
+      svg,
+      hits,
+      site: { area, symbols: marks, shapes: shapes.map(({ z, pts }) => ({ id: z.id, type: z.type, pts, closed: z.closed })), links, mpp },
+    },
+  ];
 
   // Geräteliste
   if (section.showList && section.symbols.length) pages.push(...listPages(section, ts, labels));
   return pages;
+}
+
+/** Bemerkung einer Station mit Richtfunk-Angaben und IP (zweisprachig). */
+function stationNote(section, sym, labels) {
+  const parts = { de: [], en: [] };
+  const nameOf = (ids) => ids.map((i) => labels.get(i)).filter(Boolean).join(', ');
+  for (const l of section.links) {
+    let key = null;
+    let to = '';
+    if (l.from === sym.id) {
+      key = l.mode === 'ptmp' ? 'radioBase' : 'radioTo';
+      to = nameOf(l.to);
+    } else if (l.to.includes(sym.id)) {
+      key = 'radioTo';
+      to = nameOf([l.from]);
+    }
+    if (!key) continue;
+    const extra = [l.band, l.ssid && `SSID ${l.ssid}`].filter(Boolean).join(', ');
+    for (const lang of ['de', 'en']) parts[lang].push(str(key, lang, { to }) + (extra ? ` (${extra})` : ''));
+  }
+  if (sym.ip) for (const lang of ['de', 'en']) parts[lang].push(`IP ${sym.ip}`);
+  if (!parts.de.length) return sym.note;
+  const join = (lang) => [...parts[lang], tx(sym.note, lang)].filter(Boolean).join(' · ');
+  return { de: join('de'), en: join('en') };
 }
 
 const COLS = [
@@ -227,7 +409,7 @@ function listPages(section, ts, labels) {
       nr: [{ text: labels.get(sym.id), sec: false }],
       type: cell(info.name, COLS[1].w),
       name: cell(sym.name, COLS[2].w, 700),
-      note: cell(sym.note, COLS[3].w),
+      note: cell(stationNote(section, sym, labels), COLS[3].w),
     };
     const h = 16 + 10.56 * (Math.max(1, ...Object.values(cells).map((l) => l.length)) - 1);
     if (y + h > BOTTOM) {

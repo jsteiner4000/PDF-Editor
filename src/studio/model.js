@@ -72,6 +72,11 @@ export const STRINGS = {
   continued: T('Fortsetzung', 'continued'),
   sitePlan: T('Lageplan', 'Site plan'),
   deviceList: T('Geräteliste', 'Device list'),
+  fence: T('Zaun', 'Fence'),
+  radioLink: T('Richtfunk', 'Radio link'),
+  radioTo: T('Richtfunk zu {to}', 'Radio link to {to}'),
+  radioBase: T('Richtfunk-Basis für {to}', 'Radio link base for {to}'),
+  scale: T('Maßstab', 'Scale'),
   nr: T('Nr.', 'No.'),
   type: T('Typ', 'Type'),
   name: T('Bezeichnung', 'Designation'),
@@ -190,7 +195,33 @@ export const SYMBOLS = [
   { id: 'intercom', code: 'TS', name: T('Türsprechstelle', 'Door intercom'), color: '#4d7c0f', glyph: 'intercom' },
   { id: 'router', code: 'NW', name: T('Router / Switch', 'Router / switch'), color: '#334155', glyph: 'router' },
   { id: 'recorder', code: 'NVR', name: T('Rekorder', 'Recorder'), color: '#1e3a8a', glyph: 'recorder' },
+  // Station einer Richtfunkstrecke: wird über „Richtfunk“ gesetzt, nicht einzeln in der Galerie
+  { id: 'radio', code: 'RF', name: T('Richtfunk-Antenne', 'Radio link antenna'), color: '#0891b2', glyph: 'radio', link: true },
 ];
+
+/** Farben für Zeichnungen, Zäune und Zonen (wie die Markierungsfarben in Vorschau). */
+export const SHAPE_COLORS = ['#1d4ed8', '#b91c1c', '#15803d', '#c2410c', '#7c3aed', '#0891b2', '#475569', '#16181d'];
+
+/** Zeichnungsarten: gerade Linie, Freihand, Zaun (geschlossen = Zone). */
+export const SHAPE_TYPES = {
+  line: T('Linie', 'Line'),
+  free: T('Freihand', 'Freehand'),
+  fence: T('Zaun', 'Fence'),
+  zone: T('Zone', 'Zone'),
+};
+
+export const newShape = (type, pts, color = type === 'fence' ? '#15803d' : '#1d4ed8') => ({
+  id: uid('z'),
+  type,
+  pts,
+  closed: false,
+  color,
+  name: T('', ''),
+  showLen: true,
+});
+
+/** Richtfunkstrecke: `from` = Station (bei Punkt-zu-Mehrpunkt die Basis), `to` = Gegenstellen. */
+export const newLink = (mode, from, to = []) => ({ id: uid('l'), mode, from, to, band: '', ssid: '' });
 
 /** Leerer Lageplan. */
 export const newSite = () => ({
@@ -200,6 +231,11 @@ export const newSite = () => ({
   bg: { image: null, rotate: 0, fit: 'contain', fade: 0 },
   symbols: [],
   custom: [],
+  shapes: [],
+  links: [],
+  /** Maßstab: Bezugsstrecke a–b (Anteile der Planfläche) mit ihrer Länge in Metern, oder null. */
+  scale: null,
+  scaleBar: true,
   showNumbers: true,
   showList: true,
 });
@@ -214,6 +250,7 @@ export function newSymbol(kind, x = 0.5, y = 0.5) {
     y,
     name: T('', ''),
     note: T('', ''),
+    ip: '',
     scale: 1,
     fov: !!(info && info.fov),
     dir: 0,
@@ -298,7 +335,7 @@ export function isEmptySection(section) {
       !section.remote.length &&
       !Object.entries(section.network).some(([, v]) => (typeof v === 'object' ? tx(v) : String(v || '').trim()))
     );
-  if (section.type === 'site') return !section.symbols.length && !section.bg.image;
+  if (section.type === 'site') return !section.symbols.length && !section.bg.image && !section.shapes.length;
   if (section.type === 'photos') return !section.items.length;
   if (section.type === 'chapters') return !section.blocks.length;
   return false;
@@ -752,12 +789,40 @@ function cleanSite(s, id, images) {
       y: clamp(y.y, 0, 1, 0.5),
       name: toT(y.name),
       note: toT(y.note),
+      ip: str_(y.ip, 80),
       scale: clamp(y.scale, 0.5, 2.5, 1),
       fov: bool(y.fov),
       dir: clamp(y.dir, -360, 720, 0),
       angle: clamp(y.angle, 5, 360, 90),
       range: clamp(y.range, 10, 600, 60),
     }));
+  const point = (q) => (Array.isArray(q) && q.length === 2 ? [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)] : null);
+  const shapes = (Array.isArray(s.shapes) ? s.shapes : [])
+    .filter((z) => z && typeof z === 'object' && ['line', 'free', 'fence'].includes(z.type) && Array.isArray(z.pts))
+    .map((z) => ({
+      id: id(z.id, 'z'),
+      type: z.type,
+      pts: z.pts.slice(0, 4000).map(point).filter(Boolean),
+      closed: z.type === 'fence' && bool(z.closed),
+      color: /^#[0-9a-f]{6}$/i.test(z.color) ? z.color : '#1d4ed8',
+      name: toT(z.name),
+      showLen: z.showLen !== false,
+    }))
+    .filter((z) => z.pts.length >= 2);
+  for (const z of shapes) if (z.closed && z.pts.length < 3) z.closed = false;
+  const stations = new Set(symbols.filter((y) => y.kind === 'radio').map((y) => y.id));
+  const links = (Array.isArray(s.links) ? s.links : [])
+    .filter((l) => l && typeof l === 'object')
+    .map((l) => ({
+      id: id(l.id, 'l'),
+      mode: l.mode === 'ptmp' ? 'ptmp' : 'ptp',
+      from: l.from,
+      to: (Array.isArray(l.to) ? l.to : []).filter((t) => stations.has(t) && t !== l.from),
+      band: str_(l.band, 40),
+      ssid: str_(l.ssid, 80),
+    }))
+    .filter((l) => stations.has(l.from) && l.to.length);
+  for (const l of links) if (l.mode === 'ptp') l.to = l.to.slice(0, 1);
   return {
     id: id(s.id, 's'),
     type: 'site',
@@ -770,9 +835,23 @@ function cleanSite(s, id, images) {
     },
     symbols,
     custom,
+    shapes,
+    links,
+    scale: cleanScale(s.scale),
+    scaleBar: s.scaleBar !== false,
     showNumbers: s.showNumbers !== false,
     showList: s.showList !== false,
   };
+}
+
+function cleanScale(v) {
+  if (!v || typeof v !== 'object' || !Array.isArray(v.a) || !Array.isArray(v.b)) return null;
+  const pt = (q) => [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)];
+  const m = Number(v.m);
+  if (!(m > 0 && m < 1e6)) return null;
+  const a = pt(v.a);
+  const b = pt(v.b);
+  return a[0] === b[0] && a[1] === b[1] ? null : { a, b, m };
 }
 
 const TABLE_IDS = new Set(['table', 'faults', 'parts', 'scope']);
