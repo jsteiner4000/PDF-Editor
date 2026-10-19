@@ -548,8 +548,9 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
 
     // 1. Bild
     let chooser = page.waitForEvent('filechooser');
-    await page.locator('.rb[data-act="bg"]').click();
-    await page.locator('.menu .mi', { hasText: 'Bild wählen' }).click();
+    // Hintergrund nur in den Eigenschaften (nicht im Werkzeugband)
+    await expect(page.locator('.rb[data-act="bg"]')).toHaveCount(0);
+    await page.locator('.sd-bg-acts [data-bg="image"]').click();
     await (await chooser).setFiles({ name: 'karte.png', mimeType: 'image/png', buffer: Buffer.from(png, 'base64') });
     await expect.poll(async () => (await site()).bg).not.toBeNull();
     const first = (await site()).bg;
@@ -561,8 +562,7 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
     doc.addPage([400, 300]);
     const pdf = Buffer.from(await doc.save());
     chooser = page.waitForEvent('filechooser');
-    await page.locator('.rb[data-act="bg"]').click();
-    await page.locator('.menu .mi', { hasText: 'Aus PDF-Seite' }).click();
+    await page.locator('.sd-bg-acts [data-bg="pdf"]').click();
     await (await chooser).setFiles({ name: 'grundriss.pdf', mimeType: 'application/pdf', buffer: pdf });
     await page.locator('.dlg input[type="number"]').fill('2');
     await page.locator('.dlg .btn.primary').click();

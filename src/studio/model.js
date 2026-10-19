@@ -217,6 +217,7 @@ export const SHAPE_TYPES = {
   free: T('Freihand', 'Freehand'),
   fence: T('Zaun', 'Fence'),
   zone: T('Zone', 'Zone'),
+  dim: T('Maßlinie', 'Dimension'),
 };
 
 export const newShape = (type, pts, color = type === 'fence' ? '#15803d' : '#1d4ed8') => ({
@@ -230,7 +231,7 @@ export const newShape = (type, pts, color = type === 'fence' ? '#15803d' : '#1d4
 });
 
 /** Richtfunkstrecke: `from` = Station (bei Punkt-zu-Mehrpunkt die Basis), `to` = Gegenstellen. */
-export const newLink = (mode, from, to = []) => ({ id: uid('l'), mode, from, to, band: '', ssid: '' });
+export const newLink = (mode, from, to = []) => ({ id: uid('l'), mode, from, to, band: '', ssid: '', key: '' });
 
 /** Leerer Lageplan. */
 export const newSite = () => ({
@@ -245,6 +246,8 @@ export const newSite = () => ({
   /** Maßstab: Bezugsstrecke a–b (Anteile der Planfläche) mit ihrer Länge in Metern, oder null. */
   scale: null,
   scaleBar: true,
+  /** Plan ausdünnen: Art → 'faded' (blass) oder 'hidden' (aus); fehlt = normal. */
+  thin: {},
   showNumbers: true,
   showList: true,
 });
@@ -292,6 +295,86 @@ export function symbolLabels(site) {
     out.set(sym.id, `${info.code} ${n}`);
   }
   return out;
+}
+
+/* ---------- Lageplan ↔ Zugangsdaten ---------- */
+
+/** Symbolarten mit Netzwerkzugang: erscheinen automatisch in „Zugangsdaten › Geräte-Zugänge“. */
+export const NET_KINDS = ['camera', 'recorder', 'radio', 'router', 'intercom', 'access', 'panel'];
+
+/** Anzeigename eines Symbols: eigene Bezeichnung, sonst „K 1 Kamera“. */
+function symbolName(site, sym, labels) {
+  const info = symbolInfo(site, sym.kind);
+  const own = sym.name || T('', '');
+  const fallback = (lang) => [labels.get(sym.id), info ? tx(info.name, lang) : ''].filter(Boolean).join(' ');
+  return { de: own.de || fallback('de'), en: own.en || (own.de ? '' : fallback('en')) };
+}
+
+/** Zugangsdaten-Eintrag eines Symbols (über alle Abschnitte) oder null. */
+export function deviceOf(project, symId) {
+  for (const s of project.sections) if (s.type === 'access') for (const d of s.devices) if (d.sym === symId) return d;
+  return null;
+}
+
+/** WLAN-Eintrag einer Richtfunkstrecke oder null. */
+export function wifiOf(project, linkId) {
+  for (const s of project.sections) if (s.type === 'access') for (const w of s.wifi) if (w.link === linkId) return w;
+  return null;
+}
+
+/**
+ * Hält Lageplan und Zugangsdaten gleich (läuft nach jeder Änderung): Jedes Netzwerkgerät im
+ * Lageplan hat einen Eintrag unter „Geräte-Zugänge“ (Name folgt dem Symbol), jede Richtfunkstrecke
+ * mit SSID oder Schlüssel einen WLAN-Eintrag. Fehlt der Abschnitt Zugangsdaten, wird er angelegt.
+ * Verschwindet ein Symbol, bleibt sein Eintrag als gewöhnliches Gerät erhalten (keine Daten gehen
+ * verloren); gelöscht wird er mit dem Symbol über die Oberfläche.
+ */
+export function syncAccess(project) {
+  const sites = project.sections.filter((s) => s.type === 'site');
+  const syms = [];
+  const links = [];
+  for (const site of sites) {
+    const labels = symbolLabels(site);
+    for (const y of site.symbols) if (NET_KINDS.includes(y.kind)) syms.push({ y, name: symbolName(site, y, labels), site, labels });
+    for (const l of site.links) if (l.ssid || l.key) links.push({ l, site, labels });
+  }
+  let access = project.sections.find((s) => s.type === 'access');
+  if (!access) {
+    if (!syms.length && !links.length) return;
+    access = newAccess();
+    const last = project.sections.lastIndexOf(sites[sites.length - 1]);
+    project.sections.splice(last + 1, 0, access);
+  }
+  const all = project.sections.filter((s) => s.type === 'access');
+  const symIds = new Set(syms.map((x) => x.y.id));
+  for (const s of all) for (const d of s.devices) if (d.sym && !symIds.has(d.sym)) d.sym = null;
+  for (const { y, name, site } of syms) {
+    let d = deviceOf(project, y.id);
+    if (!d) {
+      d = { ...newDevice(), sym: y.id };
+      access.devices.push(d);
+    }
+    if (d.name.de !== name.de || d.name.en !== name.en) d.name = name;
+    // frühere IP an der Antenne in den Eintrag übernehmen
+    if (y.ip) {
+      if (!d.ip) d.ip = y.ip;
+      delete y.ip;
+    }
+    const where = tx(site.title, 'de');
+    if (!d.location.de && where) d.location = { de: where, en: tx(site.title, 'en') === where ? '' : tx(site.title, 'en') };
+  }
+  const linkIds = new Set(links.map((x) => x.l.id));
+  for (const s of all) s.wifi = s.wifi.filter((w) => !w.link || linkIds.has(w.link));
+  for (const { l, labels } of links) {
+    let w = wifiOf(project, l.id);
+    if (!w) {
+      const ends = [l.from, ...l.to].map((i) => labels.get(i)).filter(Boolean).join(l.mode === 'ptp' ? ' ↔ ' : ', ');
+      w = { ...newWifi(), link: l.id, note: T(`Richtfunk ${ends}`, `Radio link ${ends}`) };
+      access.wifi.push(w);
+    }
+    if (w.ssid !== l.ssid) w.ssid = l.ssid;
+    if (w.key !== l.key) w.key = l.key;
+  }
 }
 
 /* ---------- Fotodokumentation ---------- */
@@ -468,6 +551,7 @@ export const ACCESS_BLOCKS = [
       { key: 'web', label: T('Port / Web', 'Port / web'), w: 2.2, mono: true },
       { key: 'user', label: T('Benutzer', 'User'), w: 1.9, mono: true },
       { key: 'password', label: T('Passwort', 'Password'), w: 2.1, mono: true, secret: true },
+      { key: 'role', label: T('Rolle', 'Role'), w: 1.6 },
       { key: 'note', label: T('Bemerkung', 'Remark'), w: 3, bi: true },
     ],
   },
@@ -539,11 +623,16 @@ export function newAccess() {
 
 export const newDevice = () => ({
   id: uid('d'),
+  /** Verknüpftes Gerät im Lageplan (Kennung des Symbols) oder null. */
+  sym: null,
   name: T('', ''),
   ip: '',
   web: '',
   user: '',
   password: '',
+  role: '',
+  /** Weitere Benutzer: [{ id, user, password, role }] (der erste steht in user/password/role). */
+  users: [],
   note: T('', ''),
   model: '',
   serial: '',
@@ -552,7 +641,12 @@ export const newDevice = () => ({
   location: T('', ''),
 });
 
-export const newWifi = () => ({ id: uid('w'), ssid: '', key: '', security: 'WPA2', note: T('', '') });
+export const newWifi = () => ({ id: uid('w'), link: null, ssid: '', key: '', security: 'WPA2', note: T('', '') });
+
+export const newUser = () => ({ id: uid('n'), user: '', password: '', role: '' });
+
+/** Rollen zur Auswahl (frei änderbar). */
+export const ROLES = ['Administrator', 'Bediener', 'Nur ansehen', 'Wartung'];
 
 export const newRemote = () => ({ id: uid('r'), service: '', address: '', user: '', password: '', note: T('', '') });
 
@@ -564,7 +658,11 @@ export function withoutSecrets(project, show = null) {
     if (s.type !== 'access' || (show ?? s.showPasswords)) continue;
     for (const block of ACCESS_BLOCKS)
       for (const col of block.columns || [])
-        if (col.secret) for (const row of s[block.list] || []) row[col.key] = '';
+        if (col.secret)
+          for (const row of s[block.list] || []) {
+            row[col.key] = '';
+            for (const u of row.users || []) if (col.key in u) u[col.key] = '';
+          }
     s.secretsRemoved = true;
   }
   return copy;
@@ -791,7 +889,7 @@ function cleanSite(s, id, images) {
   };
   const symbols = (Array.isArray(s.symbols) ? s.symbols : [])
     .filter((y) => y && typeof y === 'object' && kindOf(y.kind))
-    .map((y) => ({
+    .map((y) => cleanLook(y, {
       id: id(y.id, 'y'),
       kind: kindOf(y.kind),
       x: clamp(y.x, 0, 1, 0.5),
@@ -804,11 +902,11 @@ function cleanSite(s, id, images) {
       dir: clamp(y.dir, -360, 720, 0),
       angle: clamp(y.angle, 5, 360, 90),
       range: clamp(y.range, 10, 600, 60),
-    }));
+    }, true));
   const point = (q) => (Array.isArray(q) && q.length === 2 ? [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)] : null);
   const shapes = (Array.isArray(s.shapes) ? s.shapes : [])
-    .filter((z) => z && typeof z === 'object' && ['line', 'free', 'fence'].includes(z.type) && Array.isArray(z.pts))
-    .map((z) => ({
+    .filter((z) => z && typeof z === 'object' && ['line', 'free', 'fence', 'dim'].includes(z.type) && Array.isArray(z.pts))
+    .map((z) => cleanLook(z, {
       id: id(z.id, 'z'),
       type: z.type,
       pts: z.pts.slice(0, 4000).map(point).filter(Boolean),
@@ -817,18 +915,20 @@ function cleanSite(s, id, images) {
       name: toT(z.name),
       showLen: z.showLen !== false,
     }))
-    .filter((z) => z.pts.length >= 2);
+    .filter((z) => z.pts.length >= 2)
+    .map((z) => (z.type === 'dim' ? { ...z, pts: z.pts.slice(0, 2) } : z));
   for (const z of shapes) if (z.closed && z.pts.length < 3) z.closed = false;
   const stations = new Set(symbols.filter((y) => y.kind === 'radio').map((y) => y.id));
   const links = (Array.isArray(s.links) ? s.links : [])
     .filter((l) => l && typeof l === 'object')
-    .map((l) => ({
+    .map((l) => cleanLook(l, {
       id: id(l.id, 'l'),
       mode: l.mode === 'ptmp' ? 'ptmp' : 'ptp',
       from: l.from,
       to: (Array.isArray(l.to) ? l.to : []).filter((t) => stations.has(t) && t !== l.from),
       band: str_(l.band, 40),
       ssid: str_(l.ssid, 80),
+      key: str_(l.key, 200),
     }))
     .filter((l) => stations.has(l.from) && l.to.length);
   for (const l of links) if (l.mode === 'ptp') l.to = l.to.slice(0, 1);
@@ -848,9 +948,26 @@ function cleanSite(s, id, images) {
     links,
     scale: cleanScale(s.scale),
     scaleBar: s.scaleBar !== false,
+    thin: Object.fromEntries(
+      Object.entries(s.thin && typeof s.thin === 'object' ? s.thin : {})
+        .filter(([k, v]) => typeof k === 'string' && k.length < 60 && (v === 'faded' || v === 'hidden'))
+        .slice(0, 100),
+    ),
     showNumbers: s.showNumbers !== false,
     showList: s.showList !== false,
   };
+}
+
+/** Darstellung je Objekt: Ebene, Aufhellen; Symbole zusätzlich Beschriftung und Erfassungsbereich. */
+const FADES = [0, 0.4, 0.7];
+function cleanLook(o, out, sym = false) {
+  if (typeof o.layer === 'number' && Number.isFinite(o.layer)) out.layer = Math.max(-1e6, Math.min(1e6, o.layer));
+  if (FADES.includes(o.fade) && o.fade) out.fade = o.fade;
+  if (sym) {
+    if (['left', 'right', 'top', 'bottom', 'none'].includes(o.labelPos)) out.labelPos = o.labelPos;
+    if (o.cone === 'outline') out.cone = 'outline';
+  }
+  return out;
 }
 
 function cleanScale(v) {
@@ -937,6 +1054,12 @@ function cleanAccess(s, id) {
         const out = make();
         for (const [k, v] of Object.entries(out))
           if (k === 'id') out.id = id(r.id, prefix);
+          else if (k === 'sym' || k === 'link') out[k] = typeof r[k] === 'string' && ID_RE.test(r[k]) ? r[k] : null;
+          else if (k === 'users')
+            out.users = (Array.isArray(r.users) ? r.users : [])
+              .filter((u) => u && typeof u === 'object')
+              .slice(0, 50)
+              .map((u) => ({ id: id(u.id, 'n'), user: str_(u.user, 200), password: str_(u.password, 500), role: str_(u.role, 80) }));
           else out[k] = typeof v === 'object' ? toT(r[k]) : str_(r[k], 500);
         return out;
       });

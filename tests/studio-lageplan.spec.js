@@ -62,6 +62,7 @@ test('Lageplan: Aufhellen, Anlage-Beschriftung, stabile Planfläche, Zuschnitt u
     const svg = await page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.kind === 'site').svg);
     // Erfassungsbereich liegt in einem auf die Planfläche beschnittenen Rahmen
     expect(svg).toMatch(/<svg [^>]*overflow="hidden">(?:(?!<\/svg>).)*fill-opacity="0\.16"/s);
+    expect(svg).not.toContain('clip-path');
     // lange Namen werden in der Legende gekürzt
     expect(svg).toContain('…');
     expect(svg).not.toContain('L'.repeat(100));

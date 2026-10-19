@@ -58,6 +58,12 @@ export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
   };
 
   const table = (block, cols, rows, kind) => {
+    // weitere Benutzer eines Geräts: eigene Zeilen direkt darunter (nur Benutzer, Passwort, Rolle)
+    rows = rows.flatMap((row) => [
+      row,
+      ...(kind === 'device' && block.id === 'devices' ? (row.users || []).map((u) => ({ ...u, id: row.id, sub: true })) : []),
+    ]);
+    let band = -1;
     // Spaltenbreiten aus den Anteilen
     const total = cols.reduce((n, c) => n + c.w, 0);
     let x = PAGE.left;
@@ -80,7 +86,9 @@ export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
         flush();
         header(cols);
       }
-      if (i % 2 === 0) svg += rect(PAGE.left, y, WIDTH, h, { fill: C.alt });
+      // Unterzeilen behalten die Hinterlegung ihres Geräts
+      if (!row.sub) band++;
+      if (band % 2 === 0) svg += rect(PAGE.left, y, WIDTH, h, { fill: C.alt });
       cells.forEach((lines, ci) => {
         const c = rowCols[ci];
         lines.forEach((l, k) => {
@@ -93,7 +101,8 @@ export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
           });
         });
       });
-      svg += line(PAGE.left, y + h, PAGE.left + WIDTH, y + h, C.rule, 0.5);
+      const next = rows[i + 1];
+      if (!(next && next.sub)) svg += line(PAGE.left, y + h, PAGE.left + WIDTH, y + h, C.rule, 0.5);
       hits.push({ kind, id: row.id, rect: [PAGE.left, y, WIDTH, h] });
       y += h;
     });
@@ -116,9 +125,8 @@ export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
     }
     const hidden = new Set(section.hide[block.id] || []);
     const rows = section[block.list];
-    const cols = block.columns.filter(
-      (c) => c.fixed || (!hidden.has(c.key) && rows.some((r) => valueText(r[c.key], 'de') || valueText(r[c.key], 'en'))),
-    );
+    const filled = (r, c) => valueText(r[c.key], 'de') || valueText(r[c.key], 'en') || (r.users || []).some((u) => valueText(u[c.key], 'de'));
+    const cols = block.columns.filter((c) => c.fixed || (!hidden.has(c.key) && rows.some((r) => filled(r, c))));
     table(block, cols, rows, block.list === 'devices' ? 'device' : block.list);
   }
 
@@ -131,6 +139,8 @@ export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
 }
 
 function hasSecrets(section, block) {
-  return (section[block.list] || []).some((row) => block.columns.some((c) => c.secret && valueText(row[c.key])));
+  return (section[block.list] || []).some((row) =>
+    block.columns.some((c) => c.secret && (valueText(row[c.key]) || (row.users || []).some((u) => valueText(u[c.key])))),
+  );
 }
 

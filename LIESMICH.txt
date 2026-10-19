@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.10.3.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.11.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -368,6 +368,31 @@ Maßstab: „Maßstab“ im Werkzeugband, eine Strecke mit bekannter Länge zieh
 (z. B. von Haus A zu Haus B) und die Länge in Metern eingeben. Danach stehen
 Längen von Linien, Zäunen und Richtfunkstrecken, Flächen von Zonen und die
 Reichweite der Kameras in Metern; unten links im Plan eine Maßstabsleiste.
+Die Endpunkte der Bezugsstrecke lassen sich später fein nachziehen (Lageplan
+wählen, Ringe an den Enden ziehen). Beim Ziehen zeigt eine Lupe mit Fadenkreuz
+die genaue Stelle.
+
+Messen: Sobald ein Maßstab festgelegt ist, heißt der Knopf „Messen“. Eine
+Strecke ziehen – die Länge steht sofort oben im Hinweis. „Als Maßlinie
+behalten“ übernimmt sie als Bemaßung (mit Pfeilen und Meterangabe) in den Plan
+und die PDF; Esc beendet das Messen.
+
+Hintergrund: rechts in den Eigenschaften des Lageplans – Bild wählen, Seite
+aus einer PDF, Entfernen, Drehen, Einpassen/Füllen und Aufhellen.
+
+Darstellung je Objekt (rechts unter „Darstellung“ oder per Rechtsklick):
+Deckkraft 100/60/30 %, Ebene (ganz hinten, hinten, vorne, ganz vorne; auch
+Strg+Umschalt+↑/↓), bei Symbolen die Lage der Nummer und den
+Erfassungsbereich nur als Umriss. „Plan ausdünnen“ (Lageplan wählen) stellt
+ganze Arten blass oder blendet sie aus – die Legende bleibt vollständig.
+
+Zugangsdaten: Kameras, Rekorder, Antennen, Router, Türsprechstellen,
+Zutrittsleser und Alarmzentralen stehen automatisch unter „Zugangsdaten ›
+Geräte-Zugänge“. IP-Adresse und Benutzer (beliebig viele, je mit Passwort und
+Rolle) pflegt man am Symbol oder in den Zugangsdaten – es sind dieselben Daten.
+SSID und WLAN-Schlüssel einer Richtfunkstrecke erscheinen unter „WLAN“.
+Ein Klick auf ein Gerät in einer Liste (Geräteliste, „Im Plan“, „Im Lageplan
+zeigen“) zeigt es im Plan und lässt es kurz aufleuchten.
 
 
 TASTENKÜRZEL

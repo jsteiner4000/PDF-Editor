@@ -40,6 +40,9 @@ import {
   withoutSecrets,
   normalizeProject,
   pruneImages,
+  syncAccess,
+  deviceOf,
+  wifiOf,
   sectionTitle,
   tx,
   uid,
@@ -57,6 +60,7 @@ import { PDFDocument } from 'pdf-lib';
 import { Inspector } from './inspector.js';
 import { symbolIconSvg } from './site.js';
 import { hitsShape, siteTools, toolOf } from './site-tools.js';
+import { toFrac } from './geo.js';
 
 export { deleteDraft, listDrafts };
 
@@ -162,7 +166,12 @@ export class Studio {
     scroll.addEventListener('pointermove', (ev) => this.onPointerMove(ev));
     scroll.addEventListener('pointerup', (ev) => this.onPointerUp(ev));
     scroll.addEventListener('pointercancel', (ev) => this.onPointerUp(ev, true));
-    scroll.addEventListener('pointerleave', () => this.hover(null));
+    scroll.addEventListener('pointerleave', () => {
+      this.hover(null);
+      if (!this.drag) this.loupe(null);
+    });
+    // Rechtsklick auf Symbol, Strecke oder Zeichnung: Ebene, Aufhellen, Löschen
+    scroll.addEventListener('contextmenu', (ev) => this.siteContextMenu(ev, this.hitAt(ev)));
     // mittlere Maustaste: kein automatisches Bildlaufen des Browsers
     scroll.addEventListener('mousedown', (ev) => ev.button === 1 && ev.preventDefault());
     window.addEventListener('keydown', (ev) => {
@@ -226,6 +235,7 @@ export class Studio {
 
   async open(project, sel = null) {
     if (this.project) await this.flush();
+    syncAccess(project);
     this.project = project;
     this.hist = { undo: [], redo: [] };
     this.snap = this.serialize();
@@ -403,6 +413,8 @@ export class Studio {
     if (!this.project) return;
     const before = this.snap;
     fn(this.project);
+    // Lageplan und Zugangsdaten gleich halten (im selben Verlaufsschritt)
+    syncAccess(this.project);
     this.commit(label, before, key);
     if (inspector) this.inspector.render();
   }
@@ -427,7 +439,9 @@ export class Studio {
   changed() {
     // Werkzeugband hängt an Sprache, Schrift und vorhandenem Anschlussplan
     const p = this.project;
-    const ribbonKey = `${p.lang}|${p.font}|${p.sections.some((s) => s.type === 'wiring')}`;
+    // … und am Maßstab der Lagepläne („Maßstab“ wird zu „Messen“)
+    const scales = p.sections.map((s) => (s.type === 'site' && s.scale ? 1 : 0)).join('');
+    const ribbonKey = `${p.lang}|${p.font}|${p.sections.some((s) => s.type === 'wiring')}|${scales}`;
     if (ribbonKey !== this.ribbonKey) {
       this.ribbonKey = ribbonKey;
       if (this.visible) this.app.renderRibbon();
@@ -503,7 +517,7 @@ export class Studio {
     return null;
   }
 
-  select(sel, { reveal = false } = {}) {
+  select(sel, { reveal = false, pulse = false } = {}) {
     this.sel = sel;
     // Werkzeugband passt sich der Art des gewählten Abschnitts an (wie Kontext-Reiter in Office)
     const type = this.currentType();
@@ -514,6 +528,8 @@ export class Studio {
     this.inspector.render();
     this.renderSelection();
     this.renderSide();
+    // aus einer Liste gewählt: im Plan zeigen und kurz aufleuchten lassen
+    if (pulse && this.pulse(sel)) return;
     if (reveal) this.reveal();
   }
 
@@ -1098,6 +1114,8 @@ export class Studio {
           s.symbols = s.symbols.filter((y) => y.id !== id);
           this.dropLinks(new Set([id]));
           this.dropStations(s, new Set([id]));
+          // Zugangsdaten des Geräts gehen mit (Rückgängig holt beides zurück)
+          for (const a of this.project.sections) if (a.type === 'access') a.devices = a.devices.filter((d) => d.sym !== id);
         },
         { inspector: true },
       );
@@ -1113,6 +1131,12 @@ export class Studio {
       this.change('Foto entfernt', () => (s.items = s.items.filter((p) => p.id !== id)), { inspector: true });
     } else if (kind === 'device' || kind === 'wifi' || kind === 'remote') {
       const list = kind === 'device' ? 'devices' : kind;
+      // verknüpfte Einträge gehören zum Lageplan: dort löschen
+      const row = s[list].find((x) => x.id === id);
+      if (row && (row.sym || row.link)) {
+        toast(row.sym ? 'Dieses Gerät gehört zum Lageplan – dort das Symbol löschen.' : 'Dieses WLAN gehört zu einer Richtfunkstrecke – dort SSID und Schlüssel leeren oder die Strecke löschen.', 'warn', 5000);
+        return;
+      }
       this.sel = { kind: 'section', id: section };
       this.change('Eintrag gelöscht', () => (s[list] = s[list].filter((x) => x.id !== id)), { inspector: true });
     }
@@ -1181,8 +1205,11 @@ export class Studio {
       : siteSection
       ? `<button class="rb c1${this.armed && toolOf(this.armed) !== 'scale' ? ' on' : ''}" data-act="symbols" title="Symbol, Richtfunkstrecke, Zaun oder Linie wählen und im Plan setzen">${icon('map')}Objekt${icon('chev', 's caret')}</button>
 ${again ? `<button class="rb c1" data-act="again" title="„${escapeHtml(again)}“ erneut setzen (Strg+D)">${icon('plus')}${escapeHtml(again)}</button>` : ''}
-<button class="rb c5${toolOf(this.armed) === 'scale' ? ' on' : ''}" data-act="scale" title="Maßstab: eine bekannte Strecke im Plan ziehen und ihre Länge eingeben">${icon('ruler')}Maßstab</button>
-<button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>`
+${
+  siteSection.scale
+    ? `<button class="rb c5${toolOf(this.armed) === 'measure' ? ' on' : ''}" data-act="measure" title="Messen: eine Strecke im Plan ziehen – die Länge erscheint sofort">${icon('ruler')}Messen</button>`
+    : `<button class="rb c5${toolOf(this.armed) === 'scale' ? ' on' : ''}" data-act="scale" title="Maßstab: eine bekannte Strecke im Plan ziehen und ihre Länge eingeben">${icon('ruler')}Maßstab</button>`
+}`
       : photosSection
         ? `<button class="rb c3" data-act="addphotos" title="Fotos hinzufügen (Aufnahmedatum wird gelesen)">${icon('image')}Fotos hinzufügen</button>`
         : access
@@ -1214,7 +1241,7 @@ ${context}
         else if (act === 'symbols') this.symbolMenu(btn, siteSection);
         else if (act === 'again') this.armAgain();
         else if (act === 'scale') this.arm('tool:scale');
-        else if (act === 'bg') this.backgroundMenu(btn, siteSection);
+        else if (act === 'measure') this.arm('tool:measure');
         else if (act === 'addphotos') this.pickPhotos(photosSection);
       });
   }
@@ -1279,6 +1306,8 @@ ${context}
       this.hover(null);
       const inside = hit && hit.page.site && inArea(hit, hit.page.site.area);
       $('#sdScroll').style.cursor = inside ? 'crosshair' : '';
+      // Maßstab und Messen: Lupe für den genauen Anfangspunkt
+      if (['scale', 'measure'].includes(toolOf(this.armed))) this.loupe(inside ? ev : null, hit);
       if (this.draft && inside && hit.page.section === this.draft.section) this.toolMove(ev, hit);
       return;
     }
@@ -1302,6 +1331,8 @@ ${context}
     const { page, item } = hit;
     const section = page.section;
     const target = ev.target.classList;
+    // Endpunkt der Bezugsstrecke (Maßstab) fein nachziehen
+    if (target && target.contains('sd-ref')) return this.startRefDrag(ev, hit, ev.target.dataset.end);
     // Eckpunkt einer Zeichnung ziehen
     if (target && target.contains('sd-vertex') && this.sel.kind === 'shape') return this.startShapeDrag(ev, hit, 'vertex', +ev.target.dataset.i);
     // Erfassungsbereich: Griff ziehen
@@ -1335,6 +1366,7 @@ ${context}
     else if (item.kind === 'hub') this.select({ kind: 'hub', section });
     else if (item.kind === 'device' || item.kind === 'wifi' || item.kind === 'remote')
       this.select({ kind: item.kind, id: item.id, section });
+    else if (item.kind === 'sym' && !page.site) this.select({ kind: 'sym', id: item.id, section }, { pulse: true });
     else if (item.kind === 'sym' || item.kind === 'photo' || item.kind === 'block') this.select({ kind: item.kind, id: item.id, section });
     else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
     else if (item.kind === 'project') this.select({ kind: 'project' });
@@ -1395,6 +1427,7 @@ ${context}
     if (!d) return;
     if (d.tool) return this.toolUp(ev, cancel);
     this.drag = null;
+    if (d.mode === 'ref') this.loupe(null);
     $('#sdScroll').classList.remove('dragging');
     if (d.el.hasPointerCapture(ev.pointerId)) d.el.releasePointerCapture(ev.pointerId);
     if (!d.moved) return;
@@ -1407,6 +1440,7 @@ ${context}
       fov: 'Erfassungsbereich geändert',
       shape: d.shape ? `${this.shapeName(d.shape)} verschoben` : '',
       vertex: 'Punkt verschoben',
+      ref: 'Bezugsstrecke angepasst',
     }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
@@ -1486,6 +1520,14 @@ ${context}
       $('.sd-center').appendChild(chip);
     }
     chip.querySelector('span').textContent = this.armHintText(info);
+    // Messen: gemessene Strecke als Maßlinie behalten
+    const keep = chip.querySelector('[data-keep]');
+    const done = toolOf(this.armed) === 'measure' && this.draft && this.draft.done;
+    if (done && !keep) {
+      const b = htmlToElement('<button class="btn sd-keep" data-keep>Als Maßlinie behalten</button>');
+      b.addEventListener('click', () => this.keepMeasure());
+      chip.insertBefore(b, chip.lastElementChild);
+    } else if (!done && keep) keep.remove();
   }
 
   /** Angaben zur Symbolart, die gerade gesetzt wird (null, wenn es sie nicht mehr gibt). */
@@ -1581,6 +1623,11 @@ ${context}
       this.shapeDragMove(d, px, py, ev.shiftKey);
       return this.schedule();
     }
+    if (d.mode === 'ref') {
+      d.ref.scale[d.end] = toFrac([px, py], d.area);
+      this.loupe(ev, { el: d.el });
+      return this.schedule();
+    }
     const sym = d.sym;
     if (d.mode === 'sym') {
       sym.x = Math.max(0, Math.min(1, (px - d.grab[0] - d.area.x) / d.area.w));
@@ -1631,19 +1678,6 @@ ${context}
       this.addCustomSymbol(site);
     });
     showPopover(el, anchor);
-  }
-
-  backgroundMenu(anchor, site) {
-    if (!site) return;
-    showMenu(
-      [
-        { label: 'Bild wählen …', icon: 'image', run: () => this.pickBackground(site) },
-        { label: 'Aus PDF-Seite …', icon: 'file', run: () => this.pickBackgroundPdf(site) },
-        '-',
-        { label: 'Entfernen', icon: 'trash', disabled: !site.bg.image, run: () => this.change('Hintergrund entfernt', () => (site.bg.image = null), { inspector: true }) },
-      ],
-      anchor,
-    );
   }
 
   setBackground(site, image) {
@@ -1940,6 +1974,9 @@ ${context}
     } else if (!inField && key === 'escape') {
       const { kind, section } = this.sel;
       if (section && kind !== 'section') this.select({ kind: 'section', id: section });
+    } else if (!inField && mod && ev.shiftKey && (key === 'arrowup' || key === 'arrowdown') && this.siteSelected()) {
+      ev.preventDefault();
+      this.moveLayer(key === 'arrowup' ? 'forward' : 'backward');
     } else if (!inField && !mod && (this.sel.kind === 'sym' || this.sel.kind === 'shape') && key.startsWith('arrow')) {
       const step = ev.shiftKey ? 10 : 1;
       const d = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] }[key];
@@ -1977,7 +2014,9 @@ ${context}
           (b) =>
             b.columns &&
             s.blocks[b.id] &&
-            (s[b.list] || []).some((row) => b.columns.some((c) => c.secret && String(row[c.key] || '').trim())),
+            (s[b.list] || []).some((row) =>
+              b.columns.some((c) => c.secret && (String(row[c.key] || '').trim() || (row.users || []).some((u) => String(u[c.key] || '').trim()))),
+            ),
         ),
     );
   }

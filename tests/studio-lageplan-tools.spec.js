@@ -293,7 +293,7 @@ test('Richtfunk: Punkt-zu-Punkt und Punkt-zu-Mehrpunkt, Geräteliste, Stationen 
       await st.close();
       await st.openDraft(id);
       const sites = st.project.sections.filter((x) => x.type === 'site');
-      return { copyOk, links: sites.map((x) => x.links.length), ip: sites[0].symbols[0].ip, scale: sites[0].scale && sites[0].scale.m };
+      return { copyOk, links: sites.map((x) => x.links.length), ip: st.project.sections.find((x) => x.type === 'access').devices.find((d) => d.sym === sites[0].symbols[0].id).ip, scale: sites[0].scale && sites[0].scale.m };
     });
     expect(again).toEqual({ copyOk: true, links: [2, 2], ip: '192.168.1.20', scale: 100 });
     expect(errors).toEqual([]);

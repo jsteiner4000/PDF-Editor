@@ -9,7 +9,9 @@
 import { $, htmlToElement } from '../ui/dom.js';
 import { showDialog, toast } from '../ui/dialogs.js';
 import { PAGE } from './svg.js';
-import { SHAPE_TYPES, newLink, newShape, newSymbol, symbolInfo, tx } from './model.js';
+import { SHAPE_TYPES, newLink, newShape, newSymbol, symbolInfo, symbolLabels, tx } from './model.js';
+import { siteOrder } from './site.js';
+import { showMenu } from '../ui/menu.js';
 import { SITE_AREA, formatLength, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
 
 /** Werkzeuge: Kennung → Name (für Hinweis, Wiederholen). */
@@ -18,6 +20,7 @@ export const TOOLS = {
   free: 'Freihand',
   fence: 'Zaun / Zone',
   scale: 'Maßstab',
+  measure: 'Messen',
   ptp: 'Richtfunk Punkt-zu-Punkt',
   ptmp: 'Richtfunk Punkt-zu-Mehrpunkt',
   add: 'Gegenstelle',
@@ -29,6 +32,10 @@ export const toolOf = (armed) => (typeof armed === 'string' && armed.startsWith(
 const RADIO = '#0891b2';
 const CLOSE_PT = 8;
 const PICK_PT = 4;
+
+/** Endpunkt-Markierung: Ring mit Punkt in der Mitte (innen durchsichtig). */
+const ringSvg = (q, col) =>
+  `<circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="${q[0]}" cy="${q[1]}" r="4.5" fill="none" stroke="${col}" stroke-width="1"/><circle cx="${q[0]}" cy="${q[1]}" r="0.7" fill="${col}"/>`;
 
 /** Treffer auf einer Zeichnung oder Funkstrecke genau prüfen (sonst nur Rechteck). */
 export function hitsShape(h, p) {
@@ -50,6 +57,10 @@ export const siteTools = {
     if (tool === 'line') return 'Ziehe im Plan eine gerade Linie – mit Umschalt in 45°-Schritten';
     if (tool === 'free') return 'Zeichne mit gedrückter Maustaste im Plan';
     if (tool === 'scale') return 'Ziehe eine Strecke, deren Länge du kennst – z. B. von Haus A zu Haus B';
+    if (tool === 'measure') {
+      const mpp = d && d.done && metersPerPt(this.section(d.section));
+      return mpp ? `Länge: ${formatLength(Math.hypot(d.pts[1][0] - d.pts[0][0], d.pts[1][1] - d.pts[0][1]) * mpp)}` : 'Ziehe eine Strecke im Plan – die Länge erscheint sofort';
+    }
     if (tool === 'fence')
       return n < 2
         ? 'Klicke die Eckpunkte des Zauns nacheinander in den Plan'
@@ -63,6 +74,7 @@ export const siteTools = {
   /** Werkzeug, Symbol oder nichts wählen; ein angefangener Entwurf wird verworfen. */
   resetDraft() {
     this.draft = null;
+    this.loupe(null);
     this.renderDraft();
   },
 
@@ -131,6 +143,7 @@ export const siteTools = {
     if (this.armed && tool !== 'add' && tool !== 'scale') this.lastArmed = this.armed;
     this.armed = null;
     this.draft = null;
+    this.loupe(null);
     this.updateArmHint();
     this.renderDraft();
     this.app.renderRibbon();
@@ -151,7 +164,7 @@ export const siteTools = {
     if (this.draft && this.draft.section !== s.id) this.draft = null;
     const p = this.clampPt(hit);
     ev.preventDefault();
-    if (tool === 'line' || tool === 'free' || tool === 'scale') {
+    if (tool === 'line' || tool === 'free' || tool === 'scale' || tool === 'measure') {
       hit.el.setPointerCapture(ev.pointerId);
       this.draft = { section: s.id, page: hit.page, el: hit.el, pts: [p, p], stroke: true };
       if (tool === 'free') this.draft.pts = [p];
@@ -198,6 +211,7 @@ export const siteTools = {
     const tool = toolOf(this.armed);
     if (d.stroke) {
       if (this.drag) this.drag.moved ||= Math.hypot(ev.clientX - this.drag.startX, ev.clientY - this.drag.startY) > 2;
+      if (tool === 'scale' || tool === 'measure') this.loupe(ev, { el: d.el });
       if (tool === 'free') {
         const last = d.pts[d.pts.length - 1];
         if (Math.hypot(p[0] - last[0], p[1] - last[1]) >= 1.2) d.pts.push(p);
@@ -224,8 +238,19 @@ export const siteTools = {
     if (!d || cancel) return this.resetDraft();
     const tool = toolOf(this.armed);
     const len = d.pts.length > 1 ? Math.hypot(d.pts[d.pts.length - 1][0] - d.pts[0][0], d.pts[d.pts.length - 1][1] - d.pts[0][1]) : 0;
-    if (!drag.moved || (tool !== 'free' && len < 4) || (tool === 'free' && d.pts.length < 3)) return this.resetDraft();
+    this.loupe(null);
+    if (!drag.moved || (tool !== 'free' && len < 4) || (tool === 'free' && d.pts.length < 3)) {
+      this.resetDraft();
+      return this.updateArmHint();
+    }
     if (tool === 'scale') return this.finishScale();
+    if (tool === 'measure') {
+      // Messung bleibt stehen, bis neu gemessen, behalten oder mit Esc beendet wird
+      d.done = true;
+      this.loupe(null);
+      this.updateArmHint();
+      return this.renderDraft();
+    }
     const s = this.section(d.section);
     const pts = (tool === 'free' ? simplify(d.pts, 0.7) : d.pts).map((q) => toFrac(q, d.page.site.area));
     const z = newShape(tool, pts, this.shapeColor || undefined);
@@ -382,14 +407,20 @@ export const siteTools = {
       for (const q of d.pts) html += `<circle cx="${q[0]}" cy="${q[1]}" r="6" fill="${RADIO}" fill-opacity="0.85" stroke="#fff" stroke-width="1.2"/>`;
     } else if (pts.length) {
       const col = tool === 'scale' ? 'var(--acc)' : '#1f66e5';
-      html += `<polyline points="${pl(pts)}" fill="none" stroke="${col}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"${tool === 'scale' ? ' stroke-dasharray="4 3"' : ''}/>`;
-      if (tool === 'fence' || tool === 'scale' || tool === 'line')
+      const exact = tool === 'scale' || tool === 'measure';
+      html += `<polyline points="${pl(pts)}" fill="none" stroke="${col}" stroke-width="${exact ? 1 : 1.6}" stroke-linecap="round" stroke-linejoin="round"${tool === 'scale' ? ' stroke-dasharray="4 3"' : ''}/>`;
+      // Maßstab und Messen: Endpunkte als Ring mit Punkt in der Mitte – die Stelle ist genau zu sehen
+      if (exact) for (const q of d.pts) html += ringSvg(q, col);
+      if (tool === 'fence' || tool === 'line')
         for (const [i, q] of d.pts.entries())
           html += `<circle cx="${q[0]}" cy="${q[1]}" r="${tool === 'fence' && i === 0 && d.pts.length >= 3 ? 4.2 : 2.6}" fill="#fff" stroke="${col}" stroke-width="1.2"/>`;
       // Länge schon beim Zeichnen zeigen (mit Maßstab)
       const s = this.section(d.section);
       const mpp = metersPerPt(s);
-      if (mpp && pts.length > 1 && tool !== 'scale') {
+      if (mpp && pts.length > 1 && tool === 'measure') {
+        const [a, b] = pts;
+        html += `<text x="${(a[0] + b[0]) / 2}" y="${(a[1] + b[1]) / 2 - 6}" text-anchor="middle" class="sd-ovl-len sd-ovl-big">${formatLength(Math.hypot(b[0] - a[0], b[1] - a[1]) * mpp)}</text>`;
+      } else if (mpp && pts.length > 1 && tool !== 'scale') {
         let len = 0;
         for (let i = 1; i < pts.length; i++) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
         const q = pts[pts.length - 1];
@@ -429,8 +460,14 @@ export const siteTools = {
       const svg = this.overlay(el, 'sd-ovl');
       svg.innerHTML =
         `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="sd-ovl-ref"/>` +
-        `<circle cx="${a[0]}" cy="${a[1]}" r="2.4" class="sd-ovl-end"/><circle cx="${b[0]}" cy="${b[1]}" r="2.4" class="sd-ovl-end"/>` +
         `<text x="${(a[0] + b[0]) / 2}" y="${(a[1] + b[1]) / 2 - 5}" class="sd-ovl-len" text-anchor="middle">Bezug ${formatLength(s.scale.m)}</text>`;
+      // Endpunkte zum Nachziehen: Ring mit Punkt, innen durchsichtig
+      for (const [end, p] of [['a', a], ['b', b]]) {
+        const h = htmlToElement(`<span class="sd-handle sd-ref" data-end="${end}" title="Endpunkt der Bezugsstrecke ziehen"></span>`);
+        h.style.left = p[0] * this.scale + 'px';
+        h.style.top = p[1] * this.scale + 'px';
+        el.querySelector('.sd-marks').appendChild(h);
+      }
     }
   },
 
@@ -441,6 +478,64 @@ export const siteTools = {
     svg.innerHTML = h.pts
       ? `<${h.closed ? 'polygon' : 'polyline'} points="${h.pts.map((p) => p.join(',')).join(' ')}" class="sd-ovl-hov"/>`
       : h.segs.map(([a, b]) => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="sd-ovl-hov"/>`).join('');
+  },
+
+  /* ---------- Messen, Lupe, Bezugsstrecke nachziehen ---------- */
+
+  /** Gemessene Strecke als Maßlinie in den Plan übernehmen. */
+  keepMeasure() {
+    const d = this.draft;
+    if (!d || !d.done) return;
+    const s = this.section(d.section);
+    const z = newShape('dim', d.pts.map((q) => toFrac(q, d.page.site.area)), '#16181d');
+    this.change('Maßlinie eingefügt', () => s.shapes.push(z));
+    this.disarm();
+    this.select({ kind: 'shape', id: z.id, section: s.id });
+  },
+
+  /**
+   * Lupe neben dem Zeiger: dreifach vergrößerter Ausschnitt der Seite mit Fadenkreuz, damit Anfang
+   * und Ende einer Strecke genau sitzen. `ev` = null blendet sie aus.
+   */
+  loupe(ev, hit) {
+    let el = document.getElementById('sdLoupe');
+    if (!ev || !hit || !hit.el) {
+      if (el) el.remove();
+      this.loupeSrc = null;
+      return;
+    }
+    const SIZE = 132;
+    const ZOOM = 3;
+    if (!el) {
+      el = htmlToElement('<div class="sd-loupe" id="sdLoupe" aria-hidden="true"><div class="sd-loupe-in"></div><i></i></div>');
+      document.body.appendChild(el);
+    }
+    const inner = el.firstElementChild;
+    if (this.loupeSrc !== hit.el) {
+      inner.replaceChildren(hit.el.querySelector('.sd-svg').cloneNode(true));
+      this.loupeSrc = hit.el;
+    }
+    const r = hit.el.getBoundingClientRect();
+    inner.style.width = r.width * ZOOM + 'px';
+    inner.style.height = r.height * ZOOM + 'px';
+    inner.style.transform = `translate(${SIZE / 2 - (ev.clientX - r.left) * ZOOM}px, ${SIZE / 2 - (ev.clientY - r.top) * ZOOM}px)`;
+    // oben rechts vom Zeiger, am Fensterrand auf die andere Seite
+    let x = ev.clientX + 28;
+    let y = ev.clientY - SIZE - 28;
+    if (x + SIZE > innerWidth - 8) x = ev.clientX - SIZE - 28;
+    if (y < 8) y = ev.clientY + 28;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+  },
+
+  /** Endpunkt der Bezugsstrecke ziehen (Maßstab bleibt bei derselben Länge in Metern). */
+  startRefDrag(ev, hit, end) {
+    const s = this.section(hit.page.section);
+    if (!s || !s.scale) return;
+    ev.preventDefault();
+    hit.el.setPointerCapture(ev.pointerId);
+    this.drag = { site: true, mode: 'ref', end, ref: s, area: hit.page.site.area, el: hit.el, startX: ev.clientX, startY: ev.clientY, before: this.snap, moved: false };
+    $('#sdScroll').classList.add('dragging');
   },
 
   /* ---------- Zeichnungen verschieben ---------- */
@@ -495,6 +590,150 @@ export const siteTools = {
   /** Hintergrund geändert: ein vorhandener Maßstab passt womöglich nicht mehr. */
   checkScale(site) {
     if (site.scale) toast('Hintergrund geändert – bitte den Maßstab prüfen (Lageplan › Maßstab › Neu ziehen).', 'warn', 6000);
+  },
+
+  /* ---------- Aufleuchten ---------- */
+
+  /**
+   * Symbol, Strecke, Zeichnung (im Plan) bzw. Eintrag der Zugangsdaten zeigen und dreimal sanft
+   * aufleuchten lassen. Liefert true, wenn etwas gezeigt wurde.
+   */
+  pulse(sel) {
+    for (const old of document.querySelectorAll('#sdPages .sd-pulse')) old.remove();
+    const pages = this.doc ? this.doc.pages : [];
+    const els = document.querySelectorAll('#sdPages .sd-page');
+    let target = null;
+    if (sel.kind === 'sym' || sel.kind === 'link' || sel.kind === 'shape') {
+      const i = pages.findIndex((p) => p.section === sel.section && p.site);
+      const site = i >= 0 && pages[i].site;
+      if (!site || !els[i]) return false;
+      const marks = els[i].querySelector('.sd-marks');
+      if (sel.kind === 'sym') {
+        const m = site.symbols.find((y) => y.id === sel.id);
+        if (!m) return false;
+        target = htmlToElement('<span class="sd-pulse sd-pulse-dot"></span>');
+        const d = (m.r + 7) * 2 * this.scale;
+        target.style.cssText = `left:${m.x * this.scale}px;top:${m.y * this.scale}px;width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px`;
+        marks.appendChild(target);
+      } else {
+        const shape = sel.kind === 'link' ? site.links.find((l) => l.id === sel.id) : site.shapes.find((z) => z.id === sel.id);
+        if (!shape) return false;
+        const svg = this.overlay(els[i], 'sd-ovl sd-pulse');
+        svg.innerHTML = shape.segs
+          ? shape.segs.map(([a, b]) => `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="sd-pulse-line"/>`).join('')
+          : `<${shape.closed ? 'polygon' : 'polyline'} points="${shape.pts.map((p) => p.join(',')).join(' ')}" class="sd-pulse-line"/>`;
+        const pts = shape.segs ? shape.segs.flat() : shape.pts;
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        target = this.markEl([Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)], 'sd-pulse sd-pulse-anchor');
+        marks.appendChild(target);
+      }
+    } else {
+      // Eintrag einer Tabelle (z. B. Zugangsdaten): die Markierung der Auswahl leuchtet
+      const mark = document.querySelector('#sdPages .sd-sel');
+      if (!mark) return false;
+      target = this.markEl([0, 0, 0, 0], 'sd-pulse sd-pulse-box');
+      target.style.cssText = mark.style.cssText;
+      mark.parentElement.appendChild(target);
+    }
+    target.scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    // nach dem Aufleuchten entfernen
+    setTimeout(() => {
+      for (const el of document.querySelectorAll('#sdPages .sd-pulse')) el.remove();
+    }, 2600);
+    return true;
+  },
+
+  /* ---------- Darstellung: Ebene, Aufhellen ---------- */
+
+  /** Gewähltes Objekt des Lageplans: { s, obj, kind } oder null. */
+  siteSelected() {
+    const { kind, section } = this.sel;
+    const s = this.section(section);
+    if (!s || s.type !== 'site' || !['sym', 'shape', 'link'].includes(kind)) return null;
+    const obj = this.selected();
+    return obj ? { s, obj, kind } : null;
+  },
+
+  /**
+   * Ebene ändern (wie „In den Vordergrund/Hintergrund“ in Office): 'front' | 'forward' |
+   * 'backward' | 'back'. Danach haben alle Objekte des Plans eine feste Ebene (ein Schritt).
+   */
+  moveLayer(to) {
+    const cur = this.siteSelected();
+    if (!cur) return false;
+    const order = siteOrder(cur.s);
+    const from = order.findIndex((it) => it.obj === cur.obj);
+    const target = { front: order.length - 1, back: 0, forward: Math.min(order.length - 1, from + 1), backward: Math.max(0, from - 1) }[to];
+    if (target === undefined || target === from) return true;
+    const label = { front: 'In den Vordergrund', back: 'In den Hintergrund', forward: 'Eine Ebene nach vorne', backward: 'Eine Ebene nach hinten' }[to];
+    this.change(label, () => {
+      const [it] = order.splice(from, 1);
+      order.splice(target, 0, it);
+      order.forEach((x, i) => (x.obj.layer = i * 10));
+    });
+    return true;
+  },
+
+  /** Aufhellen: 0 (normal), 0.4 (60 % Deckkraft) oder 0.7 (30 %). */
+  setFade(fade) {
+    const cur = this.siteSelected();
+    if (!cur) return;
+    this.change('Deckkraft geändert', () => {
+      if (fade) cur.obj.fade = fade;
+      else delete cur.obj.fade;
+    }, { inspector: true });
+  },
+
+  /** Kontextmenü auf einem Objekt im Plan (Rechtsklick). */
+  siteContextMenu(ev, hit) {
+    const item = hit && hit.item;
+    if (!item || !['sym', 'shape', 'link'].includes(item.kind) || !hit.page.site) return false;
+    ev.preventDefault();
+    this.select({ kind: item.kind, id: item.id, section: hit.page.section });
+    const cur = this.siteSelected();
+    if (!cur) return true;
+    const fade = cur.obj.fade || 0;
+    showMenu(
+      [
+        { label: 'In den Vordergrund', run: () => this.moveLayer('front') },
+        { label: 'Eine Ebene nach vorne', key: 'Strg+Umschalt+↑', run: () => this.moveLayer('forward') },
+        { label: 'Eine Ebene nach hinten', key: 'Strg+Umschalt+↓', run: () => this.moveLayer('backward') },
+        { label: 'In den Hintergrund', run: () => this.moveLayer('back') },
+        '-',
+        { label: 'Normal', checked: fade === 0, run: () => this.setFade(0) },
+        { label: 'Aufgehellt (60 %)', checked: fade === 0.4, run: () => this.setFade(0.4) },
+        { label: 'Stark aufgehellt (30 %)', checked: fade === 0.7, run: () => this.setFade(0.7) },
+        '-',
+        { label: 'Löschen', icon: 'trash', key: 'Entf', run: () => this.removeSelected() },
+      ],
+      { x: ev.clientX, y: ev.clientY },
+    );
+    return true;
+  },
+
+  /** Symbol im Projekt finden: { s, y, label } oder null. */
+  findSymbol(id) {
+    for (const s of this.project.sections)
+      if (s.type === 'site') {
+        const y = s.symbols.find((x) => x.id === id);
+        if (y) return { s, y, label: symbolLabels(s).get(id) || '' };
+      }
+    return null;
+  },
+
+  /** Richtfunkstrecke im Projekt finden: { s, l, title } oder null. */
+  findLink(id) {
+    for (const s of this.project.sections)
+      if (s.type === 'site') {
+        const l = s.links.find((x) => x.id === id);
+        if (l) {
+          const labels = symbolLabels(s);
+          const ends = [l.from, ...l.to].map((i) => labels.get(i)).filter(Boolean);
+          return { s, l, title: l.mode === 'ptp' ? ends.join(' ↔ ') : `${ends[0]} → ${ends.length - 1}` };
+        }
+      }
+    return null;
   },
 
   /* ---------- Löschen, Antennen ---------- */
