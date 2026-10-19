@@ -128,6 +128,7 @@ export function notifyDocumentState() {
       dirty: !project && !!(session && session.dirty),
       stripActive: !!app.stripActive,
       pdfOpen: !!session,
+      siteOpen: !!(app.studio.project && app.studio.project.sections.some((s) => s.type === 'site')),
       workspace: app.workspace,
       theme: readTheme(),
     });
@@ -162,6 +163,9 @@ const COMMANDS = {
       'tool:' + tool,
       () => app.toolFromMenu(tool),
     ]),
+  ),
+  ...Object.fromEntries(
+    ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale'].map((tool) => ['site:' + tool, () => app.siteFromMenu(tool)]),
   ),
   undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),

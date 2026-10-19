@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.10.0.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.10.1.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -353,6 +353,9 @@ Maustaste) und „Zaun / Zone“ (Eckpunkte klicken; Enter oder Doppelklick been
 den Zaun, ein Klick auf den ersten Punkt schließt ihn zur Zone mit Namen und
 Fläche). Rücktaste nimmt beim Zeichnen den letzten Punkt zurück, Esc bricht ab.
 Farbe und Name rechts; Eckpunkte lassen sich später im Plan ziehen.
+Gewählte Symbole und Zeichnungen verschieben auch die Pfeiltasten (Umschalt =
+größere Schritte). Alle Lageplan-Befehle stehen zusätzlich im Menü
+„Werkzeuge › Lageplan“.
 
 Maßstab: „Maßstab“ im Werkzeugband, eine Strecke mit bekannter Länge ziehen
 (z. B. von Haus A zu Haus B) und die Länge in Metern eingeben. Danach stehen

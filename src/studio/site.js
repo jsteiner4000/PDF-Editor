@@ -90,6 +90,17 @@ function label(x, y, value, anchor, { weight = 700, fill = C.navy } = {}) {
 }
 
 const RADIO = '#0891b2';
+/** Beschriftung der Funkstrecke: dunkler als die Linie (5,3 : 1 auf Weiß, 7,5 pt). */
+const RADIO_TEXT = '#0e7490';
+
+/** Kontrast einer Farbe auf Weiß (WCAG). */
+function contrastOnWhite(hex) {
+  const v = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 1.05 / (0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2] + 0.05);
+}
+
+/** Schriftfarbe für einen Namen in Zeichnungsfarbe: zu helle Farben werden dunkel geschrieben. */
+const nameColor = (c) => (/^#[0-9a-f]{6}$/i.test(c) && contrastOnWhite(c) >= 4.5 ? c : C.navy);
 const polyPts = (pts) => pts.map(([x, y]) => `${n(x)},${n(y)}`).join(' ');
 
 /** Zaunpfosten entlang eines Linienzugs (alle ~12 pt). */
@@ -135,7 +146,7 @@ function shapeLabel(z, pts, mpp, ts) {
     const [cx, cy] = centroid(pts);
     const size = mpp && z.showLen ? formatArea(polygonArea(pts) * mpp * mpp, lang) : '';
     if (!name && !size) return '';
-    return (name ? label(cx, cy + (size ? -1.5 : 2.6), name, 'middle', { fill: color(z.color) }) : '') + (size ? label(cx, cy + (name ? 8 : 2.6), size, 'middle', { weight: 400 }) : '');
+    return (name ? label(cx, cy + (size ? -1.5 : 2.6), name, 'middle', { fill: nameColor(color(z.color)) }) : '') + (size ? label(cx, cy + (name ? 8 : 2.6), size, 'middle', { weight: 400 }) : '');
   }
   const len = mpp && z.showLen ? formatLength(pathLength(pts) * mpp, lang) : '';
   const value = [name, len].filter(Boolean).join(' · ');
@@ -167,7 +178,7 @@ function linkSvg(a, b, l, mpp, ts) {
   const lang = ts.lang === 'en' ? 'en' : 'de';
   let out = `<line x1="${n(a[0])}" y1="${n(a[1])}" x2="${n(b[0])}" y2="${n(b[1])}" stroke="${RADIO}" stroke-width="1.5" stroke-dasharray="5 3" stroke-linecap="round"/>`;
   const value = [l.band, mpp ? formatLength(Math.hypot(b[0] - a[0], b[1] - a[1]) * mpp, lang) : ''].filter(Boolean).join(' · ');
-  if (value) out += label((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4, value, 'middle', { fill: RADIO });
+  if (value) out += label((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 - 4, value, 'middle', { fill: RADIO_TEXT });
   return out;
 }
 

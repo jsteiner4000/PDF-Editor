@@ -26,6 +26,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
   const docItem = (id, label, extra) => cmd(id, label, { enabled: false, ...extra });
   // Werkzeuge der PDF: aktiv, sobald eine PDF geöffnet ist (auch aus dem Bereich „Dokumentation“)
   const toolItem = (tool, label, extra) => cmd('tool:' + tool, label, { enabled: false, ...extra });
+  const siteItem = (tool, label, extra) => cmd('site:' + tool, label, { enabled: false, ...extra });
 
   const template = [
     {
@@ -104,6 +105,24 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         toolItem('signature', 'Unterschrift …'),
         { type: 'separator' },
         toolItem('fonts', 'Schriften'),
+        { type: 'separator' },
+        // Lageplan (Bereich „Dokumentation“): aktiv, sobald die Dokumentation einen Lageplan hat
+        {
+          label: 'Lageplan',
+          submenu: [
+            siteItem('symbols', 'Objekt einfügen …'),
+            siteItem('again', 'Erneut setzen', shown('CmdOrCtrl+D')),
+            { type: 'separator' },
+            siteItem('ptp', 'Richtfunk Punkt-zu-Punkt'),
+            siteItem('ptmp', 'Richtfunk Punkt-zu-Mehrpunkt'),
+            { type: 'separator' },
+            siteItem('fence', 'Zaun / Zone'),
+            siteItem('line', 'Linie'),
+            siteItem('free', 'Freihand'),
+            { type: 'separator' },
+            siteItem('scale', 'Maßstab festlegen …'),
+          ],
+        },
       ],
     },
     {
@@ -129,6 +148,9 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
 }
 
 /** Werkzeuge der PDF (Menü „Werkzeuge“): aktiv, solange eine PDF geöffnet ist. */
+/** Befehle für den Lageplan (Menü „Werkzeuge › Lageplan“). */
+export const SITE_TOOLS = ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale'];
+
 export const PDF_TOOLS = ['edit', 'addtext', 'addimage', 'organize', 'insert', 'formdesign', 'signature', 'fonts'];
 
 /** Menüpunkte, die nur mit geöffnetem Dokument aktiv sind. */

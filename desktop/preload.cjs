@@ -59,6 +59,7 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
       hasDocument: !!state.hasDocument,
       name: String(state.name || ''),
       dirty: !!state.dirty,
+      siteOpen: !!state.siteOpen,
       stripActive: !!state.stripActive,
       pdfOpen: !!state.pdfOpen,
       workspace: state.workspace === 'docs' ? 'docs' : 'pdf',

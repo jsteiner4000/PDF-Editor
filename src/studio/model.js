@@ -200,7 +200,16 @@ export const SYMBOLS = [
 ];
 
 /** Farben für Zeichnungen, Zäune und Zonen (wie die Markierungsfarben in Vorschau). */
-export const SHAPE_COLORS = ['#1d4ed8', '#b91c1c', '#15803d', '#c2410c', '#7c3aed', '#0891b2', '#475569', '#16181d'];
+export const SHAPE_COLORS = [
+  ['#1d4ed8', 'Blau'],
+  ['#b91c1c', 'Rot'],
+  ['#15803d', 'Grün'],
+  ['#c2410c', 'Orange'],
+  ['#7c3aed', 'Violett'],
+  ['#0891b2', 'Türkis'],
+  ['#475569', 'Grau'],
+  ['#16181d', 'Schwarz'],
+];
 
 /** Zeichnungsarten: gerade Linie, Freihand, Zaun (geschlossen = Zone). */
 export const SHAPE_TYPES = {

@@ -157,9 +157,28 @@ test('Maßstab, Linie, Freihand, Zaun und Zone mit Längen und Fläche', async (
     // Legende: Zaun mit Gesamtlänge
     await expect.poll(svg).toMatch(/Zaun\s+\(/);
 
-    // Farbe ändern
-    await page.locator('.sd-swatches button').nth(1).click();
+    // Farbe ändern (Farbfelder mit Namen für Screenreader)
+    await page.getByRole('radio', { name: 'Rot' }).click();
     expect((await site()).shapes[3].color).toBe('#b91c1c');
+    // Kopfzeile nennt die Art
+    await expect(page.locator('.crumb')).toContainText('Zaun');
+
+    // Pfeiltasten verschieben die Zeichnung (Umschalt = 10 pt), ein Schritt für Rückgängig
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    const x0 = (await site()).shapes[3].pts[0][0];
+    await page.keyboard.press('Shift+ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    expect(((await site()).shapes[3].pts[0][0] - x0) * area.w).toBeCloseTo(11, 1);
+    await page.keyboard.press('Control+z');
+    expect((await site()).shapes[3].pts[0][0]).toBeCloseTo(x0, 5);
+
+    // helle eigene Farbe: Name der Zone wird dunkel geschrieben
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const sec = st.project.sections.find((x) => x.type === 'site');
+      st.change('Farbe', () => (sec.shapes[2].color = '#fde047'));
+    });
+    await expect.poll(svg).toMatch(/fill="#1f3b4d">Zone 1 – Lager</);
 
     // Löschen und Rückgängig
     await page.evaluate(() => document.activeElement && document.activeElement.blur());
@@ -167,6 +186,18 @@ test('Maßstab, Linie, Freihand, Zaun und Zone mit Längen und Fläche', async (
     expect((await site()).shapes).toHaveLength(3);
     await page.keyboard.press('Control+z');
     expect((await site()).shapes).toHaveLength(4);
+
+    // Griffe: Klickfläche mindestens 22 × 22 px
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const sec = st.project.sections.find((x) => x.type === 'site');
+      st.select({ kind: 'shape', id: sec.shapes[3].id, section: sec.id });
+    });
+    const hit = await page.locator('.sd-vertex').first().evaluate((el) => {
+      const r = getComputedStyle(el, '::after');
+      return [parseFloat(r.width), parseFloat(r.height)];
+    });
+    expect(Math.min(...hit)).toBeGreaterThanOrEqual(22);
 
     // Kamera-Reichweite in Metern
     await pick(page, 'Kamera');
@@ -209,6 +240,8 @@ test('Richtfunk: Punkt-zu-Punkt und Punkt-zu-Mehrpunkt, Geräteliste, Stationen 
     await page.locator('.sd-f', { hasText: 'Frequenz / Band' }).locator('input').fill('5 GHz');
     await page.locator('.sd-f', { hasText: 'SSID' }).locator('input').fill('Hof-Link');
     await expect.poll(svg).toContain('5 GHz');
+    // Beschriftung der Funkstrecke kontrastreicher als die Linie
+    expect(await svg()).toMatch(/fill="#0e7490">5 GHz/);
     await page.locator('.sd-row', { hasText: 'Station A' }).click();
     await page.locator('.sd-f', { hasText: 'IP-Adresse' }).locator('input').fill('192.168.1.20');
     await expect.poll(listText).toContain('Richtfunk zu RF 2 (5 GHz, SSID Hof-Link) · IP 192.168.1.20');

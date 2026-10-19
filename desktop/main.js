@@ -19,7 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } from './file-access.js';
 import { htmlToPdf, printPages, printResponse } from './quick-print.js';
-import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS } from './menu.js';
+import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS, SITE_TOOLS } from './menu.js';
 import { loadWindowState, rememberTheme, trackWindowState, MIN_SIZE } from './window-state.js';
 
 const APP_NAME = 'PDFix';
@@ -96,7 +96,7 @@ function start() {
   const pendingPrints = firstPrint ? [withBytes(firstPrint)] : [];
   // Hängt der Start im reinen Druckmodus, beendet sich das unsichtbare Programm von selbst
   if (printOnly) setTimeout(() => !rendererReady && endPrintOnly(), 60000);
-  let docState = { hasDocument: false, name: '', dirty: false, pdfOpen: false };
+  let docState = { hasDocument: false, name: '', dirty: false, pdfOpen: false, siteOpen: false };
   let allowClose = false;
   let closing = false;
   let rendererGone = false;
@@ -214,6 +214,7 @@ function start() {
     if (process.platform === 'darwin') win.setDocumentEdited(hasDocument && dirty);
     if (menu) for (const id of DOCUMENT_ITEMS) menu.getMenuItemById(id).enabled = hasDocument;
     if (menu) for (const tool of PDF_TOOLS) menu.getMenuItemById('tool:' + tool).enabled = !!docState.pdfOpen;
+    if (menu) for (const tool of SITE_TOOLS) menu.getMenuItemById('site:' + tool).enabled = !!docState.siteOpen;
   }
 
   function versions() {
@@ -434,7 +435,7 @@ function start() {
     // unsichtbares Druckprogramm: keine Rückfrage an ein verstecktes Fenster, einfach beenden
     if (printOnly) return endPrintOnly();
     const name = docState.hasDocument ? docState.name : '';
-    docState = { hasDocument: false, name: '', dirty: false, pdfOpen: false };
+    docState = { hasDocument: false, name: '', dirty: false, pdfOpen: false, siteOpen: false };
     updateTitle();
     if (!win || win.isDestroyed()) return;
     const { response } = await dialog.showMessageBox(win, {
@@ -530,7 +531,13 @@ function start() {
     });
     ipcMain.on('app:state', (event, state) => {
       if (!fromMainFrame(event) || !state) return;
-      docState = { hasDocument: !!state.hasDocument, name: String(state.name || ''), dirty: !!state.dirty, pdfOpen: !!state.pdfOpen };
+      docState = {
+        hasDocument: !!state.hasDocument,
+        name: String(state.name || ''),
+        dirty: !!state.dirty,
+        pdfOpen: !!state.pdfOpen,
+        siteOpen: !!state.siteOpen,
+      };
       const ws = menu && menu.getMenuItemById(state.workspace === 'docs' ? 'ws:docs' : 'ws:pdf');
       if (ws) ws.checked = true;
       updateTitle();

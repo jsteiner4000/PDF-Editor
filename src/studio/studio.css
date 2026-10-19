@@ -780,6 +780,17 @@
   cursor: grab;
   pointer-events: auto;
 }
+/* Klickfläche mindestens 22 × 22 px, auch wenn der Griff kleiner gezeichnet ist */
+.sd-handle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+}
 .sd-handle:hover {
   box-shadow:
     0 0 0 3px var(--acc),
