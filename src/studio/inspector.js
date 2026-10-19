@@ -15,6 +15,7 @@ import {
   FONTS,
   LANGS,
   PHOTO_LAYOUTS,
+  SHAPE_COLORS,
   SYMBOLS,
   T,
   TONES,
@@ -31,6 +32,7 @@ import { thumbOf } from './thumbs.js';
 import { chapterLabels, referenceTargets } from './chapters.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
+import { formatArea, formatLength, metersPerPt, pathLength, polygonArea, ratio, toPt } from './geo.js';
 
 const KIND_TITLE = {
   project: 'Projekt',
@@ -42,6 +44,8 @@ const KIND_TITLE = {
   wifi: 'WLAN',
   remote: 'Fernzugriff',
   sym: 'Symbol',
+  shape: 'Zeichnung',
+  link: 'Richtfunk',
   photo: 'Foto',
   block: 'Baustein',
 };
@@ -106,6 +110,8 @@ export class Inspector {
     else if (sel.kind === 'hub') this.hubForm(section);
     else if (sel.kind === 'block') this.blockForm(section, item);
     else if (sel.kind === 'sym') this.symForm(section, item);
+    else if (sel.kind === 'shape') this.shapeForm(section, item);
+    else if (sel.kind === 'link') this.linkForm(section, item);
     else if (sel.kind === 'photo') this.photoForm(section, item);
     else if (sel.kind === 'device') this.deviceForm(section, item);
     else if (sel.kind === 'wifi') this.wifiForm(section, item);
@@ -855,17 +861,45 @@ Object.assign(Inspector.prototype, {
     if (img) {
       bg.appendChild(
         this.seg('Drehung', [[0, '0°'], [90, '90°'], [180, '180°'], [270, '270°']], s.bg.rotate, (v) =>
-          studio.change('Hintergrund gedreht', () => (s.bg.rotate = v), { inspector: true }),
+          {
+          studio.change('Hintergrund gedreht', () => (s.bg.rotate = v), { inspector: true });
+          studio.checkScale(s);
+        },
         ),
       );
       bg.appendChild(
         this.seg('Darstellung', [['contain', 'Einpassen'], ['cover', 'Füllen']], s.bg.fit, (v) =>
-          studio.change('Hintergrund geändert', () => (s.bg.fit = v), { inspector: true }),
+          {
+          studio.change('Hintergrund geändert', () => (s.bg.fit = v), { inspector: true });
+          studio.checkScale(s);
+        },
         ),
       );
       bg.appendChild(this.slider('Aufhellen', s.bg, 'fade', { min: 0, max: 80, scale: 100, unit: '%' }));
     }
-    // Symbole setzen: Galerie „Symbol“ im Werkzeugband (dort auch eigene Symbole hochladen)
+    // Maßstab: Bezugsstrecke im Plan ziehen, Länge eingeben
+    const mpp = metersPerPt(s);
+    if (!s.scale)
+      this.group(
+        'Maßstab',
+        this.note('Noch kein Maßstab. Ziehe eine Strecke, deren Länge du kennst (z. B. von Haus A zu Haus B), und gib ihre Länge ein – danach stehen Längen und Flächen in Metern im Plan.'),
+        this.addButton('Maßstab festlegen', () => studio.arm('tool:scale')),
+      );
+    else {
+      const ref = this.field('Bezugsstrecke (m)', this.number(s.scale.m, (v) => studio.change('Maßstab geändert', () => (s.scale.m = v), { key: 'scale:' + s.id }), { min: 0.01, step: 0.01, id: 'scale' }));
+      const acts = htmlToElement(`<div class="sd-acts" style="padding-top:8px"><button type="button" class="btn outline">${icon('ruler', 's')}Neu ziehen</button><button type="button" class="btn outline danger">${icon('trash', 's')}Entfernen</button></div>`);
+      const [again, remove] = acts.querySelectorAll('button');
+      again.addEventListener('click', () => studio.arm('tool:scale'));
+      remove.addEventListener('click', () => studio.change('Maßstab entfernt', () => (s.scale = null), { inspector: true }));
+      this.group(
+        'Maßstab',
+        ref,
+        this.note(`1 : ${ratio(mpp).toLocaleString('de-DE')} auf der gedruckten Seite. Die Bezugsstrecke ist gestrichelt im Plan zu sehen (nur hier, nicht in der PDF).`),
+        this.check('Maßstabsleiste im Plan', s.scaleBar, (v) => studio.change('Maßstabsleiste geändert', () => (s.scaleBar = v))),
+        acts,
+      );
+    }
+    // Symbole setzen: Galerie „Objekt“ im Werkzeugband (dort auch eigene Symbole hochladen)
     for (const c of s.custom) {
       const code = this.text('Kürzel', c, 'code', { id: 'cc' + c.id, placeholder: 'ES', hint: 'Steht vor der Nummer, z. B. „ES 1“.' });
       code.querySelector('input').maxLength = 6;
@@ -884,6 +918,108 @@ Object.assign(Inspector.prototype, {
         onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true }),
       }),
     );
+    if (s.links.length)
+      this.group(
+        `Richtfunk (${s.links.length})`,
+        this.rows(s.links, {
+          render: (l) => `<span class="t">${escapeHtml(linkTitle(s, l, labels))}</span><small>${escapeHtml(l.band || '')}</small>`,
+          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true }),
+        }),
+      );
+    if (s.shapes.length)
+      this.group(
+        `Zeichnungen (${s.shapes.length})`,
+        this.rows(s.shapes, {
+          render: (z) => `<i class="sd-dot" style="background:${safeColor(z.color)}"></i><span class="t">${escapeHtml(tx(z.name, lang) || studio.shapeName(z))}</span><small>${escapeHtml(mpp ? shapeMeasure(z, mpp) : '')}</small>`,
+          onOpen: (z) => studio.select({ kind: 'shape', id: z.id, section: s.id }, { reveal: true }),
+        }),
+      );
+  },
+
+  /** Zahl (z. B. Meter); leere oder ungültige Eingaben ändern nichts. */
+  number(value, onSet, { min = 0, step = 1, id = '' } = {}) {
+    const el = htmlToElement(`<input class="fld num" type="number" min="${min}" step="${step}" value="${value}" data-f="${escapeHtml(id)}" style="width:110px">`);
+    el.addEventListener('input', () => {
+      const v = Number(el.value);
+      if (Number.isFinite(v) && v >= min && v > 0) onSet(v);
+    });
+    el.addEventListener('keydown', (ev) => ev.key === 'Enter' && el.blur());
+    return el;
+  },
+
+  /** Farbwahl für Zeichnungen (Punkte wie in Vorschau/Office). */
+  swatches(current, onPick) {
+    const el = htmlToElement('<div class="sd-swatches" role="radiogroup" aria-label="Farbe"></div>');
+    for (const c of SHAPE_COLORS) {
+      const b = htmlToElement(`<button type="button" role="radio" aria-checked="${c === current}" class="${c === current ? 'on' : ''}" title="${c}" style="--c:${c}"></button>`);
+      b.addEventListener('click', () => c !== current && onPick(c));
+      el.appendChild(b);
+    }
+    const custom = htmlToElement(`<label class="sd-swatch-custom" title="Eigene Farbe"><input type="color" value="${safeColor(current, '#1d4ed8')}" aria-label="Eigene Farbe"></label>`);
+    custom.querySelector('input').addEventListener('change', (ev) => onPick(ev.target.value));
+    el.appendChild(custom);
+    return this.field('Farbe', el);
+  },
+
+  shapeForm(s, z) {
+    const studio = this.studio;
+    const mpp = metersPerPt(s);
+    const group = this.group(studio.shapeName(z));
+    if (z.type === 'fence')
+      group.append(
+        this.bi('Bezeichnung', z, 'name', { placeholder: z.closed ? 'z. B. Zone 1 – Lager' : 'z. B. Zaun Nord' }),
+        this.check('Als Zone schließen', z.closed, (v) => studio.change(v ? 'Zone geschlossen' : 'Zone geöffnet', () => (z.closed = v), { inspector: true }), z.pts.length < 3 ? 'Braucht mindestens drei Eckpunkte.' : 'Fläche wird leicht eingefärbt; Name und Fläche stehen in der Mitte.'),
+      );
+    else group.append(this.bi('Bezeichnung', z, 'name', { placeholder: 'optional' }));
+    if (z.type === 'fence' && z.pts.length < 3) group.querySelector('.sd-check input').disabled = true;
+    group.append(
+      this.swatches(z.color, (c) => {
+        // nächste Zeichnung dieser Art in derselben Farbe
+        if (z.type === 'fence') studio.fenceColor = c;
+        else studio.shapeColor = c;
+        studio.change('Farbe geändert', () => (z.color = c), { inspector: true });
+      }),
+    );
+    if (mpp) {
+      group.append(this.field(z.closed ? 'Umfang · Fläche' : 'Länge', htmlToElement(`<span class="sd-val">${escapeHtml(shapeMeasure(z, mpp))}</span>`)));
+      group.append(this.check(z.closed ? 'Fläche im Plan zeigen' : 'Länge im Plan zeigen', z.showLen, (v) => studio.change('Anzeige geändert', () => (z.showLen = v))));
+    } else group.append(this.note('Längen in Metern erscheinen, sobald der Lageplan einen Maßstab hat.'));
+    if (z.type !== 'free') group.append(this.note('Eckpunkte im Plan ziehen; die ganze Zeichnung an der Linie verschieben.'));
+    this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
+  },
+
+  linkForm(s, l) {
+    const studio = this.studio;
+    const labels = symbolLabels(s);
+    const mpp = metersPerPt(s);
+    const group = this.group(linkTitle(s, l, labels));
+    group.append(
+      this.seg('Art', [['ptp', 'Punkt-zu-Punkt'], ['ptmp', 'Mehrpunkt']], l.mode, (v) => {
+        if (v === 'ptp' && l.to.length > 1) return toast('Erst Gegenstellen entfernen – Punkt-zu-Punkt hat genau eine.', 'warn', 4000);
+        studio.change('Art geändert', () => (l.mode = v), { inspector: true });
+      }),
+      this.text('Frequenz / Band', l, 'band', { placeholder: 'z. B. 5 GHz' }),
+      this.text('SSID', l, 'ssid', { placeholder: 'optional' }),
+    );
+    if (!document.getElementById('sdBands'))
+      document.body.appendChild(htmlToElement('<datalist id="sdBands"><option value="2,4 GHz"><option value="5 GHz"><option value="6 GHz"><option value="24 GHz"><option value="60 GHz"></datalist>'));
+    group.querySelector('[data-f^="t:band"]')?.setAttribute('list', 'sdBands');
+    const byId = new Map(s.symbols.map((y) => [y.id, y]));
+    const dist = (a, b) => (mpp && a && b ? formatLength(Math.hypot(...[0, 1].map((k) => toPt([a.x, a.y])[k] - toPt([b.x, b.y])[k])) * mpp) : '');
+    const rows = [{ id: l.from, role: l.mode === 'ptmp' ? 'Basis' : 'Station A', len: '' }, ...l.to.map((t, i) => ({ id: t, role: l.mode === 'ptmp' ? 'Gegenstelle' : 'Station B', len: dist(byId.get(l.from), byId.get(t)), i }))];
+    const stations = this.group(
+      'Stationen',
+      this.rows(rows, {
+        render: (r) => {
+          const y = byId.get(r.id);
+          return `<b class="pin">${escapeHtml(labels.get(r.id) || '')}</b><span class="t">${escapeHtml(r.role)}${y && y.ip ? ' · ' + escapeHtml(y.ip) : ''}</span><small>${escapeHtml(r.len)}</small>`;
+        },
+        onOpen: (r) => studio.select({ kind: 'sym', id: r.id, section: s.id }, { reveal: true }),
+      }),
+    );
+    if (l.mode === 'ptmp') stations.appendChild(this.addButton('Gegenstelle hinzufügen', () => studio.arm('tool:add:' + l.id)));
+    stations.appendChild(this.note('IP-Adressen stehen bei der jeweiligen Antenne. Antennen lassen sich im Plan verschieben – die Strecke folgt.'));
+    this.actions(['Strecke löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
   symForm(s, y) {
@@ -891,7 +1027,9 @@ Object.assign(Inspector.prototype, {
     const lang = langsOf(this.project)[0];
     const info = symbolInfo(s, y.kind);
     const labels = symbolLabels(s);
-    const kinds = [...SYMBOLS.map((k) => [k.id, tx(k.name, lang)]), ...s.custom.map((c) => ['custom:' + c.id, tx(c.name, lang)])];
+    const mpp = metersPerPt(s);
+    // Antennen gehören zu Strecken: Art nur unter den übrigen Symbolen wechseln
+    const kinds = [...SYMBOLS.filter((k) => !k.link || k.id === y.kind).map((k) => [k.id, tx(k.name, lang)]), ...s.custom.map((c) => ['custom:' + c.id, tx(c.name, lang)])];
     this.group(
       `${labels.get(y.id) || 'Symbol'}`,
       this.bi('Bezeichnung', y, 'name', { placeholder: info ? tx(info.name, lang) : '' }),
@@ -915,6 +1053,18 @@ Object.assign(Inspector.prototype, {
         studio.change('Größe geändert', () => (y.scale = v), { inspector: true }),
       ),
     );
+    if (y.kind === 'radio') {
+      const links = s.links.filter((l) => l.from === y.id || l.to.includes(y.id));
+      this.group(
+        'Richtfunk',
+        this.text('IP-Adresse', y, 'ip', { placeholder: 'z. B. 192.168.1.20' }),
+        this.rows(links, {
+          empty: 'Gehört zu keiner Strecke.',
+          render: (l) => `<span class="t">${escapeHtml(linkTitle(s, l, labels))}</span><small>${escapeHtml(l.band || '')}</small>`,
+          onOpen: (l) => studio.select({ kind: 'link', id: l.id, section: s.id }, { reveal: true }),
+        }),
+      );
+    }
     if (info && info.fov) {
       const group = this.group(
         'Erfassungsbereich',
@@ -924,7 +1074,9 @@ Object.assign(Inspector.prototype, {
         group.append(
           this.slider('Blickrichtung', y, 'dir', { min: 0, max: 359, unit: '°' }),
           this.slider('Öffnungswinkel', y, 'angle', { min: 10, max: 360, unit: '°' }),
-          this.slider('Reichweite', y, 'range', { min: 20, max: 400, unit: 'pt' }),
+          mpp
+            ? this.slider('Reichweite', y, 'range', { min: round1(20 * mpp), max: round1(600 * mpp), step: 0.1, scale: mpp, unit: 'm' })
+            : this.slider('Reichweite', y, 'range', { min: 20, max: 400, unit: 'pt' }),
           this.note('Im Plan den Punkt am Ende ziehen: Richtung und Reichweite zugleich (mit Umschalt in 15°-Schritten).'),
         );
     }
@@ -1177,3 +1329,18 @@ function catOf(section, cat) {
   return found ? found.color : cat;
 }
 
+const round1 = (v) => Math.round(v * 10) / 10;
+
+/** „RF 1 ↔ RF 2“ bzw. „RF 1 → 3 Gegenstellen“. */
+function linkTitle(s, l, labels) {
+  const a = labels.get(l.from) || '';
+  if (l.mode === 'ptp') return `${a} ↔ ${labels.get(l.to[0]) || ''}`;
+  return `${a} → ${l.to.length} ${l.to.length === 1 ? 'Gegenstelle' : 'Gegenstellen'}`;
+}
+
+/** Länge bzw. Umfang und Fläche einer Zeichnung in Metern. */
+function shapeMeasure(z, mpp) {
+  const pts = z.pts.map((q) => toPt(q));
+  const len = formatLength(pathLength(pts, z.closed) * mpp);
+  return z.closed ? `${len} · ${formatArea(polygonArea(pts) * mpp * mpp)}` : len;
+}

@@ -56,6 +56,7 @@ import { TooLargeError, assertPrintable, canMakePdf, embedProject, hasProject, m
 import { PDFDocument } from 'pdf-lib';
 import { Inspector } from './inspector.js';
 import { symbolIconSvg } from './site.js';
+import { hitsShape, siteTools, toolOf } from './site-tools.js';
 
 export { deleteDraft, listDrafts };
 
@@ -163,8 +164,10 @@ export class Studio {
     scroll.addEventListener('pointercancel', (ev) => this.onPointerUp(ev, true));
     scroll.addEventListener('pointerleave', () => this.hover(null));
     scroll.addEventListener('dblclick', (ev) => {
+      // Zaun bzw. Punkt-zu-Mehrpunkt mit Doppelklick beenden
+      if (this.draft && this.finishDraft()) return;
       const hit = this.hitAt(ev);
-      if (hit && hit.item.kind === 'box') this.inspector.focusFirst();
+      if (hit && hit.item && hit.item.kind === 'box') this.inspector.focusFirst();
     });
     new ResizeObserver(() => {
       if (this.visible && this.zoom == null) this.layout();
@@ -216,6 +219,8 @@ export class Studio {
     this.sel = sel || { kind: 'project' };
     this.zoom = null;
     this.armed = null;
+    this.lastArmed = null;
+    this.draft = null;
     this.updateArmHint();
     if (project.font === 'barlow') await ensureBarlow().catch(() => {});
     this.mount();
@@ -228,6 +233,8 @@ export class Studio {
   async close() {
     await this.flush();
     this.armed = null;
+    this.lastArmed = null;
+    this.draft = null;
     this.updateArmHint();
     this.project = null;
     this.doc = null;
@@ -477,6 +484,8 @@ export class Studio {
     if (kind === 'remote') return s.remote.find((r) => r.id === id) || null;
     if (kind === 'block') return s.blocks.find((b) => b.id === id) || null;
     if (kind === 'sym') return s.symbols.find((y) => y.id === id) || null;
+    if (kind === 'shape') return s.shapes.find((z) => z.id === id) || null;
+    if (kind === 'link') return s.links.find((l) => l.id === id) || null;
     if (kind === 'photo') return s.items.find((p) => p.id === id) || null;
     return null;
   }
@@ -706,6 +715,7 @@ export class Studio {
       const sectionSel =
         (kind === 'section' && page.section === id) || (kind === 'project' && page.kind === 'cover');
       el.classList.toggle('sd-cur', sectionSel);
+      if (page && page.site && kind === 'section' && page.section === id) this.renderSiteSelection(el, page);
       if (!page || page.section !== section) return;
       for (const hit of page.hits) {
         const match =
@@ -723,6 +733,7 @@ export class Studio {
         if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
         marks.appendChild(mark);
       }
+      if (page.site) this.renderSiteSelection(el, page);
       // Griff am Ende des Erfassungsbereichs: ziehen ändert Blickrichtung und Reichweite
       if (kind === 'sym' && page.site) {
         const m = page.site.symbols.find((y) => y.id === id);
@@ -734,6 +745,7 @@ export class Studio {
         }
       }
     });
+    this.renderDraft();
   }
 
   pinInConn(hit, pinId) {
@@ -901,6 +913,12 @@ export class Studio {
         fresh(y, 'y');
         if (to) y.kind = 'custom:' + to;
       });
+      copy.shapes.forEach((z) => fresh(z, 'z'));
+      copy.links.forEach((l) => {
+        fresh(l, 'l');
+        l.from = remap.get(l.from);
+        l.to = l.to.map((t) => remap.get(t));
+      });
     } else if (copy.type === 'photos') {
       copy.items.forEach((p) => fresh(p, 'f'));
     } else if (copy.type === 'chapters') {
@@ -1066,9 +1084,17 @@ export class Studio {
         () => {
           s.symbols = s.symbols.filter((y) => y.id !== id);
           this.dropLinks(new Set([id]));
+          this.dropStations(s, new Set([id]));
         },
         { inspector: true },
       );
+    } else if (kind === 'shape') {
+      const z = s.shapes.find((x) => x.id === id);
+      this.sel = { kind: 'section', id: section };
+      this.change(`${z ? this.shapeName(z) : 'Zeichnung'} gelöscht`, () => (s.shapes = s.shapes.filter((x) => x.id !== id)), { inspector: true });
+    } else if (kind === 'link') {
+      this.sel = { kind: 'section', id: section };
+      this.change('Richtfunkstrecke gelöscht', () => (s.links = s.links.filter((x) => x.id !== id)), { inspector: true });
     } else if (kind === 'photo') {
       this.sel = { kind: 'section', id: section };
       this.change('Foto entfernt', () => (s.items = s.items.filter((p) => p.id !== id)), { inspector: true });
@@ -1133,13 +1159,16 @@ export class Studio {
     this.ribbonType = this.currentType();
     const access = this.ribbonType === 'access' ? this.section(this.sel.section || this.sel.id) : null;
     const siteSection = this.ribbonType === 'site' ? this.section(this.sel.section || this.sel.id) : null;
+    const again = siteSection && !this.armed ? this.againLabel(siteSection) : null;
     const photosSection = this.ribbonType === 'photos' ? this.section(this.sel.section || this.sel.id) : null;
     const chaptersSection = this.ribbonType === 'chapters' ? this.section(this.sel.section || this.sel.id) : null;
     const context = chaptersSection
       ? `<button class="rb c1" data-act="block" title="Baustein einfügen">${icon('plus')}Baustein${icon('chev', 's caret')}</button>
 <button class="rb c5" data-act="replace" title="Suchen und Ersetzen (Strg+H)">${icon('replace')}Ersetzen</button>`
       : siteSection
-      ? `<button class="rb c1${this.armed ? ' on' : ''}" data-act="symbols" title="Symbol wählen und im Plan setzen">${icon('map')}Symbol${icon('chev', 's caret')}</button>
+      ? `<button class="rb c1${this.armed && toolOf(this.armed) !== 'scale' ? ' on' : ''}" data-act="symbols" title="Symbol, Richtfunkstrecke, Zaun oder Linie wählen und im Plan setzen">${icon('map')}Objekt${icon('chev', 's caret')}</button>
+${again ? `<button class="rb c1" data-act="again" title="„${escapeHtml(again)}“ erneut setzen (Strg+D)">${icon('plus')}${escapeHtml(again)}</button>` : ''}
+<button class="rb c5${toolOf(this.armed) === 'scale' ? ' on' : ''}" data-act="scale" title="Maßstab: eine bekannte Strecke im Plan ziehen und ihre Länge eingeben">${icon('ruler')}Maßstab</button>
 <button class="rb c3" data-act="bg" title="Hintergrund: Luftbild, Karte oder Grundriss">${icon('image')}Hintergrund${icon('chev', 's caret')}</button>`
       : photosSection
         ? `<button class="rb c3" data-act="addphotos" title="Fotos hinzufügen (Aufnahmedatum wird gelesen)">${icon('image')}Fotos hinzufügen</button>`
@@ -1170,6 +1199,8 @@ ${context}
         else if (act === 'block') this.blockMenu(btn, chaptersSection);
         else if (act === 'replace') this.replaceDialog();
         else if (act === 'symbols') this.symbolMenu(btn, siteSection);
+        else if (act === 'again') this.armAgain();
+        else if (act === 'scale') this.arm('tool:scale');
         else if (act === 'bg') this.backgroundMenu(btn, siteSection);
         else if (act === 'addphotos') this.pickPhotos(photosSection);
       });
@@ -1194,10 +1225,12 @@ ${context}
     const y = ((ev.clientY - r.top) / r.height) * PAGE.h;
     let item = null;
     for (let i = page.hits.length - 1; i >= 0; i--) {
-      const [hx, hy, hw, hh] = page.hits[i].rect;
-      const pad = page.hits[i].kind === 'box' ? 3 : 0;
-      if (x >= hx - pad && x <= hx + hw + pad && y >= hy - pad && y <= hy + hh + pad) {
-        item = page.hits[i];
+      const h = page.hits[i];
+      const [hx, hy, hw, hh] = h.rect;
+      // Zeichnungen und Funkstrecken: Abstand zur Linie zählt, nicht das umgebende Rechteck
+      const pad = h.kind === 'box' ? 3 : h.pts || h.segs ? 4 : 0;
+      if (x >= hx - pad && x <= hx + hw + pad && y >= hy - pad && y <= hy + hh + pad && hitsShape(h, [x, y])) {
+        item = h;
         break;
       }
     }
@@ -1205,9 +1238,9 @@ ${context}
   }
 
   hover(hit) {
-    const old = $('#sdPages .sd-hov');
-    if (old) old.remove();
+    for (const old of document.querySelectorAll('#sdPages .sd-hov, #sdPages .sd-hov-ovl')) old.remove();
     if (!hit || !hit.item || this.drag) return;
+    if (hit.item.pts || hit.item.segs) return this.hoverShape(hit);
     const mark = this.markEl(hit.item.rect, 'sd-hov');
     hit.el.querySelector('.sd-marks').appendChild(mark);
   }
@@ -1225,13 +1258,17 @@ ${context}
   }
 
   onPointerMove(ev) {
+    if (this.drag && this.drag.tool) return this.toolMove(ev);
     if (this.drag) return this.dragMove(ev);
     const hit = this.hitAt(ev);
-    this.hover(hit);
     if (this.armed) {
-      $('#sdScroll').style.cursor = hit && hit.page.site && inArea(hit, hit.page.site.area) ? 'crosshair' : '';
+      this.hover(null);
+      const inside = hit && hit.page.site && inArea(hit, hit.page.site.area);
+      $('#sdScroll').style.cursor = inside ? 'crosshair' : '';
+      if (this.draft && inside && hit.page.section === this.draft.section) this.toolMove(ev, hit);
       return;
     }
+    this.hover(hit);
     const mode = this.dragMode(hit);
     $('#sdScroll').style.cursor = mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : hit && hit.item ? 'pointer' : '';
   }
@@ -1242,17 +1279,25 @@ ${context}
     if (!hit) return;
     const { page, item } = hit;
     const section = page.section;
+    const target = ev.target.classList;
+    // Eckpunkt einer Zeichnung ziehen
+    if (target && target.contains('sd-vertex') && this.sel.kind === 'shape') return this.startShapeDrag(ev, hit, 'vertex', +ev.target.dataset.i);
     // Erfassungsbereich: Griff ziehen
-    if (ev.target.classList && ev.target.classList.contains('sd-handle') && this.sel.kind === 'sym') return this.startSymbolDrag(ev, hit, 'fov');
-    // Symbol setzen (Platzieren ist aktiv)
+    if (target && target.contains('sd-handle') && this.sel.kind === 'sym') return this.startSymbolDrag(ev, hit, 'fov');
+    // Symbol setzen bzw. zeichnen (Werkzeug ist aktiv)
     if (this.armed && page.site && inArea(hit, page.site.area)) {
       ev.preventDefault();
-      return this.placeSymbol(hit);
+      return toolOf(this.armed) ? this.toolDown(ev, hit) : this.placeSymbol(hit, ev);
     }
     if (item && item.kind === 'sym' && page.site) {
       this.select({ kind: 'sym', id: item.id, section });
       return this.startSymbolDrag(ev, hit, 'move');
     }
+    if (item && item.kind === 'shape' && page.site) {
+      this.select({ kind: 'shape', id: item.id, section });
+      return this.startShapeDrag(ev, hit, 'shape');
+    }
+    if (item && item.kind === 'link') return this.select({ kind: 'link', id: item.id, section });
     if (!item) {
       this.select(page.kind === 'cover' ? { kind: 'project' } : { kind: 'section', id: section });
       return;
@@ -1320,6 +1365,7 @@ ${context}
   onPointerUp(ev, cancel = false) {
     const d = this.drag;
     if (!d) return;
+    if (d.tool) return this.toolUp(ev, cancel);
     this.drag = null;
     $('#sdScroll').classList.remove('dragging');
     if (d.el.hasPointerCapture(ev.pointerId)) d.el.releasePointerCapture(ev.pointerId);
@@ -1331,6 +1377,8 @@ ${context}
       pins: 'Leitungen verschoben',
       sym: 'Symbol verschoben',
       fov: 'Erfassungsbereich geändert',
+      shape: d.shape ? `${this.shapeName(d.shape)} verschoben` : '',
+      vertex: 'Punkt verschoben',
     }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
@@ -1341,6 +1389,8 @@ ${context}
   /** Platzieren ein-/ausschalten: `kind` = Symbolart (oder null). */
   arm(kind) {
     this.armed = this.armed === kind ? null : kind;
+    this.resetDraft();
+    this.hover(null);
     this.updateArmHint();
     this.app.renderRibbon();
     if (this.inspector && this.visible) this.inspector.render();
@@ -1349,20 +1399,20 @@ ${context}
   updateArmHint() {
     let chip = $('#sdArm');
     if (!this.armed) return chip && chip.remove();
-    const info = this.armedInfo();
+    const info = toolOf(this.armed) ? null : this.armedInfo();
     if (!chip) {
       chip = htmlToElement(`<div class="sd-armed" id="sdArm" role="status"><span></span><button class="btn ic" title="Beenden (Esc)">${icon('x', 's')}</button></div>`);
       chip.querySelector('button').addEventListener('click', () => this.arm(this.armed));
       $('.sd-center').appendChild(chip);
     }
-    chip.querySelector('span').textContent = `Klicke in den Plan, um „${info ? tx(info.name) : 'Symbol'}“ zu setzen`;
+    chip.querySelector('span').textContent = this.armHintText(info);
   }
 
   /** Angaben zur Symbolart, die gerade gesetzt wird (null, wenn es sie nicht mehr gibt). */
-  armedInfo() {
-    if (!this.armed || !this.project) return null;
+  armedInfo(kind = this.armed) {
+    if (!kind || !this.project) return null;
     for (const s of this.project.sections) {
-      const info = s.type === 'site' && symbolInfo(s, this.armed);
+      const info = s.type === 'site' && symbolInfo(s, kind);
       if (info) return info;
     }
     return null;
@@ -1370,8 +1420,15 @@ ${context}
 
   /** Platzieren beenden, wenn die Symbolart verschwunden ist (z. B. nach Rückgängig). */
   checkArmed() {
-    if (!this.armed || this.armedInfo()) return;
+    const tool = toolOf(this.armed);
+    const gone =
+      tool === 'add'
+        ? !this.project.sections.some((s) => s.type === 'site' && s.links.some((l) => l.id === this.armed.split(':')[2]))
+        : !tool && !this.armedInfo();
+    if (this.draft && !this.section(this.draft.section)) this.resetDraft();
+    if (!this.armed || !gone) return;
     this.armed = null;
+    this.resetDraft();
     this.updateArmHint();
   }
 
@@ -1382,14 +1439,32 @@ ${context}
     return s && s.type === 'site' ? s : this.project.sections.find((x) => x.type === 'site') || null;
   }
 
-  placeSymbol(hit) {
+  placeSymbol(hit, ev = null) {
     const s = this.section(hit.page.section);
     if (!s || s.type !== 'site' || !this.armed) return;
     if (!symbolInfo(s, this.armed)) return toast('Dieses eigene Symbol gehört zu einem anderen Lageplan.', 'warn', 4000);
     const a = hit.page.site.area;
     const sym = newSymbol(this.armed, Math.max(0, Math.min(1, (hit.x - a.x) / a.w)), Math.max(0, Math.min(1, (hit.y - a.y) / a.h)));
     this.change('Symbol gesetzt', () => s.symbols.push(sym));
+    // Setzen endet: das neue Symbol ist gewählt und lässt sich sofort verschieben und ausrichten
+    this.disarm();
     this.select({ kind: 'sym', id: sym.id, section: s.id });
+    if (!ev) return;
+    hit.el.setPointerCapture(ev.pointerId);
+    this.drag = {
+      site: true,
+      mode: 'sym',
+      sym,
+      area: a,
+      center: [hit.x, hit.y],
+      grab: [0, 0],
+      el: hit.el,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      before: this.snap,
+      moved: false,
+    };
+    $('#sdScroll').classList.add('dragging');
   }
 
   startSymbolDrag(ev, hit, mode) {
@@ -1422,6 +1497,10 @@ ${context}
     const r = d.el.getBoundingClientRect();
     const px = ((ev.clientX - r.left) / r.width) * PAGE.w;
     const py = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    if (d.shape) {
+      this.shapeDragMove(d, px, py, ev.shiftKey);
+      return this.schedule();
+    }
     const sym = d.sym;
     if (d.mode === 'sym') {
       sym.x = Math.max(0, Math.min(1, (px - d.grab[0] - d.area.x) / d.area.w));
@@ -1439,26 +1518,34 @@ ${context}
 
   /* ---------- Lageplan: Hintergrund, eigene Symbole ---------- */
 
-  /** Galerie der Symbole (wie „Formen“ in Office): wählen, dann in den Plan klicken. */
+  /**
+   * Galerie „Objekt“ (wie „Formen“ in Office): Symbole, Richtfunk und Zeichnen – wählen, dann in den
+   * Plan klicken bzw. zeichnen.
+   */
   symbolMenu(anchor, site) {
     if (!site) return;
-    const kinds = [...SYMBOLS.map((k) => k.id), ...site.custom.map((c) => 'custom:' + c.id)];
+    const kinds = [...SYMBOLS.filter((k) => !k.link).map((k) => k.id), ...site.custom.map((c) => 'custom:' + c.id)];
     const el = htmlToElement(
-      `<div class="menu sd-gallery" role="dialog" aria-label="Symbol wählen"><div class="sd-symbols"></div><hr><button type="button" class="mi" data-custom>${icon('plus', 's')}<span>Eigenes Symbol hochladen …</span></button></div>`,
+      `<div class="menu sd-gallery" role="dialog" aria-label="Objekt wählen"><h5>Symbole</h5><div class="sd-symbols"></div><h5>Richtfunk</h5><div class="sd-symbols" data-g="radio"></div><h5>Zeichnen</h5><div class="sd-symbols" data-g="draw"></div><hr><button type="button" class="mi" data-custom>${icon('plus', 's')}<span>Eigenes Symbol hochladen …</span></button></div>`,
     );
-    const grid = el.querySelector('.sd-symbols');
-    for (const kind of kinds) {
-      const info = symbolInfo(site, kind);
+    const [grid, radio, draw] = el.querySelectorAll('.sd-symbols');
+    const tile = (cls, kind, label, art, parent) => {
       const on = this.armed === kind;
       const b = htmlToElement(
-        `<button type="button" class="sd-symbol${on ? ' on' : ''}" aria-pressed="${on}" title="${escapeHtml(tx(info.name, 'de'))}">${symbolIconSvg(info, this.project.images, 22)}<span>${escapeHtml(tx(info.name, 'de'))}</span></button>`,
+        `<button type="button" class="${cls}${on ? ' on' : ''}" aria-pressed="${on}" title="${escapeHtml(label)}">${art}<span>${escapeHtml(label)}</span></button>`,
       );
       b.addEventListener('click', () => {
         closeMenu();
         this.arm(kind);
       });
-      grid.appendChild(b);
+      parent.appendChild(b);
+    };
+    for (const kind of kinds) {
+      const info = symbolInfo(site, kind);
+      tile('sd-symbol', kind, tx(info.name, 'de'), symbolIconSvg(info, this.project.images, 22), grid);
     }
+    for (const [tool, label] of [['ptp', 'Punkt-zu-Punkt'], ['ptmp', 'Punkt-zu-Mehrpunkt'], ['line', 'Linie'], ['free', 'Freihand'], ['fence', 'Zaun / Zone']])
+      tile('sd-tool', 'tool:' + tool, label, TOOL_ART[tool], tool.startsWith('pt') ? radio : draw);
     el.querySelector('[data-custom]').addEventListener('click', () => {
       closeMenu();
       this.addCustomSymbol(site);
@@ -1483,6 +1570,7 @@ ${context}
     const id = uid('img');
     this.project.images[id] = image;
     this.change('Hintergrund gesetzt', () => (site.bg.image = id), { inspector: true });
+    this.checkScale(site);
   }
 
   async pickBackground(site, file = null) {
@@ -1755,6 +1843,15 @@ ${context}
     } else if (mod && key === '0') {
       ev.preventDefault();
       this.setZoom(null);
+    } else if (!inField && this.draft && (key === 'backspace' || key === 'delete')) {
+      ev.preventDefault();
+      this.undoPoint();
+    } else if (!inField && this.draft && key === 'enter') {
+      ev.preventDefault();
+      this.finishDraft();
+    } else if (mod && !inField && key === 'd' && this.ribbonType === 'site') {
+      ev.preventDefault();
+      this.armAgain();
     } else if (!inField && !mod && (key === 'delete' || key === 'backspace') && this.sel.kind !== 'project') {
       ev.preventDefault();
       this.removeSelected();
@@ -1998,3 +2095,14 @@ function applyCompany(project) {
     }
   } catch {}
 }
+
+Object.assign(Studio.prototype, siteTools);
+
+/** Kleine Bilder für die Werkzeuge in der Galerie (22 × 22). */
+const TOOL_ART = {
+  ptp: '<svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true"><path d="M5 16 17 6" stroke="#0891b2" stroke-width="1.6" stroke-dasharray="3 2"/><circle cx="5" cy="16" r="3.4" fill="#0891b2"/><circle cx="17" cy="6" r="3.4" fill="#0891b2"/></svg>',
+  ptmp: '<svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true"><path d="M5 11 17 4M5 11h12M5 11l12 7" stroke="#0891b2" stroke-width="1.4" stroke-dasharray="3 2"/><circle cx="5" cy="11" r="3.4" fill="#0891b2"/><circle cx="17" cy="4" r="2.4" fill="#0891b2"/><circle cx="17" cy="11" r="2.4" fill="#0891b2"/><circle cx="17" cy="18" r="2.4" fill="#0891b2"/></svg>',
+  line: '<svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true"><path d="M4 18 18 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  free: '<svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true"><path d="M3.5 15c2.5-7 5.5 3 8-3s4.5-4 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+  fence: '<svg viewBox="0 0 22 22" width="22" height="22" aria-hidden="true"><path d="M4 17V6h14v11" fill="#15803d" fill-opacity=".12" stroke="#15803d" stroke-width="1.5" stroke-linejoin="round"/><g fill="#fff" stroke="#15803d"><circle cx="4" cy="11.5" r="1.6"/><circle cx="11" cy="6" r="1.6"/><circle cx="18" cy="11.5" r="1.6"/><circle cx="4" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/></g></svg>',
+};

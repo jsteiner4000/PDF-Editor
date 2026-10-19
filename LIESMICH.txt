@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.9.3.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.10.0.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -330,6 +330,34 @@ Schriftdatei:
 Die mitgelieferten Schriften gibt es zusätzlich als Dateien (z. B. zum
 Installieren in Windows): in der Desktop-App über Hilfe > „Schriftdateien
 anzeigen“. Lizenz: SIL Open Font License (siehe Hilfe > „Lizenzhinweise“).
+
+
+LAGEPLAN (BEREICH DOKUMENTATION)
+--------------------------------
+„Objekt“ im Werkzeugband öffnet die Auswahl: Symbole (Kamera, Melder …),
+Richtfunk und Zeichnen. Wählen, dann in den Plan klicken.
+
+Symbol setzen: Klick setzt das Symbol – mit gedrückter Maustaste gleich an die
+richtige Stelle ziehen. Danach ist es ausgewählt: verschieben, am Griff
+Blickrichtung und Reichweite ziehen, rechts Öffnungswinkel und Bezeichnung.
+Das nächste Symbol derselben Art: Knopf „+ Kamera“ im Werkzeugband oder Strg+D.
+
+Richtfunk: „Punkt-zu-Punkt“ – erste Station, dann Gegenstelle klicken.
+„Punkt-zu-Mehrpunkt“ – Basis, dann beliebig viele Gegenstellen; Enter oder
+Doppelklick beendet. Ein Klick auf eine vorhandene Antenne verwendet sie
+weiter. Frequenz/Band und SSID stehen an der Strecke, die IP-Adresse an der
+Antenne; alles erscheint in der Geräteliste.
+
+Zeichnen: „Linie“ (ziehen, Umschalt = 45°), „Freihand“ (mit gedrückter
+Maustaste) und „Zaun / Zone“ (Eckpunkte klicken; Enter oder Doppelklick beendet
+den Zaun, ein Klick auf den ersten Punkt schließt ihn zur Zone mit Namen und
+Fläche). Rücktaste nimmt beim Zeichnen den letzten Punkt zurück, Esc bricht ab.
+Farbe und Name rechts; Eckpunkte lassen sich später im Plan ziehen.
+
+Maßstab: „Maßstab“ im Werkzeugband, eine Strecke mit bekannter Länge ziehen
+(z. B. von Haus A zu Haus B) und die Länge in Metern eingeben. Danach stehen
+Längen von Linien, Zäunen und Richtfunkstrecken, Flächen von Zonen und die
+Reichweite der Kameras in Metern; unten links im Plan eine Maßstabsleiste.
 
 
 TASTENKÜRZEL

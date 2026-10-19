@@ -353,16 +353,18 @@ test('Lageplan: Symbole setzen, ziehen, Erfassungsbereich per Griff, Nummern, R�
     };
     const symbols = () => page.evaluate(() => window.pdfEditor.studio.project.sections.find((s) => s.type === 'site').symbols.map((y) => ({ ...y })));
 
-    // Platzieren: Kamera zweimal, ein Bewegungsmelder
+    // Platzieren: Kamera setzen – Setzen endet, die Kamera ist gewählt; „Erneut“ setzt die zweite
     await page.evaluate(() => window.pdfEditor.studio.arm('camera'));
     await expect(page.locator('#sdArm')).toContainText('Kamera');
     await page.mouse.click(...(await point(0.3, 0.3)));
+    await expect(page.locator('#sdArm')).toHaveCount(0);
+    expect(await page.evaluate(() => window.pdfEditor.studio.sel.kind)).toBe('sym');
+    await page.locator('.rb[data-act="again"]').click();
+    await expect(page.locator('#sdArm')).toContainText('Kamera');
     await page.mouse.click(...(await point(0.7, 0.5)));
-    await page.keyboard.press('Escape');
     await expect(page.locator('#sdArm')).toHaveCount(0);
     await page.evaluate(() => window.pdfEditor.studio.arm('motion'));
     await page.mouse.click(...(await point(0.5, 0.2)));
-    await page.evaluate(() => window.pdfEditor.studio.arm('motion'));
     const placed = await symbols();
     expect(placed.map((y) => y.kind)).toEqual(['camera', 'camera', 'motion']);
     expect(placed[0].x).toBeCloseTo(0.3, 1);
