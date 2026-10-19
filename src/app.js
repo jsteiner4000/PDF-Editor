@@ -1749,6 +1749,16 @@ export class App {
     return body;
   }
   /** Werkzeug aus dem Menü „Werkzeuge“: zur geöffneten PDF wechseln und das Werkzeug starten. */
+  /** Lageplan-Befehl aus dem Menü: zur Dokumentation wechseln, Lageplan wählen, Werkzeug starten. */
+  async siteFromMenu(tool) {
+    if (!this.studio.project) return;
+    if (this.view !== 'studio') {
+      await this.finishEdit();
+      await this.showStudio();
+    }
+    return this.studio.siteCommand(tool);
+  }
+
   async toolFromMenu(id) {
     if (!this.session) return;
     if (this.view !== 'doc') {

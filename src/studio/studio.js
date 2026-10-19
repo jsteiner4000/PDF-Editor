@@ -1270,7 +1270,9 @@ ${context}
     }
     this.hover(hit);
     const mode = this.dragMode(hit);
-    $('#sdScroll').style.cursor = mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : hit && hit.item ? 'pointer' : '';
+    const movable = hit && hit.item && (hit.item.kind === 'sym' || hit.item.kind === 'shape');
+    $('#sdScroll').style.cursor =
+      mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : movable ? 'move' : hit && hit.item ? 'pointer' : '';
   }
 
   onPointerDown(ev) {
@@ -1860,6 +1862,10 @@ ${context}
     } else if (!inField && key === 'escape') {
       const { kind, section } = this.sel;
       if (section && kind !== 'section') this.select({ kind: 'section', id: section });
+    } else if (!inField && !mod && (this.sel.kind === 'sym' || this.sel.kind === 'shape') && key.startsWith('arrow')) {
+      const step = ev.shiftKey ? 10 : 1;
+      const d = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] }[key];
+      if (d && this.nudge(...d)) ev.preventDefault();
     } else if (!inField && this.sel.kind === 'box' && (key === 'arrowup' || key === 'arrowdown')) {
       ev.preventDefault();
       const s = this.section(this.sel.section);

@@ -97,7 +97,8 @@ export class Inspector {
     if (sel.section) {
       const back = htmlToElement(`<button class="btn ic" title="Zurück zum Abschnitt">${icon('back')}</button>`);
       back.addEventListener('click', () => studio.select({ kind: 'section', id: sel.section }));
-      this.head.append(back, htmlToElement(`<span class="crumb"><small>${escapeHtml(sectionTitle(section))}</small>${KIND_TITLE[sel.kind]}</span>`));
+      const kindTitle = sel.kind === 'shape' ? studio.shapeName(item) : KIND_TITLE[sel.kind];
+      this.head.append(back, htmlToElement(`<span class="crumb"><small>${escapeHtml(sectionTitle(section))}</small>${escapeHtml(kindTitle)}</span>`));
     } else {
       const title = sel.kind === 'project' ? 'Projekt' : sectionTitle(item);
       this.head.append(htmlToElement(`<span class="crumb">${escapeHtml(title)}</span>`));
@@ -950,8 +951,8 @@ Object.assign(Inspector.prototype, {
   /** Farbwahl für Zeichnungen (Punkte wie in Vorschau/Office). */
   swatches(current, onPick) {
     const el = htmlToElement('<div class="sd-swatches" role="radiogroup" aria-label="Farbe"></div>');
-    for (const c of SHAPE_COLORS) {
-      const b = htmlToElement(`<button type="button" role="radio" aria-checked="${c === current}" class="${c === current ? 'on' : ''}" title="${c}" style="--c:${c}"></button>`);
+    for (const [c, name] of SHAPE_COLORS) {
+      const b = htmlToElement(`<button type="button" role="radio" aria-checked="${c === current}" aria-label="${name}" class="${c === current ? 'on' : ''}" title="${name}" style="--c:${c}"></button>`);
       b.addEventListener('click', () => c !== current && onPick(c));
       el.appendChild(b);
     }

@@ -10,7 +10,7 @@ import { $, htmlToElement } from '../ui/dom.js';
 import { showDialog, toast } from '../ui/dialogs.js';
 import { PAGE } from './svg.js';
 import { SHAPE_TYPES, newLink, newShape, newSymbol, symbolInfo, tx } from './model.js';
-import { formatLength, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
+import { SITE_AREA, formatLength, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
 
 /** Werkzeuge: Kennung → Name (für Hinweis, Wiederholen). */
 export const TOOLS = {
@@ -64,6 +64,48 @@ export const siteTools = {
   resetDraft() {
     this.draft = null;
     this.renderDraft();
+  },
+
+  /** Befehl aus dem Menü „Werkzeuge › Lageplan“: Lageplan wählen, dann Werkzeug bzw. Galerie. */
+  siteCommand(tool) {
+    const s = this.wiringSite();
+    if (!s) return;
+    if (this.sel.section !== s.id && !(this.sel.kind === 'section' && this.sel.id === s.id)) this.select({ kind: 'section', id: s.id }, { reveal: true });
+    if (tool === 'again') return this.armAgain();
+    if (tool === 'symbols') {
+      const btn = document.querySelector('.rb[data-act="symbols"]');
+      return btn && this.symbolMenu(btn, s);
+    }
+    if (this.armed !== 'tool:' + tool) this.arm('tool:' + tool);
+  },
+
+  /** Gewähltes Symbol bzw. gewählte Zeichnung mit den Pfeiltasten verschieben (pt). */
+  nudge(dx, dy) {
+    const { kind, id, section } = this.sel;
+    const s = this.section(section);
+    if (!s || s.type !== 'site') return false;
+    const a = SITE_AREA;
+    const fx = dx / a.w;
+    const fy = dy / a.h;
+    const clamp = (v) => Math.max(0, Math.min(1, v));
+    if (kind === 'sym') {
+      const y = s.symbols.find((x) => x.id === id);
+      if (!y) return false;
+      this.change('Symbol verschoben', () => ((y.x = clamp(y.x + fx)), (y.y = clamp(y.y + fy))), { key: 'nudge:' + id });
+    } else if (kind === 'shape') {
+      const z = s.shapes.find((x) => x.id === id);
+      if (!z) return false;
+      // ganze Zeichnung bleibt in der Planfläche
+      let mx = fx;
+      let my = fy;
+      for (const [x, y] of z.pts) {
+        mx = Math.max(-x, Math.min(1 - x, mx));
+        my = Math.max(-y, Math.min(1 - y, my));
+      }
+      this.change(`${this.shapeName(z)} verschoben`, () => (z.pts = z.pts.map(([x, y]) => [x + mx, y + my])), { key: 'nudge:' + id });
+    } else return false;
+    this.renderSelection();
+    return true;
   },
 
   /** Zuletzt Gewähltes erneut wählen (Strg+D, Knopf „Erneut“). */

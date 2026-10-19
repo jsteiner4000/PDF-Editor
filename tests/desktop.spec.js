@@ -559,6 +559,15 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     await page.locator('#sdOffer .btn.primary').click();
     await expect(page.locator('#studio')).toBeVisible();
     expect(await page.evaluate(() => window.pdfEditor.studio.project.sections[0].hub.pins.length)).toBe(20);
+    // Menü „Werkzeuge › Lageplan“: aus, solange es keinen Lageplan gibt; danach startet es das Werkzeug
+    const siteItem = () => app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('site:fence').enabled);
+    expect(await siteItem()).toBe(false);
+    await page.evaluate(() => window.pdfEditor.studio.addSection('site'));
+    await expect.poll(siteItem).toBe(true);
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('site:fence').click());
+    await expect.poll(() => page.evaluate(() => window.pdfEditor.studio.armed)).toBe('tool:fence');
+    await expect(page.locator('#sdArm')).toContainText('Eckpunkte');
+    await page.keyboard.press('Escape');
     expect(errors).toEqual([]);
   } finally {
     await app.close();
