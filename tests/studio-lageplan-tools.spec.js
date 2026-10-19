@@ -301,3 +301,84 @@ test('Richtfunk: Punkt-zu-Punkt und Punkt-zu-Mehrpunkt, Geräteliste, Stationen 
     await context.close();
   }
 });
+
+test('Ausschnitt verschieben: vergrößert auf leerer Fläche ziehen, Leertaste, mittlere Maustaste', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await setup(page);
+    const scroll = page.locator('#sdScroll');
+    await page.evaluate(() => window.pdfEditor.studio.setZoom(3));
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.change('Kamera', () => s.symbols.push({ id: 'yk', kind: 'camera', x: 0.5, y: 0.5, name: { de: '', en: '' }, note: { de: '', en: '' }, ip: '', scale: 1, fov: false, dir: 0, angle: 90, range: 60 }));
+    });
+    /** Bildschirmpunkt eines Anteils der Planfläche; der Ausschnitt wird zuvor darauf zentriert. */
+    const center = (fx, fy) =>
+      page.evaluate(
+        ([fx, fy]) => {
+          const st = window.pdfEditor.studio;
+          const pg = st.doc.pages.find((p) => p.site);
+          const el = document.querySelectorAll('#sdPages .sd-page')[st.doc.pages.indexOf(pg)];
+          const box = document.getElementById('sdScroll');
+          const at = () => {
+            const r = el.getBoundingClientRect();
+            const sc = r.width / 595.276;
+            const a = pg.site.area;
+            return [r.left + (a.x + fx * a.w) * sc, r.top + (a.y + fy * a.h) * sc];
+          };
+          const b = box.getBoundingClientRect();
+          const [x, y] = at();
+          box.scrollLeft += x - (b.left + box.clientWidth / 2);
+          box.scrollTop += y - (b.top + box.clientHeight / 2);
+          return at();
+        },
+        [fx, fy],
+      );
+    const pos = () => scroll.evaluate((el) => [el.scrollLeft, el.scrollTop]);
+    const dragFrom = async (from, dx, dy, button = 'left') => {
+      await page.mouse.move(...from);
+      await page.mouse.down({ button });
+      for (let i = 1; i <= 5; i++) await page.mouse.move(from[0] + (dx * i) / 5, from[1] + (dy * i) / 5);
+      await page.mouse.up({ button });
+    };
+    const camX = () => page.evaluate(() => window.pdfEditor.studio.project.sections.find((x) => x.type === 'site').symbols.find((y) => y.id === 'yk').x);
+
+    // leere Stelle im Plan: Klick ohne Bewegung verschiebt nichts
+    const empty = await center(0.3, 0.3);
+    const [l0, t0] = await pos();
+    await page.mouse.click(...empty);
+    expect(await pos()).toEqual([l0, t0]);
+
+    // Ziehen auf leerer Fläche verschiebt den Ausschnitt mit der Hand
+    await dragFrom(empty, 120, 80);
+    const [l1, t1] = await pos();
+    expect(l0 - l1).toBeCloseTo(120, -1);
+    expect(t0 - t1).toBeCloseTo(80, -1);
+
+    // Leertaste + Ziehen über einem Symbol: verschiebt den Ausschnitt, nicht das Symbol
+    const cam = await center(0.5, 0.5);
+    // Fokus auf einer Schaltfläche: ein Klick in die Seite macht die Leertaste wieder zur Hand
+    await page.locator('.rb[data-act="symbols"]').focus();
+    await page.mouse.click(cam[0] - 150, cam[1] - 150);
+    expect(await page.evaluate(() => document.activeElement.id)).toBe('sdScroll');
+    const [l2] = await pos();
+    await page.keyboard.down('Space');
+    await expect(scroll).toHaveClass(/space-pan/);
+    await dragFrom(cam, 100, 0);
+    await page.keyboard.up('Space');
+    await expect(scroll).not.toHaveClass(/space-pan/);
+    expect(l2 - (await pos())[0]).toBeCloseTo(100, -1);
+    expect(await camX()).toBe(0.5);
+
+    // mittlere Maustaste, ebenfalls über dem Symbol
+    const cam2 = await center(0.5, 0.5);
+    const [, t3] = await pos();
+    await dragFrom(cam2, 0, 90, 'middle');
+    expect(t3 - (await pos())[1]).toBeCloseTo(90, -1);
+    expect(await camX()).toBe(0.5);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
