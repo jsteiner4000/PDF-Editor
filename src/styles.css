@@ -2,7 +2,7 @@
   /* PDFix – Arbeitsoberfläche wie Acrobat/Office: kühle Neutraltöne aus einer Grau-Familie, ein
      Akzent (Himmelblau, für weiße Schrift abgedunkelt: Kontrast ≥ 4,5 : 1). Mitternachtsblau,
      Violett/Magenta/Minze nur in der Wortmarke und den Werkzeug-Symbolen. */
-  --brand-ink: #1b1e45;
+  --brand-ink: #16181d;
   --ink: #1f2329;
   --ink2: #444c56;
   --ink3: #5d6670;
@@ -17,10 +17,7 @@
   --acc-h: #1a56c4;
   --acc-soft: #e8f0fd;
   --acc-line: #8db6ff;
-  --brand-blue: #2c7dff;
-  --brand-violet: #8c34f2;
-  --brand-magenta: #ff4db2;
-  --brand-mint: #35e8e2;
+  --brand-red: #e0412f;
   --t1: #eaf1ff;
   --t1-ink: #1f66e5;
   --t2: #e4faf8;
@@ -64,7 +61,7 @@
 }
 /* Dunkelmodus: dieselbe kühle Grau-Familie, abgedunkelt. Dokumentseiten bleiben weiß wie Papier. */
 :root[data-theme='dark'] {
-  --brand-ink: #e3e6ff;
+  --brand-ink: #ffffff;
   --ink: #e6e9ee;
   --ink2: #b8c0cb;
   --ink3: #8e98a6;
@@ -243,7 +240,7 @@ kbd {
   display: grid;
   place-items: center;
 }
-/* Wortmarke „PDFix“: „PD“ in Mitternachtsblau, „Fix“ im Verlauf Himmelblau → Violett (wie Konzept 2) */
+/* Wortmarke „PDFix“ (Markenpaket): „PDF“ in Tinte, „ix“ in Markenrot */
 .wm {
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -251,10 +248,8 @@ kbd {
 }
 .wm em {
   font-style: normal;
-  background: linear-gradient(90deg, var(--brand-blue), var(--brand-violet));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  font-weight: 500;
+  color: var(--brand-red);
 }
 .sep {
   width: 1px;
