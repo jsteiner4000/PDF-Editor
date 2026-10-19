@@ -163,6 +163,19 @@ export class Studio {
     scroll.addEventListener('pointerup', (ev) => this.onPointerUp(ev));
     scroll.addEventListener('pointercancel', (ev) => this.onPointerUp(ev, true));
     scroll.addEventListener('pointerleave', () => this.hover(null));
+    // mittlere Maustaste: kein automatisches Bildlaufen des Browsers
+    scroll.addEventListener('mousedown', (ev) => ev.button === 1 && ev.preventDefault());
+    window.addEventListener('keydown', (ev) => {
+      if (ev.code !== 'Space' || ev.defaultPrevented || !this.visible || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      const el = document.activeElement;
+      // in Eingabefeldern ein Leerzeichen, auf Schaltflächen und Menüeinträgen deren Auslösen
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(el.tagName) || el.getAttribute('role'))) return;
+      if (document.querySelector('.backdrop')) return;
+      ev.preventDefault();
+      this.setSpace(true);
+    });
+    window.addEventListener('keyup', (ev) => ev.code === 'Space' && this.setSpace(false));
+    window.addEventListener('blur', () => this.setSpace(false));
     scroll.addEventListener('dblclick', (ev) => {
       // Zaun bzw. Punkt-zu-Mehrpunkt mit Doppelklick beenden
       if (this.draft && this.finishDraft()) return;
@@ -1258,6 +1271,7 @@ ${context}
   }
 
   onPointerMove(ev) {
+    if (this.pan) return this.panMove(ev);
     if (this.drag && this.drag.tool) return this.toolMove(ev);
     if (this.drag) return this.dragMove(ev);
     const hit = this.hitAt(ev);
@@ -1276,9 +1290,15 @@ ${context}
   }
 
   onPointerDown(ev) {
+    // Klick in die Seiten holt den Fokus von Schaltflächen zurück: die Leertaste ist danach die Hand
+    const active = document.activeElement;
+    if (active && active.matches('button, a[href], [role=menuitem], [role=button], [role=radio]')) $('#sdScroll').focus({ preventScroll: true });
+    // Ausschnitt verschieben: mittlere Maustaste oder Leertaste + Ziehen (wie in der PDF-Ansicht)
+    if (ev.button === 1 || (ev.button === 0 && this.spaceDown)) return this.startPan(ev);
     if (ev.button !== 0) return;
     const hit = this.hitAt(ev);
-    if (!hit) return;
+    // neben den Seiten: ziehen verschiebt den Ausschnitt
+    if (!hit) return this.startPan(ev, true);
     const { page, item } = hit;
     const section = page.section;
     const target = ev.target.classList;
@@ -1299,10 +1319,14 @@ ${context}
       this.select({ kind: 'shape', id: item.id, section });
       return this.startShapeDrag(ev, hit, 'shape');
     }
-    if (item && item.kind === 'link') return this.select({ kind: 'link', id: item.id, section });
+    if (item && item.kind === 'link') {
+      this.select({ kind: 'link', id: item.id, section });
+      return this.startPan(ev, true);
+    }
     if (!item) {
       this.select(page.kind === 'cover' ? { kind: 'project' } : { kind: 'section', id: section });
-      return;
+      // auf leerer Fläche ziehen: Ausschnitt verschieben (wenn vergrößert)
+      return this.startPan(ev, true);
     }
     if (item.kind === 'box') this.select({ kind: 'box', id: item.id, section });
     else if (item.kind === 'conn') this.select({ kind: 'box', id: item.box, section });
@@ -1316,7 +1340,8 @@ ${context}
     else if (item.kind === 'project') this.select({ kind: 'project' });
     else this.select({ kind: 'section', id: section });
     const mode = this.dragMode(hit);
-    if (!mode) return;
+    // nichts zum Ziehen unter dem Zeiger: Ziehen verschiebt den Ausschnitt
+    if (!mode) return this.startPan(ev, true);
     const s = this.section(section);
     const boxId = item.kind === 'conn' ? item.box : item.id;
     const box = s.boxes.find((b) => b.id === boxId);
@@ -1365,6 +1390,7 @@ ${context}
   }
 
   onPointerUp(ev, cancel = false) {
+    if (this.pan) return this.endPan(ev);
     const d = this.drag;
     if (!d) return;
     if (d.tool) return this.toolUp(ev, cancel);
@@ -1384,6 +1410,58 @@ ${context}
     }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
+  }
+
+  /* ---------- Ausschnitt verschieben ---------- */
+
+  /** Kann der Ausschnitt verschoben werden (Inhalt größer als die Ansicht)? */
+  canPan() {
+    const el = $('#sdScroll');
+    return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+  }
+
+  /** Ziehen startet das Verschieben; `lazy`: erst ab einigen Pixeln (ein Klick bleibt ein Klick). */
+  startPan(ev, lazy = false) {
+    if (!this.canPan()) return;
+    const el = $('#sdScroll');
+    if (!lazy) ev.preventDefault();
+    this.pan = { x: ev.clientX, y: ev.clientY, left: el.scrollLeft, top: el.scrollTop, moved: !lazy, id: ev.pointerId };
+    if (!lazy) this.beginPan();
+  }
+
+  beginPan() {
+    const el = $('#sdScroll');
+    this.pan.moved = true;
+    el.setPointerCapture(this.pan.id);
+    el.classList.add('panning');
+    this.hover(null);
+  }
+
+  panMove(ev) {
+    const p = this.pan;
+    const dx = ev.clientX - p.x;
+    const dy = ev.clientY - p.y;
+    if (!p.moved) {
+      if (Math.hypot(dx, dy) < 4) return;
+      this.beginPan();
+    }
+    const el = $('#sdScroll');
+    el.scrollLeft = p.left - dx;
+    el.scrollTop = p.top - dy;
+  }
+
+  endPan(ev) {
+    const el = $('#sdScroll');
+    if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId);
+    el.classList.remove('panning');
+    this.pan = null;
+  }
+
+  /** Leertaste gedrückt halten: Zeiger wird zur Hand, Ziehen verschiebt den Ausschnitt. */
+  setSpace(down) {
+    if (this.spaceDown === down) return;
+    this.spaceDown = down;
+    $('#sdScroll').classList.toggle('space-pan', down);
   }
 
   /* ---------- Lageplan: Symbole setzen und ziehen ---------- */

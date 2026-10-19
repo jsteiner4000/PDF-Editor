@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.10.1.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.10.2.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -356,6 +356,13 @@ Farbe und Name rechts; Eckpunkte lassen sich später im Plan ziehen.
 Gewählte Symbole und Zeichnungen verschieben auch die Pfeiltasten (Umschalt =
 größere Schritte). Alle Lageplan-Befehle stehen zusätzlich im Menü
 „Werkzeuge › Lageplan“.
+
+Ansicht verschieben: Ist die Dokumentation vergrößert (Strg + Mausrad,
+Strg+Plus), einfach auf einer freien Stelle mit der Maus ziehen – der
+Ausschnitt wandert mit, ein Klick ohne Ziehen wählt wie gewohnt aus. Über
+Symbolen und Zeichnungen: Leertaste gedrückt halten und ziehen (oder mit
+gedrückter mittlerer Maustaste ziehen) – dann wird nichts verschoben außer der
+Ansicht.
 
 Maßstab: „Maßstab“ im Werkzeugband, eine Strecke mit bekannter Länge ziehen
 (z. B. von Haus A zu Haus B) und die Länge in Metern eingeben. Danach stehen
