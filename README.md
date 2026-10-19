@@ -115,7 +115,7 @@ release/                  Ausgabe von electron-builder (nicht im Repository)
 - `virtual:bundled-fonts` – die Schriften aus `assets/fonts/embedded/` (gzip, base64)
 - `virtual:logos` – App-Symbol für Kopfzeile und Startseite (aus `assets/icon/png`) als data:-URI
 
-Das Symbol („Glas-Ebenen“) liegt als Vorlage in `assets/icon/quelle/`; `assets/icon/build-icons.mjs` erzeugt daraus die PNG-Größen sowie `icon.ico` (Windows) und `icon.icns`. Favicon, Kopfzeile und Startseite verwenden dieselben PNGs. `assets/icon/build-document-icon.mjs` erzeugt daraus das Dokument-Symbol `document.ico` für PDF-Dateien (Installer: `DefaultIcon` der ProgID).
+Symbole und Wortmarke stammen aus dem Markenpaket in `assets/icon/marke/` (SVG-Vorlagen, Farben, Schriftlizenz). Daraus liegen die PNG-Größen in `assets/icon/png/`, `icon.ico` (Windows), `icon.icns` (macOS) und das Dokument-Symbol `document.ico` für PDF-Dateien (Installer: `DefaultIcon` der ProgID). Favicon und Kopfzeile verwenden dieselben PNGs.
 
 ## Tests
 

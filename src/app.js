@@ -138,7 +138,7 @@ export class App {
   build() {
     this.root.innerHTML = `
 <header id="top">
-  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PD<em>Fix</em></span></div>
+  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PDF<em>ix</em></span></div>
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
   <div class="ws" role="radiogroup" aria-label="Arbeitsbereich">

@@ -63,7 +63,7 @@ function virtualModules(contents) {
   };
 }
 
-/** App-Symbol aus assets/icon/png (einzige Quelle, erzeugt von build-icons.mjs) als data:-URI. */
+/** App-Symbol aus assets/icon/png (aus dem Markenpaket, assets/icon/marke) als data:-URI. */
 async function loadLogos() {
   return { small: pngDataUri(await readFile(path.join(ICON_DIR, 'png', 'icon-64.png'))) };
 }
