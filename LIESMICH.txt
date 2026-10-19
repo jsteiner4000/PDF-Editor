@@ -12,7 +12,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.9.2.exe“ ausführen. PDFix wird nur
+Installation: „PDFix-Setup-2.9.3.exe“ ausführen. PDFix wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
@@ -55,6 +55,9 @@ Jeder Bereich hat seine eigene Startseite und Farbe (PDF blau, Dokumentation
 petrol). Beim Umschalten bleibt alles geöffnet; ein Punkt am Umschalter zeigt,
 dass im anderen Bereich noch etwas offen ist. PDFix startet im zuletzt
 genutzten Bereich, beim Öffnen einer PDF-Datei immer im Bereich „PDF“.
+Umschalten auch per Tastatur: Strg+Umschalt+1 (PDF), Strg+Umschalt+2
+(Dokumentation) oder im Menü „Ansicht“. Alle Werkzeuge des Werkzeugbands stehen
+zusätzlich im Menü „Werkzeuge“.
 
 Bedienung: PDFix startet bildschirmfüllend (F11 = Vollbild). Oben in einer Zeile:
 Menüs „Datei“ bis „Hilfe“ (Alt oder F10 wechselt per Tastatur hinein), der

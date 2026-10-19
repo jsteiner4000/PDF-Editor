@@ -127,6 +127,8 @@ export function notifyDocumentState() {
       name: project || (session && app.file ? app.file.name : ''),
       dirty: !project && !!(session && session.dirty),
       stripActive: !!app.stripActive,
+      pdfOpen: !!session,
+      workspace: app.workspace,
       theme: readTheme(),
     });
   }, 0);
@@ -153,6 +155,14 @@ const COMMANDS = {
   closeDocument: () => app.close(),
   stripActive: () => app.toggleStripActive(),
   settings: () => app.settings(),
+  'ws:pdf': () => app.switchWorkspace('pdf'),
+  'ws:docs': () => app.switchWorkspace('docs'),
+  ...Object.fromEntries(
+    ['edit', 'addtext', 'addimage', 'organize', 'insert', 'formdesign', 'signature', 'fonts'].map((tool) => [
+      'tool:' + tool,
+      () => app.toolFromMenu(tool),
+    ]),
+  ),
   undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),
   zoomIn: () => zoom(() => app.zoomStep(1), () => app.studio.zoomStep(1)),

@@ -143,8 +143,8 @@ export class App {
   <div class="sep"></div>
   <div class="ws" role="radiogroup" aria-label="Arbeitsbereich">
     <span class="ws-thumb" aria-hidden="true"></span>
-    <button type="button" class="ws-b" id="wsPdf" data-ws="pdf" role="radio" aria-checked="false" title="PDF – Dateien öffnen, bearbeiten, ausfüllen und unterschreiben">${icon('file', 's')}<span>PDF</span><i class="ws-dot" title="Eine PDF ist geöffnet"></i></button>
-    <button type="button" class="ws-b" id="wsDocs" data-ws="docs" role="radio" aria-checked="false" title="Dokumentation – Anlagendokumentation, Anleitungen und Pläne erstellen">${icon('binder', 's')}<span>Dokumentation</span><i class="ws-dot" title="Eine Dokumentation ist geöffnet"></i></button>
+    <button type="button" class="ws-b" id="wsPdf" data-ws="pdf" role="radio" aria-checked="false" title="PDF – Dateien öffnen, bearbeiten, ausfüllen und unterschreiben"><span>PDF</span><i class="ws-dot" aria-hidden="true" title="Eine PDF ist geöffnet"></i></button>
+    <button type="button" class="ws-b" id="wsDocs" data-ws="docs" role="radio" aria-checked="false" title="Dokumentation – Anlagendokumentation, Anleitungen und Pläne erstellen"><span>Dokumentation</span><i class="ws-dot" aria-hidden="true" title="Eine Dokumentation ist geöffnet"></i></button>
   </div>
   <div class="sep"></div>
   <nav class="tabs" id="tabs" aria-label="Geöffnet">
@@ -310,12 +310,10 @@ export class App {
     const hour = new Date().getHours();
     const greet = hour < 11 ? 'Guten Morgen' : hour < 18 ? 'Guten Tag' : 'Guten Abend';
     const nav = docs
-      ? `<button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
-    <button class="hs-item" data-go="hsNew">${icon('plus')}Neue Dokumentation</button>
+      ? `<button class="hs-item" data-go="hsNew">${icon('plus')}Neue Dokumentation</button>
     <button class="hs-item" id="hNavContinue">${icon('open')}Aus PDF fortsetzen</button>
     <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt bearbeitet</button>`
-      : `<button class="hs-item on" data-go="hsTop">${icon('home')}Start</button>
-    <button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
+      : `<button class="hs-item" id="hNavOpen">${icon('open')}Öffnen</button>
     <button class="hs-item" data-go="hsRecent">${icon('list')}Zuletzt geöffnet</button>`;
     const templates = STUDIO_TEMPLATES.map(
       (t) =>
@@ -813,8 +811,12 @@ export class App {
     // Punkt am anderen Bereich: dort ist noch etwas geöffnet
     $('#wsPdf').classList.toggle('open', ws !== 'pdf' && !!this.session);
     $('#wsDocs').classList.toggle('open', ws !== 'docs' && !!this.studio.project);
+    for (const b of [$('#wsPdf'), $('#wsDocs')])
+      if (b.classList.contains('open')) b.setAttribute('aria-description', b.querySelector('.ws-dot').title);
+      else b.removeAttribute('aria-description');
     $('#docTab').classList.toggle('hidden', !(this.session && ws === 'pdf'));
     $('#prjTab').classList.toggle('hidden', !(this.studio.project && ws === 'docs'));
+    notifyDocumentState(); // Menü: Häkchen am Bereich, Werkzeuge aktiv
   }
   /**
    * Werkzeugband: Werkzeuge der PDF bzw. Befehle von „Dokumentation erstellen“. In einem Werkzeug mit
@@ -1746,6 +1748,16 @@ export class App {
     body.innerHTML = '';
     return body;
   }
+  /** Werkzeug aus dem Menü „Werkzeuge“: zur geöffneten PDF wechseln und das Werkzeug starten. */
+  async toolFromMenu(id) {
+    if (!this.session) return;
+    if (this.view !== 'doc') {
+      await this.finishEdit();
+      if (this.view === 'studio') await this.studio.flush();
+      this.showDocument();
+    }
+    return this.runTool(id);
+  }
   /** Werkzeug aus dem Werkzeugband starten; ein zweiter Klick schaltet es wieder aus (`toggle`). */
   async runTool(id, toggle = false) {
     if (!this.session) return;
@@ -1787,6 +1799,12 @@ export class App {
     if (mod && key === 'o') {
       ev.preventDefault();
       this.openDialog();
+      return;
+    }
+    // Strg+Umschalt+1 / 2: Bereich PDF bzw. Dokumentation (wie im Menü „Ansicht“)
+    if (mod && ev.shiftKey && !ev.altKey && (ev.code === 'Digit1' || ev.code === 'Digit2')) {
+      ev.preventDefault();
+      this.switchWorkspace(ev.code === 'Digit1' ? 'pdf' : 'docs');
       return;
     }
     if (mod && key === ',') {

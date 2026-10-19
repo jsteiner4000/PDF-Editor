@@ -59,6 +59,8 @@
   --scroll: #c7ccd4;
   --scroll-h: #a9b0ba;
   --page-ring: rgba(16, 24, 40, 0.06);
+  /* Rand von Ablageflächen: mindestens 3 : 1 zur Fläche (Bedienelement) */
+  --drop-line: #878f99;
 }
 /* Dunkelmodus: dieselbe kühle Grau-Familie, abgedunkelt. Dokumentseiten bleiben weiß wie Papier. */
 :root[data-theme='dark'] {
@@ -111,6 +113,7 @@
   --scroll: #3e4652;
   --scroll-h: #56606e;
   --page-ring: rgba(0, 0, 0, 0.5);
+  --drop-line: #626d7b;
   color-scheme: dark;
 }
 /* Arbeitsbereich „Dokumentation“: eigene Akzentfarbe (Petrol) – man sieht sofort, wo man ist.
@@ -325,7 +328,8 @@ kbd {
 /* Umschalter der Arbeitsbereiche (Segmente wie in macOS/Office): PDF | Dokumentation */
 .ws {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr; /* gleich breite Segmente */
   align-items: center;
   gap: 2px;
   padding: 2px;
@@ -365,13 +369,14 @@ kbd {
 }
 .ws.ready .ws-thumb {
   transition:
-    transform 0.46s cubic-bezier(0.34, 1.32, 0.5, 1),
-    width 0.46s cubic-bezier(0.34, 1.32, 0.5, 1);
+    transform 0.28s cubic-bezier(0.25, 1.1, 0.4, 1),
+    width 0.28s cubic-bezier(0.25, 1.1, 0.4, 1);
 }
 .ws-b {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   height: 28px;
   padding: 0 11px;
@@ -389,17 +394,6 @@ kbd {
 }
 .ws-b[aria-checked='true'] {
   color: var(--acc-ink);
-}
-.ws.ready .ws-b[aria-checked='true'] svg {
-  animation: ws-pop 0.42s cubic-bezier(0.34, 1.5, 0.5, 1);
-}
-@keyframes ws-pop {
-  0% {
-    transform: scale(0.72) rotate(-8deg);
-  }
-  100% {
-    transform: none;
-  }
 }
 .ws-b:active {
   transform: translateY(1px);
@@ -1779,7 +1773,7 @@ body.editing #nav {
   padding: 12px;
   background: var(--panel);
   box-shadow: none;
-  border: 1.5px dashed var(--line2);
+  border: 1.5px dashed var(--drop-line);
   text-align: center;
   color: var(--ink3);
   font-size: 11.5px;
@@ -1799,7 +1793,7 @@ body.editing #nav {
   align-items: center;
   gap: 16px;
   padding: 22px 24px;
-  border: 1.5px dashed var(--line2);
+  border: 1.5px dashed var(--drop-line);
   border-radius: 12px;
   background: var(--panel);
   transition:

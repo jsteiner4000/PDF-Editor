@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
       name: String(state.name || ''),
       dirty: !!state.dirty,
       stripActive: !!state.stripActive,
+      pdfOpen: !!state.pdfOpen,
+      workspace: state.workspace === 'docs' ? 'docs' : 'pdf',
       theme: ['light', 'dark', 'system'].includes(state.theme) ? state.theme : 'system',
     }),
   onCommand: (handler) => {

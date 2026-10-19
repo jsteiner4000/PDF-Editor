@@ -10,7 +10,7 @@ import { icon } from '../ui/icons.js';
 import { htmlToElement } from '../ui/dom.js';
 
 /** Reihenfolge wie im nativen Menü (desktop/menu.js). */
-export const MENUS = ['Datei', 'Bearbeiten', 'Ansicht', 'Fenster', 'Hilfe'];
+export const MENUS = ['Datei', 'Bearbeiten', 'Ansicht', 'Werkzeuge', 'Fenster', 'Hilfe'];
 
 export function installTitleBar(desktop) {
   const top = document.getElementById('top');

@@ -24,6 +24,8 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
   const shown = (accelerator) => ({ accelerator, registerAccelerator: false });
   const cmd = (id, label, extra = {}) => ({ id, label, click: () => command(id), ...extra });
   const docItem = (id, label, extra) => cmd(id, label, { enabled: false, ...extra });
+  // Werkzeuge der PDF: aktiv, sobald eine PDF geöffnet ist (auch aus dem Bereich „Dokumentation“)
+  const toolItem = (tool, label, extra) => cmd('tool:' + tool, label, { enabled: false, ...extra });
 
   const template = [
     {
@@ -71,6 +73,9 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
     {
       label: 'Ansicht',
       submenu: [
+        cmd('ws:pdf', 'Bereich PDF', { type: 'radio', checked: true, ...shown('CmdOrCtrl+Shift+1') }),
+        cmd('ws:docs', 'Bereich Dokumentation', { type: 'radio', ...shown('CmdOrCtrl+Shift+2') }),
+        { type: 'separator' },
         docItem('zoomIn', 'Vergrößern', shown('CmdOrCtrl+Plus')),
         docItem('zoomOut', 'Verkleinern', shown('CmdOrCtrl+-')),
         docItem('zoomActual', 'Originalgröße (100 %)', shown('CmdOrCtrl+1')),
@@ -82,6 +87,23 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         ...(devTools
           ? [{ type: 'separator' }, { role: 'toggleDevTools', label: 'Entwicklerwerkzeuge' }]
           : []),
+      ],
+    },
+    // Jeder Befehl des Werkzeugbands auch im Menü (Tastatur, Auffindbarkeit)
+    {
+      label: 'Werkzeuge',
+      submenu: [
+        toolItem('edit', 'Bearbeiten'),
+        toolItem('addtext', 'Text hinzufügen'),
+        toolItem('addimage', 'Bild hinzufügen …'),
+        { type: 'separator' },
+        toolItem('organize', 'Seiten organisieren'),
+        toolItem('insert', 'Seite einfügen …'),
+        { type: 'separator' },
+        toolItem('formdesign', 'Formularfelder'),
+        toolItem('signature', 'Unterschrift …'),
+        { type: 'separator' },
+        toolItem('fonts', 'Schriften'),
       ],
     },
     {
@@ -105,6 +127,9 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
   ];
   return Menu.buildFromTemplate(template);
 }
+
+/** Werkzeuge der PDF (Menü „Werkzeuge“): aktiv, solange eine PDF geöffnet ist. */
+export const PDF_TOOLS = ['edit', 'addtext', 'addimage', 'organize', 'insert', 'formdesign', 'signature', 'fonts'];
 
 /** Menüpunkte, die nur mit geöffnetem Dokument aktiv sind. */
 export const DOCUMENT_ITEMS = [

@@ -51,6 +51,16 @@ test('Umschalter: zwei Startseiten, Akzentfarbe, gemerkter Bereich', async ({ br
     await page.locator('#wsPdf').press('ArrowRight');
     await expect.poll(() => ws(page)).toBe('docs');
 
+    // Tastatur wie im Menü „Ansicht“: Strg+Umschalt+1 / 2
+    await page.keyboard.press('Control+Shift+Digit1');
+    await expect.poll(() => ws(page)).toBe('pdf');
+    await page.keyboard.press('Control+Shift+Digit2');
+    await expect.poll(() => ws(page)).toBe('docs');
+    // gleich breite Segmente, nur Text (HIG: segmented-controls)
+    const widths = await page.locator('.ws-b').evaluateAll((els) => els.map((e) => Math.round(e.offsetWidth)));
+    expect(Math.abs(widths[0] - widths[1])).toBeLessThanOrEqual(1);
+    await expect(page.locator('.ws-b svg')).toHaveCount(0);
+
     // nach Neustart im zuletzt genutzten Bereich
     await page.reload();
     await page.waitForSelector('#home .hs');

@@ -311,6 +311,17 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
       await expect(page.locator('#scroller')).toBeFocused();
     }
 
+    // Menü „Werkzeuge“: aktiv mit geöffneter PDF; „Ansicht“ zeigt den Bereich mit Häkchen
+    const menuState = () =>
+      app.evaluate(({ Menu }) => {
+        const m = Menu.getApplicationMenu();
+        return { edit: m.getMenuItemById('tool:edit').enabled, pdf: m.getMenuItemById('ws:pdf').checked };
+      });
+    await expect.poll(menuState).toEqual({ edit: true, pdf: true });
+    await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('tool:organize').click());
+    await expect.poll(() => page.evaluate(() => window.pdfEditor.tool)).toBe('organize');
+    await page.locator('#oDone').click();
+
     // Einstellungen im nativen Menü: Dunkel gilt auch für Titelleiste und Systemdialoge
     await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('settings').click());
     await page.locator('.dlg .theme[data-v="dark"]').click();

@@ -779,6 +779,7 @@ export class Studio {
         : pages.length === 1
           ? `Seite ${first[1] + 1}`
           : `Seite ${first[1] + 1}–${pages[pages.length - 1][1] + 1}`;
+      li.setAttribute('aria-label', `${li.querySelector('b').textContent}, ${li.querySelector('small').textContent}`);
       const thumb = li.querySelector('.sd-thumb');
       const svg = first ? first[0].svg : '';
       if (thumb._svg !== svg) {
@@ -794,7 +795,7 @@ export class Studio {
 
   sectionItem(section) {
     const li = htmlToElement(
-      `<li class="sd-sec" draggable="true" tabindex="0" data-id="${escapeHtml(section.id)}"><span class="sd-thumb"></span><span class="tx"><b></b><small></small></span><button class="btn ic" title="Abschnitt">${icon('more', 's')}</button></li>`,
+      `<li class="sd-sec" draggable="true" tabindex="0" data-id="${escapeHtml(section.id)}"><span class="sd-thumb" aria-hidden="true"></span><span class="tx"><b></b><small></small></span><button class="btn ic" title="Abschnitt-Optionen" aria-label="Abschnitt-Optionen">${icon('more', 's')}</button></li>`,
     );
     li.addEventListener('click', (ev) => {
       if (ev.target.closest('button')) return;
