@@ -53,16 +53,18 @@ import { DIAGRAM } from './wiring.js';
 import { blockHasData } from './access.js';
 import { photoDate } from './exif.js';
 import { PdfRenderer } from '../render/pdf-renderer.js';
-import { deleteDraft, listDrafts, loadDraft, saveDraft } from './store.js';
+import { deleteDraft, deleteTemplate, listDrafts, listTemplates, loadDraft, loadTemplate, saveDraft, saveTemplate } from './store.js';
+import { thumbOf } from './thumbs.js';
 import { ensureBarlow } from './fonts.js';
 import { TooLargeError, assertPrintable, canMakePdf, embedProject, hasProject, makePdf, printHtml, readProject } from './export.js';
 import { PDFDocument } from 'pdf-lib';
 import { Inspector } from './inspector.js';
 import { symbolIconSvg } from './site.js';
 import { hitsShape, siteTools, toolOf } from './site-tools.js';
+import { manualEdit } from './manual-edit.js';
 import { toFrac } from './geo.js';
 
-export { deleteDraft, listDrafts };
+export { deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates };
 
 /** Vorlagen auf der Startseite („Neu“). */
 export const STUDIO_TEMPLATES = [
@@ -84,8 +86,8 @@ export function templatePreview(id) {
     let svg = '';
     try {
       const doc = renderDocument(newProject(id));
-      // Anleitungen: erste Inhaltsseite; sonst Deckblatt bzw. Plan
-      const at = id === 'manual' || id === 'tech' ? 2 : 0;
+      // Technische Beschreibung: erste Inhaltsseite; sonst Deckblatt bzw. Plan
+      const at = id === 'tech' ? 2 : 0;
       svg = (doc.pages[at] || doc.pages[0]).svg;
     } catch (err) {
       console.warn('Vorschau der Vorlage', err);
@@ -222,6 +224,54 @@ export class Studio {
     await this.open(project);
   }
 
+  /** Neue Dokumentation aus einer eigenen Vorlage (eigene Kennung, Datum von heute). */
+  async createFromTemplate(id) {
+    try {
+      const raw = await loadTemplate(id);
+      if (!raw) throw new Error('fehlt');
+      const project = normalizeProject(JSON.parse(JSON.stringify(raw)));
+      project.id = uid('prj');
+      project.created = project.modified = Date.now();
+      project.meta.date = new Date().toISOString().slice(0, 10);
+      await this.open(project);
+    } catch {
+      toast('Die Vorlage konnte nicht geöffnet werden.', 'err', 5000);
+    }
+  }
+
+  /**
+   * Aktuelle Dokumentation als eigene Vorlage sichern (erscheint auf der Startseite unter
+   * „Neue Dokumentation“). Passwörter werden nicht übernommen.
+   */
+  async saveAsTemplate() {
+    const body = htmlToElement(
+      `<div class="sd-tpl-dlg"><label><span>Name</span><input class="fld" data-k="name" maxlength="80"></label><label><span>Beschreibung</span><input class="fld" data-k="sub" maxlength="120" placeholder="optional"></label><p>Mit Logo, Firma, Gestaltung und allen Inhalten. Passwörter werden nicht übernommen.</p></div>`,
+    );
+    const name = body.querySelector('[data-k="name"]');
+    name.value = documentLabel(this.project);
+    setTimeout(() => name.select(), 0);
+    const info = await showDialog({
+      title: 'Als Vorlage speichern',
+      icon: 'binder',
+      body,
+      buttons: [
+        { label: 'Abbrechen', value: null },
+        { label: 'Speichern', primary: true, value: (b) => ({ name: b.querySelector('[data-k="name"]').value.trim(), sub: b.querySelector('[data-k="sub"]').value.trim() }) },
+      ],
+    });
+    if (!info) return;
+    try {
+      const project = pruneImages(withoutSecrets(this.project, false));
+      // Vorschau: erste Seite mit verkleinerten Bildern (die Liste lädt so keine großen Bilder)
+      let thumb = (this.doc && this.doc.pages[0] && this.doc.pages[0].svg) || '';
+      for (const image of Object.values(project.images)) if (thumb.includes(image.data)) thumb = thumb.split(image.data).join(await thumbOf(image, 360));
+      await saveTemplate(project, { id: uid('tpl'), name: info.name || documentLabel(this.project), sub: info.sub, thumb });
+      toast('Vorlage gespeichert – zu finden auf der Startseite unter „Eigene Vorlagen“.', '', 4000);
+    } catch {
+      toast('Die Vorlage konnte nicht gespeichert werden.', 'err', 5000);
+    }
+  }
+
   async openDraft(id) {
     if (this.project && this.project.id === id) return this.app.setView('studio');
     try {
@@ -245,7 +295,7 @@ export class Studio {
     this.lastArmed = null;
     this.draft = null;
     this.updateArmHint();
-    if (project.font === 'barlow') await ensureBarlow().catch(() => {});
+    if (project.font === 'barlow' || project.design === 'manual') await ensureBarlow().catch(() => {});
     this.mount();
     this.updateTab();
     this.app.setView('studio');
@@ -518,6 +568,8 @@ export class Studio {
   }
 
   select(sel, { reveal = false, pulse = false } = {}) {
+    // Positionen setzen endet, sobald etwas anderes gewählt wird
+    if (toolOf(this.armed) === 'mark' && !(sel.kind === 'block' && sel.id === this.armed.split(':')[2])) this.disarm();
     this.sel = sel;
     // Werkzeugband passt sich der Art des gewählten Abschnitts an (wie Kontext-Reiter in Office)
     const type = this.currentType();
@@ -1304,6 +1356,11 @@ ${context}
     const hit = this.hitAt(ev);
     if (this.armed) {
       this.hover(null);
+      if (toolOf(this.armed) === 'mark') {
+        const it = hit && hit.item;
+        $('#sdScroll').style.cursor = it && it.kind === 'figimg' && it.block === this.armed.split(':')[2] ? 'crosshair' : it && it.kind === 'mark' ? 'move' : '';
+        return;
+      }
       const inside = hit && hit.page.site && inArea(hit, hit.page.site.area);
       $('#sdScroll').style.cursor = inside ? 'crosshair' : '';
       // Maßstab und Messen: Lupe für den genauen Anfangspunkt
@@ -1313,7 +1370,7 @@ ${context}
     }
     this.hover(hit);
     const mode = this.dragMode(hit);
-    const movable = hit && hit.item && (hit.item.kind === 'sym' || hit.item.kind === 'shape');
+    const movable = hit && hit.item && (hit.item.kind === 'sym' || hit.item.kind === 'shape' || hit.item.kind === 'mark');
     $('#sdScroll').style.cursor =
       mode === 'resize' || mode === 'pins' ? 'ns-resize' : mode === 'move' ? 'grab' : movable ? 'move' : hit && hit.item ? 'pointer' : '';
   }
@@ -1337,6 +1394,11 @@ ${context}
     if (target && target.contains('sd-vertex') && this.sel.kind === 'shape') return this.startShapeDrag(ev, hit, 'vertex', +ev.target.dataset.i);
     // Erfassungsbereich: Griff ziehen
     if (target && target.contains('sd-handle') && this.sel.kind === 'sym') return this.startSymbolDrag(ev, hit, 'fov');
+    // Bedienungsanleitung: Positionen auf einer Abbildung setzen bzw. ziehen
+    if (toolOf(this.armed) === 'mark' && this.markDown(ev, hit)) return;
+    if (item && item.kind === 'mark') return this.startMarkDrag(ev, hit);
+    if (item && (item.kind === 'figimg' || item.kind === 'card')) return this.select({ kind: 'block', id: item.block, section });
+    if (item && item.kind === 'cover') return this.select({ kind: 'project' });
     // Symbol setzen bzw. zeichnen (Werkzeug ist aktiv)
     if (this.armed && page.site && inArea(hit, page.site.area)) {
       ev.preventDefault();
@@ -1401,6 +1463,7 @@ ${context}
 
   dragMove(ev) {
     const d = this.drag;
+    if (d.manual) return this.markDragMove(ev);
     if (d.site) return this.siteDragMove(ev);
     const perPt = this.scale * d.scale;
     const dy = (ev.clientY - d.startY) / perPt;
@@ -1441,6 +1504,7 @@ ${context}
       shape: d.shape ? `${this.shapeName(d.shape)} verschoben` : '',
       vertex: 'Punkt verschoben',
       ref: 'Bezugsstrecke angepasst',
+      mark: 'Position verschoben',
     }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
@@ -1780,7 +1844,8 @@ ${context}
 
   blockMenu(anchor, section) {
     if (!section) return;
-    const items = BLOCK_TYPES.map((t) => ({ label: t.label, icon: t.icon, run: () => this.addBlock(section, t.id) }));
+    const manual = this.project.design === 'manual';
+    const items = BLOCK_TYPES.filter((t) => manual || !t.manual).map((t) => ({ label: t.label, icon: t.icon, run: () => this.addBlock(section, t.id) }));
     showMenu([...items.slice(0, 7), '-', ...items.slice(7)], anchor);
   }
 
@@ -1969,7 +2034,8 @@ ${context}
     } else if (!inField && !mod && (key === 'delete' || key === 'backspace') && this.sel.kind !== 'project') {
       ev.preventDefault();
       this.removeSelected();
-    } else if (!inField && key === 'escape' && this.armed) {
+    } else if (key === 'escape' && this.armed && (!inField || toolOf(this.armed) === 'mark')) {
+      // Positionen setzen: Esc beendet auch aus dem gerade fokussierten Bezeichnungsfeld
       this.arm(this.armed);
     } else if (!inField && key === 'escape') {
       const { kind, section } = this.sel;
@@ -2053,12 +2119,12 @@ ${context}
    * eingestellt (null). Ausgeblendete Passwörter fehlen auch im eingebetteten Projekt.
    */
   async buildPdf(showSecrets = null) {
-    if (this.project.font === 'barlow') await ensureBarlow();
+    if (this.project.font === 'barlow' || this.project.design === 'manual') await ensureBarlow();
     const source = this.withSecrets(showSecrets);
     const doc = renderDocument(source, { skipEmpty: true });
     if (doc.skipped.length) toast(`Leere Abschnitte nicht aufgenommen: ${doc.skipped.join(', ')}`, '', 5000);
     const ts = typesetter(this.project);
-    const html = printHtml({ pages: doc.pages, font: this.project.font, lang: ts.lang }, doc.label);
+    const html = printHtml({ pages: doc.pages, font: this.project.font, design: this.project.design, lang: ts.lang }, doc.label);
     assertPrintable(html);
     const raw = await makePdf(html);
     return embedProject(raw, withoutSecrets(source), {
@@ -2134,7 +2200,7 @@ ${context}
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
     frame.sandbox = 'allow-same-origin allow-modals'; // keine Skripte in der Druckfassung
-    frame.srcdoc = printHtml({ pages: doc.pages, font: this.project.font, lang: typesetter(this.project).lang }, doc.label);
+    frame.srcdoc = printHtml({ pages: doc.pages, font: this.project.font, design: this.project.design, lang: typesetter(this.project).lang }, doc.label);
     frame.addEventListener('load', () => {
       try {
         frame.contentWindow.print();
@@ -2167,7 +2233,7 @@ function nextPinName(pins) {
 const failMessage = (err) =>
   err instanceof TooLargeError ? 'Das Dokument ist zu groß. Bitte weniger oder kleinere Fotos verwenden.' : 'Die PDF konnte nicht erstellt werden.';
 
-async function readImage(file, { max = 1600, jpeg = false } = {}) {
+export async function readImage(file, { max = 1600, jpeg = false } = {}) {
   if (file.type === 'image/svg+xml' || /\.svg$/i.test(file.name)) {
     const text = await file.text();
     const data = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(text)));
@@ -2219,7 +2285,7 @@ function applyCompany(project) {
   } catch {}
 }
 
-Object.assign(Studio.prototype, siteTools);
+Object.assign(Studio.prototype, siteTools, manualEdit);
 
 /** Kleine Bilder für die Werkzeuge in der Galerie (22 × 22). */
 const TOOL_ART = {

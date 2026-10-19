@@ -1280,3 +1280,67 @@ textarea.fld.mono {
     box-shadow: 0 0 0 4px rgba(31, 102, 229, 0.3);
   }
 }
+
+/* Bedienungsanleitung: Positionen, Karten, Farben, englische Tabellenzellen */
+.sd-mark-h {
+  margin-bottom: 6px;
+}
+.sd-num {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.sd-num.sq {
+  border: 0;
+  padding: 0;
+  font-size: 15px;
+  color: var(--acc-ink);
+}
+.sd-wide {
+  width: 100%;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.sd-color {
+  height: 32px;
+  padding: 2px;
+}
+.sd-grid input.en {
+  color: var(--ink3);
+  font-style: italic;
+}
+.sd-card .sd-order {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+.sd-card > .sd-check {
+  margin-bottom: 8px;
+}
+/* Dialog „Als Vorlage speichern“ */
+.sd-tpl-dlg {
+  display: grid;
+  gap: 12px;
+  width: 360px;
+  max-width: 100%;
+}
+.sd-tpl-dlg label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--ink2);
+}
+.sd-tpl-dlg p {
+  margin: 0;
+  color: var(--ink3);
+  font-size: 12px;
+  line-height: 1.45;
+}

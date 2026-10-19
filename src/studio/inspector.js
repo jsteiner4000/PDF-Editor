@@ -280,12 +280,17 @@ export class Inspector {
   projectForm() {
     const p = this.project;
     const studio = this.studio;
-    this.group(
+    const manual = p.design === 'manual';
+    const doc = this.group(
       'Dokument',
-      this.bi('Titel', p, 'title'),
+      this.bi(manual ? 'Titel (Produkt)' : 'Titel', p, 'title', manual ? { multiline: true, hint: p.lang === 'de+en' ? 'Englischer Titel erscheint als Untertitel. Zeilenumbruch mit Enter.' : 'Zeilenumbruch mit Enter.' } : {}),
       this.seg('Sprache', LANGS.map((l) => [l.id, l.id === 'de+en' ? 'Beide' : l.label]), p.lang, (v) => studio.setLang(v)),
-      this.seg('Schrift', FONTS.map((f) => [f.id, f.label]), p.font, (v) => studio.setFont(v)),
     );
+    if (!manual) doc.appendChild(this.seg('Schrift', FONTS.map((f) => [f.id, f.label]), p.font, (v) => studio.setFont(v)));
+    // Gestaltung „Bedienungsanleitung“ (Deckblatt, Kapitelköpfe, Deutsch und Englisch nebeneinander)
+    if (p.sections.some((x) => x.type === 'chapters'))
+      doc.appendChild(this.seg('Gestaltung', [['classic', 'Klassisch'], ['manual', 'Bedienungsanleitung']], p.design || 'classic', (v) => studio.setDesign(v)));
+    if (manual) this.manualCoverForm(p);
     const logo = p.company.logo && p.images[p.company.logo];
     const logoBox = htmlToElement(
       `<div class="sd-logo${logo ? ' has' : ''}" role="button" tabindex="0" title="Logo hochladen (PNG, JPG oder SVG)">${
@@ -322,20 +327,117 @@ export class Inspector {
       this.text('Firmenname', p.company, 'name', { placeholder: 'Wird in der Kopfzeile jeder Seite gezeigt' }),
       this.bi('Zusatz', p.company, 'tagline', { placeholder: 'z. B. Fachgebiet oder Abteilung' }),
     );
-    const m = p.meta;
-    const two = (a, b) => {
-      const el = htmlToElement('<div class="sd-two"></div>');
-      el.append(a, b);
-      return el;
-    };
-    this.group(
-      'Projekt',
-      this.text('Kunde', m, 'customer'),
-      this.text('Anschrift', m, 'address', { multiline: true }),
-      this.text('Anlage', m, 'site', { placeholder: 'z. B. Einbruchmeldeanlage Halle 2' }),
-      two(this.text('Datum', m, 'date', { type: 'date' }), this.text('Version', m, 'version')),
-      two(this.text('Techniker', m, 'technician'), this.text('Dokument-Nr.', m, 'docNo')),
+    if (!manual) {
+      const m = p.meta;
+      const two = (a, b) => {
+        const el = htmlToElement('<div class="sd-two"></div>');
+        el.append(a, b);
+        return el;
+      };
+      this.group(
+        'Projekt',
+        this.text('Kunde', m, 'customer'),
+        this.text('Anschrift', m, 'address', { multiline: true }),
+        this.text('Anlage', m, 'site', { placeholder: 'z. B. Einbruchmeldeanlage Halle 2' }),
+        two(this.text('Datum', m, 'date', { type: 'date' }), this.text('Version', m, 'version')),
+        two(this.text('Techniker', m, 'technician'), this.text('Dokument-Nr.', m, 'docNo')),
+      );
+    }
+    // Eigene Vorlage: erscheint auf der Startseite unter „Neue Dokumentation“
+    const save = htmlToElement(`<button type="button" class="btn outline sd-wide" data-a="tpl">${icon('binder', 's')}Als Vorlage speichern …</button>`);
+    save.addEventListener('click', () => studio.saveAsTemplate());
+    this.group('Vorlage', save, htmlToElement('<p class="sd-hint">Für weitere Kunden oder Projekte: neue Dokumentationen starten dann mit diesem Stand.</p>'));
+  }
+
+  /** Deckblatt der Bedienungsanleitung: Dokumentart, Foto, Ausführung, Hinweis, Farben. */
+  manualCoverForm(p) {
+    const studio = this.studio;
+    const m = p.manual;
+    const group = this.group('Deckblatt', this.bi('Dokumentart', m, 'kicker', { placeholder: 'Bedienungsanleitung' }));
+    if (p.lang !== 'de+en') group.appendChild(this.bi('Untertitel', m, 'subtitle', { placeholder: 'optional' }));
+    const img = m.cover && p.images[m.cover];
+    if (img) group.appendChild(htmlToElement(`<img class="sd-photo" alt="Produktfoto" src="${escapeHtml(img.data)}">`));
+    const acts = htmlToElement(
+      `<div class="sd-acts" style="padding:0 0 10px"><button type="button" class="btn outline" data-a="pick">${icon('image', 's')}${img ? 'Anderes Foto …' : 'Produktfoto wählen …'}</button>${img ? `<button type="button" class="btn outline danger ic" data-a="del" title="Foto entfernen" aria-label="Foto entfernen">${icon('trash', 's')}</button>` : ''}</div>`,
     );
+    acts.querySelector('[data-a="pick"]').addEventListener('click', () => studio.pickCover());
+    acts.querySelector('[data-a="del"]')?.addEventListener('click', () => studio.change('Produktfoto entfernt', () => (m.cover = null), { inspector: true }));
+    group.appendChild(acts);
+    group.append(
+      this.pair(this.bi('Feld', m, 'modelLabel', { placeholder: 'Ausführung' }), this.text('Ausführung', m, 'model', { placeholder: 'z. B. Typ 500' })),
+      this.pair(this.text('Version', m, 'version', { placeholder: 'optional' }), this.text('Stand', m, 'date', { placeholder: 'z. B. 03/2026' })),
+      this.bi('Hinweis unten rechts', m, 'note'),
+      this.note('Logo und Firmenname stehen unter „Firma“.'),
+    );
+    const colors = htmlToElement('<div class="sd-two"></div>');
+    for (const [key, labelText] of [['accent', 'Akzentfarbe'], ['accent2', 'Dokumentart']]) {
+      const input = htmlToElement(`<input type="color" class="fld sd-color" value="${escapeHtml(m[key])}" aria-label="${labelText}">`);
+      input.addEventListener('input', () => studio.change('Farbe geändert', () => (m[key] = input.value), { key: 'color:' + key }));
+      colors.appendChild(this.field(labelText, input));
+    }
+    this.group('Farben', colors, this.note('Akzentfarbe: Kapitelnummern, Schritte, Hinweiskästen. Dokumentart: Linie und Schrift über dem Titel auf dem Deckblatt.'));
+  }
+
+  /** Positionen einer Abbildung: setzen, benennen, Seite wählen, entfernen; Legende und Text daneben. */
+  marksForm(b) {
+    const studio = this.studio;
+    const nums = studio.markNumbers();
+    const group = this.group(`Positionen (${b.marks.length})`);
+    const arm = htmlToElement(`<button type="button" class="btn ${studio.armed === 'tool:mark:' + b.id ? 'primary' : 'outline'} sd-wide">${icon('plus', 's')}Positionen im Bild setzen</button>`);
+    arm.addEventListener('click', () => (b.image ? studio.armMarks(b.id) : toast('Zuerst ein Bild wählen.', 'warn', 3000)));
+    group.appendChild(arm);
+    if (!b.marks.length) group.appendChild(this.note('Im Bild auf eine Stelle klicken: Die Nummer erscheint mit Hinweislinie am Rand, darunter entsteht die Legende. Punkt und Kreis lassen sich ziehen.'));
+    b.marks.forEach((m, i) => {
+      const box = htmlToElement(`<div class="sd-user sd-mark"><div class="sd-mark-h"><span class="sd-num">${escapeHtml(nums.get(m.id) || String(i + 1))}</span></div></div>`);
+      box.append(
+        this.bi('Bauteil', m, 'name', { id: m.id, placeholder: 'z. B. Deckel' }),
+        this.bi('Beschreibung', m, 'desc', { id: 'd' + m.id, placeholder: 'optional' }),
+        this.seg('Kreis', [['auto', 'Automatisch'], ['l', 'Links'], ['r', 'Rechts']], m.side, (v) =>
+          studio.change('Seite geändert', () => {
+            m.side = v;
+            m.ly = null;
+          }, { inspector: true }),
+        ),
+      );
+      const del = htmlToElement(`<button type="button" class="btn ic sd-user-del" title="Position entfernen" aria-label="Position ${i + 1} entfernen">${icon('trash', 's')}</button>`);
+      del.addEventListener('click', () => studio.change('Position entfernt', () => b.marks.splice(i, 1), { inspector: true }));
+      box.appendChild(del);
+      group.appendChild(box);
+    });
+    if (b.marks.length) group.appendChild(this.check('Legende zeigen', b.legend !== false, (v) => studio.change('Legende geändert', () => (b.legend = v))));
+    if (b.width === 'side')
+      this.group('Text neben der Abbildung', this.bi('Zwischentitel', b.aside, 'title', { id: 'at' + b.id }), this.bi('Text', b.aside, 'text', { id: 'ax' + b.id, multiline: true }));
+  }
+
+  /** Schritte mit Fotos: je Karte Foto, Titel, Text; hinzufügen, verschieben, entfernen. */
+  cardsForm(group, b) {
+    const studio = this.studio;
+    b.items.forEach((c, i) => {
+      const img = c.image && this.project.images[c.image];
+      const box = htmlToElement(`<div class="sd-user sd-card"><div class="sd-mark-h"><span class="sd-num sq">${i + 1}</span></div></div>`);
+      if (img) box.appendChild(htmlToElement(`<img class="sd-photo" alt="Foto" src="${escapeHtml(img.data)}">`));
+      const acts = htmlToElement(
+        `<div class="sd-acts" style="padding:0 0 8px"><button type="button" class="btn outline" data-a="pick">${icon('image', 's')}${img ? 'Anderes Foto …' : 'Foto wählen …'}</button></div>`,
+      );
+      acts.querySelector('button').addEventListener('click', () => studio.pickCardImage(c));
+      box.append(
+        acts,
+        this.check('Foto füllt die Fläche', !!c.fill, (v) => studio.change('Foto geändert', () => (c.fill = v))),
+        this.bi('Titel', c, 'title', { id: 't' + c.id }),
+        this.bi('Text', c, 'text', { id: 'x' + c.id, multiline: true }),
+      );
+      const tools = htmlToElement(
+        `<div class="sd-order"><button type="button" class="btn ic" title="Nach oben"${i === 0 ? ' disabled' : ''}>${icon('up', 's')}</button><button type="button" class="btn ic" title="Nach unten"${i === b.items.length - 1 ? ' disabled' : ''}>${icon('down', 's')}</button><button type="button" class="btn ic" title="Schritt entfernen" aria-label="Schritt ${i + 1} entfernen">${icon('trash', 's')}</button></div>`,
+      );
+      const [up, down, del] = tools.querySelectorAll('button');
+      const move = (d) => studio.change('Reihenfolge geändert', () => b.items.splice(i + d, 0, ...b.items.splice(i, 1)), { inspector: true });
+      up.addEventListener('click', () => move(-1));
+      down.addEventListener('click', () => move(1));
+      del.addEventListener('click', () => studio.change('Schritt entfernt', () => b.items.splice(i, 1), { inspector: true }));
+      box.appendChild(tools);
+      group.appendChild(box);
+    });
+    group.appendChild(this.addButton('Schritt hinzufügen', () => studio.addCard(b)));
   }
 
   /* ---------- Abschnitte ---------- */
@@ -1381,11 +1483,17 @@ Object.assign(Inspector.prototype, {
     if (b.type === 'h') {
       group.append(
         this.bi('Überschrift', b, 'text'),
-        this.seg('Ebene', [[1, 'Kapitel'], [2, 'Unterkapitel']], b.level, (v) =>
+        this.seg('Ebene', [[1, 'Kapitel'], [2, 'Unterkapitel'], ...(this.project.design === 'manual' ? [[3, 'Zwischentitel']] : [])], b.level, (v) =>
           studio.change('Ebene geändert', () => (b.level = v), { inspector: true }),
         ),
       );
-    } else if (b.type === 'p') group.append(this.bi('Text', b, 'text', { multiline: true }));
+    } else if (b.type === 'p') {
+      group.append(this.bi('Text', b, 'text', { multiline: true }));
+      if (this.project.design === 'manual')
+        group.append(this.check('Kleine Schrift', !!b.small, (v) => studio.change('Schriftgröße geändert', () => (v ? (b.small = true) : delete b.small))));
+    } else if (b.type === 'signs')
+      group.append(this.note('Erklärt automatisch die Zeichen, die in dieser Anleitung vorkommen: Vorsicht, Warnung, Hinweis und Positionen im Kreis.'));
+    else if (b.type === 'cards') this.cardsForm(group, b);
     else if (b.type === 'ul') group.append(this.bi('Punkte', b, 'text', { multiline: true, hint: 'Ein Punkt je Zeile.' }));
     else if (b.type === 'steps') group.append(this.bi('Schritte', b, 'text', { multiline: true, hint: 'Ein Schritt je Zeile – die Nummern entstehen automatisch.' }));
     else if (b.type === 'callout') {
@@ -1409,9 +1517,15 @@ Object.assign(Inspector.prototype, {
         buttons.appendChild(btn);
       }
       group.append(buttons, this.bi('Bildunterschrift', b, 'caption'));
+      const manualDesign = this.project.design === 'manual';
       if (b.type === 'figure')
-        group.append(this.seg('Breite', [['full', 'Ganze Seite'], ['half', 'Halb']], b.width, (v) => studio.change('Breite geändert', () => (b.width = v), { inspector: true })));
+        group.append(
+          this.seg('Breite', [['full', 'Ganz'], ['half', 'Halb'], ...(manualDesign ? [['side', 'Seitlich']] : [])], b.width, (v) =>
+            studio.change('Breite geändert', () => (b.width = v), { inspector: true }),
+          ),
+        );
       else group.append(this.bi('Schritte', b, 'text', { multiline: true, hint: 'Ein Schritt je Zeile.' }));
+      if (b.type === 'figure' && manualDesign) this.marksForm(b);
     } else if (b.type === 'table') {
       group.append(this.bi('Beschriftung', b, 'caption', { hint: 'Mit Beschriftung wird die Tabelle nummeriert („Tabelle 2“).' }), this.tableGrid(b));
     } else if (b.type === 'code') {
@@ -1423,6 +1537,7 @@ Object.assign(Inspector.prototype, {
     if (textual) {
       const ref = this.refSelect(s);
       if (ref) group.append(ref);
+      if (this.project.design === 'manual') group.append(this.note('Im Text: **fett** und {7} für Position 7 im Kreis.'));
     }
     this.itemActions(s.blocks, b);
   },
@@ -1445,13 +1560,46 @@ Object.assign(Inspector.prototype, {
       grid.appendChild(cell(t, (v) => studio.change('Tabelle geändert', () => (b.head[c] = v), { key: `th:${b.id}:${c}` }), `th:${b.id}:${c}`, true)),
     );
     grid.appendChild(document.createElement('span'));
+    // zweisprachig: unter jeder Zeile die englische Fassung (grau)
+    const bi = this.project.lang === 'de+en';
+    if (bi) {
+      b.en ||= { head: [], rows: [] };
+      const en = b.en;
+      b.head.forEach((_, c) => {
+        const input = cell((en.head || [])[c] || '', (v) => studio.change('Tabelle geändert', () => ((en.head ||= [])[c] = v), { key: `teh:${b.id}:${c}` }), `teh:${b.id}:${c}`, true);
+        input.classList.add('en');
+        input.placeholder = 'English';
+        grid.appendChild(input);
+      });
+      grid.appendChild(document.createElement('span'));
+    }
     b.rows.forEach((row, r) => {
       row.forEach((t, c) =>
         grid.appendChild(cell(t, (v) => studio.change('Tabelle geändert', () => (b.rows[r][c] = v), { key: `td:${b.id}:${r}:${c}` }), `td:${b.id}:${r}:${c}`)),
       );
       const del = htmlToElement(`<button type="button" class="btn ic" title="Zeile löschen"${b.rows.length < 2 ? ' disabled' : ''}>${icon('x', 's')}</button>`);
-      del.addEventListener('click', () => studio.change('Zeile gelöscht', () => b.rows.splice(r, 1), { inspector: true }));
+      del.addEventListener('click', () =>
+        studio.change('Zeile gelöscht', () => {
+          b.rows.splice(r, 1);
+          if (b.en && b.en.rows) b.en.rows.splice(r, 1);
+        }, { inspector: true }),
+      );
       grid.appendChild(del);
+      if (bi) {
+        const en = b.en;
+        row.forEach((_, c) => {
+          const input = cell(((en.rows || [])[r] || [])[c] || '', (v) =>
+            studio.change('Tabelle geändert', () => {
+              en.rows ||= [];
+              en.rows[r] ||= [];
+              en.rows[r][c] = v;
+            }, { key: `ted:${b.id}:${r}:${c}` }), `ted:${b.id}:${r}:${c}`);
+          input.classList.add('en');
+          input.placeholder = 'English';
+          grid.appendChild(input);
+        });
+        grid.appendChild(document.createElement('span'));
+      }
     });
     const tools = htmlToElement('<div class="sd-acts" style="padding-top:8px"></div>');
     for (const [label, run, disabled] of [

@@ -12,6 +12,10 @@ const FACES = [
   ['Barlow-Medium.ttf', 500, 'normal'],
   ['Barlow-SemiBold.ttf', 600, 'normal'],
   ['Barlow-Bold.ttf', 700, 'normal'],
+  // Überschriften der Bedienungsanleitung (schmaler Schnitt)
+  ['BarlowSemiCondensed-Regular.ttf', 400, 'normal', 'PDFix Barlow SC'],
+  ['BarlowSemiCondensed-Medium.ttf', 500, 'normal', 'PDFix Barlow SC'],
+  ['BarlowSemiCondensed-SemiBold.ttf', 600, 'normal', 'PDFix Barlow SC'],
 ];
 
 let ready = null;
@@ -33,15 +37,15 @@ function toBase64(bytes) {
 export function ensureBarlow() {
   if (!ready)
     ready = (async () => {
-      for (const [file, weight, style] of FACES) {
+      for (const [file, weight, style, family = 'PDFix Barlow'] of FACES) {
         const entry = BUNDLED_FONTS.find((f) => f.name === file);
         if (!entry) continue;
         const bytes = await gunzip(entry.data);
-        const face = new FontFace('PDFix Barlow', bytes, { weight: String(weight), style });
+        const face = new FontFace(family, bytes, { weight: String(weight), style });
         await face.load();
         document.fonts.add(face);
         css.push(
-          `@font-face{font-family:"PDFix Barlow";src:url(data:font/ttf;base64,${toBase64(bytes)}) format("truetype");font-weight:${weight};font-style:${style}}`,
+          `@font-face{font-family:"${family}";src:url(data:font/ttf;base64,${toBase64(bytes)}) format("truetype");font-weight:${weight};font-style:${style}}`,
         );
       }
       resetMeasure();

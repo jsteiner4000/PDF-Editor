@@ -596,20 +596,20 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
   }
 });
 
-test('Anleitung: Vorlage, Bausteine, Nummern und Verweise, Seitenumbruch, Verzeichnis, Ersetzen', async ({
+test('Kapitel: Vorlage, Bausteine, Nummern und Verweise, Seitenumbruch, Verzeichnis, Ersetzen', async ({
   browser,
 }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
     await page.locator('#wsDocs').click();
-    await page.locator('.tpl[data-tpl="manual"]').click();
+    await page.locator('.tpl[data-tpl="tech"]').click();
     await expect(page.locator('#prjTab')).toHaveClass(/on/);
     const toc = page.locator('#studio .sd-page').nth(1);
-    await expect(toc).toContainText('1  Zu dieser Anleitung');
-    await expect(toc).toContainText('4  Störungen');
+    await expect(toc).toContainText('1  Aufgabe und Einsatz');
+    await expect(toc).toContainText('3  Funktionsbeschreibung');
 
     // Baustein über das Werkzeugband einfügen und einen Verweis auf Kapitel 2 setzen
-    await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Bedienungsanleitung$/ }) }).click();
+    await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Technische Beschreibung$/ }) }).click();
     await page.locator('.rb[data-act="block"]').click();
     await page.locator('.menu .mi', { hasText: 'Absatz' }).click();
     const ids = await page.evaluate(() => {

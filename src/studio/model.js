@@ -444,6 +444,8 @@ export const BLOCK_TYPES = [
   { id: 'callout', label: 'Hinweis / Warnung', icon: 'warn' },
   { id: 'figure', label: 'Abbildung', icon: 'image' },
   { id: 'figsteps', label: 'Abbildung mit Schritten', icon: 'pages' },
+  { id: 'cards', label: 'Schritte mit Fotos', icon: 'image', manual: true },
+  { id: 'signs', label: 'Zeichenerklärung', icon: 'info', manual: true },
   { id: 'table', label: 'Tabelle', icon: 'field' },
   { id: 'faults', label: 'Störungstabelle', icon: 'field', table: true },
   { id: 'parts', label: 'Positionsliste', icon: 'field', table: true },
@@ -462,10 +464,10 @@ export const TONES = [
 
 /** Kopfzeilen und Spaltenbreiten der Tabellenvorlagen. */
 const TABLE_PRESETS = {
-  faults: { head: ['Störung', 'Mögliche Ursache', 'Abhilfe'], weights: [1.1, 1.4, 1.6] },
-  parts: { head: ['Pos.', 'Bezeichnung'], weights: [0.5, 4] },
-  scope: { head: ['Menge', 'Bezeichnung'], weights: [0.6, 4] },
-  table: { head: ['Spalte 1', 'Spalte 2'], weights: [1, 1] },
+  faults: { head: ['Störung', 'Mögliche Ursache', 'Abhilfe'], en: ['Fault', 'Cause', 'Remedy'], weights: [1.1, 1.4, 1.6] },
+  parts: { head: ['Pos.', 'Bezeichnung'], en: ['Item', 'Designation'], weights: [0.5, 4] },
+  scope: { head: ['Menge', 'Bezeichnung'], en: ['Quantity', 'Item'], weights: [0.6, 4] },
+  table: { head: ['Spalte 1', 'Spalte 2'], en: ['Column 1', 'Column 2'], weights: [1, 1] },
 };
 
 export function newBlock(type, extra = {}) {
@@ -474,7 +476,9 @@ export function newBlock(type, extra = {}) {
   if (type === 'p' || type === 'ul') return { id, type, text: T('', ''), ...extra };
   if (type === 'steps') return { id, type, text: T('', ''), ...extra };
   if (type === 'callout') return { id, type, tone: 'note', title: T('', ''), text: T('', ''), ...extra };
-  if (type === 'figure') return { id, type, image: null, caption: T('', ''), width: 'full', ...extra };
+  if (type === 'figure') return { id, type, image: null, caption: T('', ''), width: 'full', marks: [], legend: true, aside: { title: T('', ''), text: T('', '') }, ...extra };
+  if (type === 'cards') return { id, type, items: [newCard(), newCard()], ...extra };
+  if (type === 'signs') return { id, type, ...extra };
   if (type === 'figsteps') return { id, type, image: null, caption: T('', ''), text: T('', ''), ...extra };
   if (type === 'code') return { id, type, text: '', ...extra };
   if (type === 'formula') return { id, type, text: '', ...extra };
@@ -487,9 +491,30 @@ export function newBlock(type, extra = {}) {
     head: [...preset.head],
     rows: [preset.head.map(() => '')],
     weights: [...preset.weights],
+    en: { head: [...(preset.en || preset.head.map(() => ''))], rows: [preset.head.map(() => '')] },
     ...extra,
   };
 }
+
+/** Position auf einer Abbildung: Punkt (Anteile des Bildes), Kreis links/rechts, Bauteil und Beschreibung. */
+export const newMark = (x = 0.5, y = 0.5) => ({ id: uid('m'), x, y, side: 'auto', ly: null, name: T('', ''), desc: T('', '') });
+
+/** Karte der „Schritte mit Fotos“: Foto, Titel, Text. */
+export const newCard = () => ({ id: uid('c'), image: null, title: T('', ''), text: T('', ''), fill: false });
+
+/** Angaben des Deckblatts im Stil „Bedienungsanleitung“ (Titel = Projekttitel, Logo = Firmenlogo). */
+export const newManualMeta = () => ({
+  kicker: T('Bedienungsanleitung', 'Operating instructions'),
+  subtitle: T('', ''),
+  cover: null,
+  modelLabel: T('Ausführung', 'Model'),
+  model: '',
+  note: T('Technische Änderungen vorbehalten.', 'Subject to technical modifications.'),
+  version: '',
+  date: '',
+  accent: '#0c4061',
+  accent2: '#0c4061',
+});
 
 export function newChapters(kind = 'manual') {
   return {
@@ -500,6 +525,39 @@ export function newChapters(kind = 'manual') {
     numbering: true,
     blocks: [],
   };
+}
+
+/**
+ * Startinhalt der Bedienungsanleitung im Stil des Vorbilds: Sicherheit (Zeichenerklärung,
+ * Sicherheitshinweise, Verwendung), Geräteübersicht mit Lieferumfang, Bedienung, Störungen.
+ * Alle Texte sind neutrale Platzhalter.
+ */
+export function starterManual() {
+  const s = newChapters('manual');
+  const h = (de, en, level = 1) => newBlock('h', { level, text: T(de, en) });
+  const ul = (de, en) => newBlock('ul', { text: T(de, en) });
+  s.blocks = [
+    h('Sicherheit', 'Safety'),
+    h('Hinweise in dieser Anleitung', 'Notices in this manual', 2),
+    newBlock('signs'),
+    h('Sicherheitshinweise', 'Safety instructions', 2),
+    newBlock('callout', {
+      tone: 'danger',
+      text: T('Beschreiben Sie hier die wichtigste Gefahr und wie man sie vermeidet.', 'Describe the most important hazard here and how to avoid it.'),
+    }),
+    ul('Erster Sicherheitshinweis.\nZweiter Sicherheitshinweis.', 'First safety instruction.\nSecond safety instruction.'),
+    h('Bestimmungsgemäße Verwendung', 'Intended use', 2),
+    ul('Wofür das Gerät bestimmt ist.\nWofür es nicht verwendet werden darf.', 'What the device is intended for.\nWhat it must not be used for.'),
+    h('Geräteübersicht und Lieferumfang', 'Overview and items supplied'),
+    newBlock('figure', { caption: T('Gerät, Gesamtansicht', 'Device, overall view') }),
+    h('Lieferumfang', 'Items supplied', 2),
+    newBlock('scope', { rows: [['1 ×', 'Gerät'], ['1 ×', 'Bedienungsanleitung']], en: { head: ['Quantity', 'Item'], rows: [['', 'Device'], ['', 'Operating instructions']] } }),
+    h('Inbetriebnahme', 'Getting started'),
+    newBlock('cards'),
+    h('Störungen beheben', 'Troubleshooting'),
+    newBlock('faults', { en: { head: ['Fault', 'Cause', 'Remedy'], rows: [['', '', '']] } }),
+  ];
+  return s;
 }
 
 /** Startinhalt der Vorlagen „Bedienungsanleitung“ und „Technische Beschreibung“. */
@@ -688,8 +746,11 @@ export const TEMPLATES = [
   {
     id: 'manual',
     title: T('Bedienungsanleitung', 'User manual'),
-    desc: 'Deckblatt, Inhalt, Kapitel mit Schritten, Warnhinweisen und Störungstabelle',
-    sections: () => [{ id: uid('s'), type: 'cover' }, { id: uid('s'), type: 'toc' }, starterChapters('manual')],
+    desc: 'Deckblatt, Sicherheit, Geräteübersicht, Schritte mit Fotos und Störungstabelle – zweisprachig',
+    design: 'manual',
+    lang: 'de+en',
+    font: 'barlow',
+    sections: () => [{ id: uid('s'), type: 'cover' }, starterManual()],
   },
   {
     id: 'tech',
@@ -711,9 +772,12 @@ export function newProject(templateId = 'documentation', opts = {}) {
     v: MODEL_VERSION,
     id: uid('prj'),
     template: template.id,
-    lang: opts.lang || 'de',
-    font: opts.font || 'helvetica',
-    title: template.title,
+    lang: opts.lang || template.lang || 'de',
+    font: opts.font || template.font || 'helvetica',
+    /** Gestaltung: 'classic' oder 'manual' (Bedienungsanleitung im Stil des Vorbilds). */
+    design: template.design || 'classic',
+    manual: newManualMeta(),
+    title: template.design === 'manual' ? T('Produktname', 'Product name') : template.title,
     company: { name: '', tagline: T('', ''), logo: null },
     meta: {
       customer: '',
@@ -782,6 +846,8 @@ export function normalizeProject(raw) {
       logo: hasImg(images, company.logo) ? company.logo : null,
     },
     meta: Object.fromEntries(Object.keys(base.meta).map((k) => [k, str_(meta[k], 1000)])),
+    design: oneOf(raw.design, ['classic', 'manual'], 'classic'),
+    manual: cleanManualMeta(raw.manual, images),
     sections: [],
     images,
     created: num(raw.created) ?? Date.now(),
@@ -800,6 +866,24 @@ export function normalizeProject(raw) {
   const symbolIds = new Set(project.sections.flatMap((s) => (s.type === 'site' ? s.symbols.map((y) => y.id) : [])));
   for (const s of project.sections) if (s.type === 'photos') for (const p of s.items) if (p.link && !symbolIds.has(p.link)) p.link = null;
   return project;
+}
+
+function cleanManualMeta(m, images) {
+  const d = newManualMeta();
+  if (!m || typeof m !== 'object') return d;
+  const hex = (v, f) => (/^#[0-9a-f]{6}$/i.test(v) ? v : f);
+  return {
+    kicker: m.kicker ? toT(m.kicker) : d.kicker,
+    subtitle: toT(m.subtitle),
+    cover: hasImg(images, m.cover) ? m.cover : null,
+    modelLabel: m.modelLabel ? toT(m.modelLabel) : d.modelLabel,
+    model: str_(m.model, 200),
+    note: m.note ? toT(m.note) : d.note,
+    version: str_(m.version, 40),
+    date: str_(m.date, 40),
+    accent: hex(m.accent, d.accent),
+    accent2: hex(m.accent2, d.accent2),
+  };
 }
 
 function cleanWiring(s, id) {
@@ -989,8 +1073,18 @@ function cleanChapters(s, id, images) {
   for (const b of Array.isArray(s.blocks) ? s.blocks : []) {
     if (!b || typeof b !== 'object') continue;
     const base = { id: id(b.id, 'k'), type: b.type };
-    if (b.type === 'h') blocks.push({ ...base, level: oneOf(b.level, [1, 2], 1), text: toT(b.text) });
-    else if (b.type === 'p' || b.type === 'ul' || b.type === 'steps') blocks.push({ ...base, text: toT(b.text) });
+    if (b.type === 'h') blocks.push({ ...base, level: oneOf(b.level, [1, 2, 3], 1), text: toT(b.text) });
+    else if (b.type === 'p') blocks.push({ ...base, text: toT(b.text), ...(b.small === true ? { small: true } : {}) });
+    else if (b.type === 'ul' || b.type === 'steps') blocks.push({ ...base, text: toT(b.text) });
+    else if (b.type === 'signs') blocks.push(base);
+    else if (b.type === 'cards')
+      blocks.push({
+        ...base,
+        items: (Array.isArray(b.items) ? b.items : [])
+          .filter((c) => c && typeof c === 'object')
+          .slice(0, 40)
+          .map((c) => ({ id: id(c.id, 'c'), image: hasImg(images, c.image) ? c.image : null, title: toT(c.title), text: toT(c.text), fill: c.fill === true })),
+      });
     else if (b.type === 'callout')
       blocks.push({ ...base, tone: oneOf(b.tone, TONES.map((t) => t.id), 'note'), title: toT(b.title), text: toT(b.text) });
     else if (b.type === 'figure')
@@ -998,7 +1092,21 @@ function cleanChapters(s, id, images) {
         ...base,
         image: hasImg(images, b.image) ? b.image : null,
         caption: toT(b.caption),
-        width: oneOf(b.width, ['full', 'half'], 'full'),
+        width: oneOf(b.width, ['full', 'half', 'side'], 'full'),
+        marks: (Array.isArray(b.marks) ? b.marks : [])
+          .filter((m) => m && typeof m === 'object')
+          .slice(0, 60)
+          .map((m) => ({
+            id: id(m.id, 'm'),
+            x: clamp(m.x, 0, 1, 0.5),
+            y: clamp(m.y, 0, 1, 0.5),
+            side: oneOf(m.side, ['auto', 'l', 'r'], 'auto'),
+            ly: typeof m.ly === 'number' ? clamp(m.ly, -0.2, 1.2, null) : null,
+            name: toT(m.name),
+            desc: toT(m.desc),
+          })),
+        legend: b.legend !== false,
+        aside: { title: toT(b.aside && b.aside.title), text: toT(b.aside && b.aside.text) },
       });
     else if (b.type === 'figsteps')
       blocks.push({ ...base, image: hasImg(images, b.image) ? b.image : null, caption: toT(b.caption), text: toT(b.text) });
@@ -1008,7 +1116,11 @@ function cleanChapters(s, id, images) {
       const head = Array.from({ length: cols }, (_, i) => cell(Array.isArray(b.head) ? b.head[i] : ''));
       const rows = (Array.isArray(b.rows) ? b.rows : []).slice(0, 200).map((r) => Array.from({ length: cols }, (_, i) => cell(Array.isArray(r) ? r[i] : '')));
       const weights = Array.from({ length: cols }, (_, i) => clamp(Array.isArray(b.weights) ? b.weights[i] : 1, 0.2, 10, 1));
-      blocks.push({ ...base, preset: TABLE_IDS.has(b.preset) ? b.preset : 'table', caption: toT(b.caption), head, rows, weights });
+      // englische Fassung der Zellen (zweisprachige Bedienungsanleitung)
+      const en = b.en && typeof b.en === 'object' ? b.en : {};
+      const enHead = Array.from({ length: cols }, (_, i) => cell(Array.isArray(en.head) ? en.head[i] : ''));
+      const enRows = rows.map((_, r) => Array.from({ length: cols }, (_, i) => cell(Array.isArray(en.rows) && Array.isArray(en.rows[r]) ? en.rows[r][i] : '')));
+      blocks.push({ ...base, preset: TABLE_IDS.has(b.preset) ? b.preset : 'table', caption: toT(b.caption), head, rows, weights, en: { head: enHead, rows: enRows } });
     }
   }
   return {
