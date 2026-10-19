@@ -168,3 +168,23 @@ test('Neutral: keine Firma, keine Kundenbeispiele in Vorlagen und neuen Dokument
     await context.close();
   }
 });
+
+test('Werkzeugband: Rahmen oben wird nicht von der Kopfzeile verdeckt (hell und dunkel)', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await openPdf(page);
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      // die Zeile direkt über der Fläche gehört zum Werkzeugband, nicht zur Kopfzeile
+      const owner = await page.evaluate(() => {
+        const r = document.querySelector('.rb-bar').getBoundingClientRect();
+        const el = document.elementFromPoint(r.left + 40, r.top - 1);
+        return el && el.closest('#ribbon, #top') ? el.closest('#ribbon, #top').id : null;
+      });
+      expect(owner, scheme).toBe('ribbon');
+    }
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
