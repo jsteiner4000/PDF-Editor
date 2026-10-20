@@ -399,6 +399,12 @@ Menü „Werkzeuge › Lageplan“) ordnet alle Arten zeilenweise von links oben
 rechts unten. Geräteliste, Zugangsdaten und PDF übernehmen die Nummern sofort;
 Strg+Z macht es rückgängig.
 
+Mehrere Lagepläne (z. B. Erdgeschoss, Obergeschoss, Halle 2): über „+“ neben
+„Projektmappe“ › Lageplan. Jeder Plan hat eigenen Hintergrund, Maßstab und
+eine eigene Geräteliste; die Nummern zählen über alle Pläne durch (Plan 1:
+K 1–K 4, Plan 2: ab K 5), damit jede Nummer – auch in den Zugangsdaten – nur
+einmal vorkommt.
+
 Zugangsdaten: Kameras, Rekorder, Antennen, Router, Türsprechstellen,
 Zutrittsleser und Alarmzentralen stehen automatisch unter „Zugangsdaten ›
 Geräte-Zugänge“. IP-Adresse und Benutzer (beliebig viele, je mit Passwort und

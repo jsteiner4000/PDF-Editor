@@ -726,7 +726,7 @@ export const siteTools = {
     for (const s of this.project.sections)
       if (s.type === 'site') {
         const y = s.symbols.find((x) => x.id === id);
-        if (y) return { s, y, label: symbolLabels(s).get(id) || '' };
+        if (y) return { s, y, label: symbolLabels(s, this.project).get(id) || '' };
       }
     return null;
   },
@@ -737,7 +737,7 @@ export const siteTools = {
       if (s.type === 'site') {
         const l = s.links.find((x) => x.id === id);
         if (l) {
-          const labels = symbolLabels(s);
+          const labels = symbolLabels(s, this.project);
           const ends = [l.from, ...l.to].map((i) => labels.get(i)).filter(Boolean);
           return { s, l, title: l.mode === 'ptp' ? ends.join(' ↔ ') : `${ends[0]} → ${ends.length - 1}` };
         }
