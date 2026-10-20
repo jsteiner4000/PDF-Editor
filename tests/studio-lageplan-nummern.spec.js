@@ -89,3 +89,48 @@ test('Lageplan: Nummer am Symbol ändern, andere rücken nach; Neu nummerieren n
     await context.close();
   }
 });
+
+test('Mehrere Lagepläne: Nummern zählen durch, Nummer ändern bleibt im eigenen Plan', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    // zweiten Lageplan über „+“ anlegen
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.select({ kind: 'section', id: s.id });
+    });
+    await page.locator('#sdAdd').click();
+    await page.locator('.menu .mi', { hasText: 'Lageplan' }).click();
+    await page.evaluate((mk) => {
+      const st = window.pdfEditor.studio;
+      const [a, b] = st.project.sections.filter((x) => x.type === 'site');
+      const sym = (id, x, y) => ({ id, kind: 'camera', x, y, name: { de: '', en: '' }, note: { de: '', en: '' }, scale: 1, fov: true, dir: 90, angle: 90, range: 60 });
+      st.change('Symbole', () => {
+        a.symbols.push(sym('a1', 0.2, 0.2), sym('a2', 0.4, 0.2));
+        b.symbols.push(sym('b1', 0.2, 0.2), sym('b2', 0.4, 0.2), sym('b3', 0.6, 0.2));
+      });
+      st.select({ kind: 'sym', id: 'b3', section: b.id });
+    });
+    const head = page.locator('#sdIBody h4').first();
+    await expect(head).toHaveText('K 5');
+    await expect(page.locator('#sdIBody .sd-nr-of')).toHaveText('3 bis 5');
+    // Zugangsdaten: jede Nummer nur einmal
+    const names = await page.evaluate(() => {
+      const acc = window.pdfEditor.studio.project.sections.find((x) => x.type === 'access');
+      return acc.devices.map((d) => d.name.de || d.name);
+    });
+    expect(names).toEqual(['K 1 Kamera', 'K 2 Kamera', 'K 3 Kamera', 'K 4 Kamera', 'K 5 Kamera']);
+    // K 5 → 1: bleibt im eigenen Plan, wird K 3
+    const input = page.locator('#sdIBody .sd-nr input');
+    await input.fill('1');
+    await input.press('Enter');
+    await expect(head).toHaveText('K 3');
+    await expect(page.locator('#studio .sd-page', { hasText: 'K 5' }).first()).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});

@@ -283,7 +283,7 @@ export function opacityOf(section, it) {
 export function sitePages(section, ts, images, project = null) {
   const kinds = usedKinds(section);
   const area = SITE_AREA;
-  const labels = symbolLabels(section);
+  const labels = symbolLabels(section, project);
   const mpp = metersPerPt(section);
   const clip = (inner) =>
     inner

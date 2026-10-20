@@ -300,10 +300,25 @@ function numberedGroups(site) {
   return new Map([...groups].map(([code, list]) => [code, list.map((e) => e.sym)]));
 }
 
-/** Nummern der Symbole: Kennung → „K 1“ (je Kürzel lückenlos fortlaufend). */
-export function symbolLabels(site) {
+/**
+ * Bei mehreren Lageplänen zählen die Nummern durch: Anzahl je Kürzel in den Plänen davor
+ * (Reihenfolge der Projektmappe). Ohne Projekt beginnt jeder Plan bei 1.
+ */
+function codeOffsets(site, project) {
   const out = new Map();
-  for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code} ${i + 1}`));
+  if (!project) return out;
+  for (const s of project.sections) {
+    if (s === site) break;
+    if (s.type === 'site') for (const [code, list] of numberedGroups(s)) out.set(code, (out.get(code) || 0) + list.length);
+  }
+  return out;
+}
+
+/** Nummern der Symbole: Kennung → „K 1“ (je Kürzel lückenlos, über alle Lagepläne durchgehend). */
+export function symbolLabels(site, project = null) {
+  const off = codeOffsets(site, project);
+  const out = new Map();
+  for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code} ${(off.get(code) || 0) + i + 1}`));
   return out;
 }
 
@@ -312,11 +327,16 @@ export function symbolsInOrder(site) {
   return [...numberedGroups(site).values()].flat();
 }
 
-/** Nummer und Anzahl eines Symbols innerhalb seiner Art: { code, n, count } oder null. */
-export function symbolNumber(site, sym) {
+/**
+ * Nummer eines Symbols: { code, n, first, last } – `n` wie im Plan (durchgehend), `first`/`last`
+ * der Bereich dieser Art in diesem Plan; oder null.
+ */
+export function symbolNumber(site, sym, project = null) {
   const info = symbolInfo(site, sym.kind);
   const list = info && numberedGroups(site).get(info.code);
-  return list ? { code: info.code, n: list.indexOf(sym) + 1, count: list.length } : null;
+  if (!list) return null;
+  const off = codeOffsets(site, project).get(info.code) || 0;
+  return { code: info.code, n: off + list.indexOf(sym) + 1, first: off + 1, last: off + list.length, count: list.length };
 }
 
 /** Nummer ändern: das Symbol rückt an Stelle `n`, die übrigen rücken nach (lückenlos). */
@@ -383,7 +403,7 @@ export function syncAccess(project) {
   const syms = [];
   const links = [];
   for (const site of sites) {
-    const labels = symbolLabels(site);
+    const labels = symbolLabels(site, project);
     for (const y of site.symbols) if (NET_KINDS.includes(y.kind)) syms.push({ y, name: symbolName(site, y, labels), site, labels });
     for (const l of site.links) if (l.ssid || l.key) links.push({ l, site, labels });
   }
@@ -446,7 +466,7 @@ export function projectSymbols(project, lang = 'de') {
   const out = [];
   for (const s of project.sections) {
     if (s.type !== 'site') continue;
-    const labels = symbolLabels(s);
+    const labels = symbolLabels(s, project);
     for (const sym of s.symbols) {
       const info = symbolInfo(s, sym.kind);
       if (!info) continue;

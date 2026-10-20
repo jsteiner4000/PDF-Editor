@@ -1015,7 +1015,7 @@ Object.assign(Inspector.prototype, {
   siteForm(s) {
     const studio = this.studio;
     const lang = langsOf(this.project)[0];
-    const labels = symbolLabels(s);
+    const labels = symbolLabels(s, this.project);
     this.group(
       'Lageplan',
       this.bi('Überschrift', s, 'title'),
@@ -1261,7 +1261,7 @@ Object.assign(Inspector.prototype, {
 
   linkForm(s, l) {
     const studio = this.studio;
-    const labels = symbolLabels(s);
+    const labels = symbolLabels(s, this.project);
     const mpp = metersPerPt(s);
     const group = this.group(linkTitle(s, l, labels));
     group.append(
@@ -1299,33 +1299,34 @@ Object.assign(Inspector.prototype, {
   symNumberField(s, y, nr) {
     const studio = this.studio;
     const box = htmlToElement(
-      `<div class="sd-nr"><span class="sd-nr-code">${escapeHtml(nr.code)}</span><input class="fld num" type="number" min="1" max="${nr.count}" step="1" value="${nr.n}" data-f="nr${y.id}" aria-label="Nummer"><span class="sd-nr-of">von ${nr.count}</span></div>`,
+      `<div class="sd-nr"><span class="sd-nr-code">${escapeHtml(nr.code)}</span><input class="fld num" type="number" min="${nr.first}" max="${nr.last}" step="1" value="${nr.n}" data-f="nr${y.id}" aria-label="Nummer"><span class="sd-nr-of">${nr.first === 1 ? `von ${nr.last}` : `${nr.first} bis ${nr.last}`}</span></div>`,
     );
     const input = box.querySelector('input');
     const commit = () => {
       const v = Math.round(Number(input.value));
       if (!Number.isFinite(v) || v < 1) return void (input.value = nr.n);
-      const n = Math.min(nr.count, v);
+      // bei mehreren Lageplänen: nur innerhalb des Bereichs dieses Plans
+      const n = Math.max(nr.first, Math.min(nr.last, v));
       if (n === nr.n) return void (input.value = nr.n);
-      studio.change(`Nummer geändert: ${nr.code} ${nr.n} → ${nr.code} ${n}`, () => setSymbolNumber(s, y, n), { inspector: true });
+      studio.change(`Nummer geändert: ${nr.code} ${nr.n} → ${nr.code} ${n}`, () => setSymbolNumber(s, y, n - nr.first + 1), { inspector: true });
     };
     input.addEventListener('change', commit);
     input.addEventListener('keydown', (ev) => {
       if (ev.key === 'Enter') input.blur();
       if (ev.key === 'Escape') ((input.value = nr.n), input.blur());
     });
-    return this.field('Nummer', box, 'Andere Symbole dieser Art rücken nach.');
+    return this.field('Nummer', box, nr.first === 1 ? 'Andere Symbole dieser Art rücken nach.' : 'Andere Symbole dieser Art rücken nach. Die Nummern zählen über alle Lagepläne durch.');
   },
 
   symForm(s, y) {
     const studio = this.studio;
     const lang = langsOf(this.project)[0];
     const info = symbolInfo(s, y.kind);
-    const labels = symbolLabels(s);
+    const labels = symbolLabels(s, this.project);
     const mpp = metersPerPt(s);
     // Antennen gehören zu Strecken: Art nur unter den übrigen Symbolen wechseln
     const kinds = [...SYMBOLS.filter((k) => !k.link || k.id === y.kind).map((k) => [k.id, tx(k.name, lang)]), ...s.custom.map((c) => ['custom:' + c.id, tx(c.name, lang)])];
-    const nr = symbolNumber(s, y);
+    const nr = symbolNumber(s, y, this.project);
     this.group(
       `${labels.get(y.id) || 'Symbol'}`,
       nr && nr.count > 1 ? this.symNumberField(s, y, nr) : null,
