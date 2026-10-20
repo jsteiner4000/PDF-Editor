@@ -16,6 +16,7 @@ import { idbPut } from '../storage/idb.js';
 import { notifyDocumentState } from '../platform/desktop-bridge.js';
 import {
   ACCESS_BLOCKS,
+  DOC_PARTS,
   BLOCK_TYPES,
   PHOTO_LAYOUTS,
   SYMBOLS,
@@ -74,8 +75,19 @@ export const STUDIO_TEMPLATES = [
   { id: 'wiring', title: 'Anschlussplan', desc: 'Schaltbild, Klemmenplan und Hinweise' },
 ];
 
-function templateProject(id) {
-  return newProject(['wiring', 'manual', 'tech'].includes(id) ? id : 'documentation');
+function templateProject(id, parts = null) {
+  return newProject(['wiring', 'manual', 'tech'].includes(id) ? id : 'documentation', parts ? { parts } : {});
+}
+
+/** Zuletzt gewählte Teile der Anlagendokumentation (Vorauswahl im Dialog). */
+const PARTS_KEY = 'pdfix.docParts';
+
+function lastParts() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PARTS_KEY) || 'null');
+    if (Array.isArray(list) && list.some((p) => p !== 'cover')) return list.filter((p) => DOC_PARTS.some((d) => d.id === p));
+  } catch {}
+  return DOC_PARTS.map((d) => d.id);
 }
 
 const previews = new Map();
@@ -219,9 +231,53 @@ export class Studio {
   /* ---------- Projekt öffnen, schließen, sichern ---------- */
 
   async create(templateId) {
-    const project = templateProject(templateId);
+    let parts = null;
+    if (templateId === 'documentation') {
+      parts = await this.chooseParts();
+      if (!parts) return;
+    }
+    const project = templateProject(templateId, parts);
     applyCompany(project);
     await this.open(project);
+  }
+
+  /**
+   * Anlagendokumentation: wählen, welche Teile hineinkommen (zuletzt Gewähltes ist vorausgewählt).
+   * Später lässt sich alles über „+“ neben „Projektmappe“ ergänzen.
+   */
+  async chooseParts() {
+    const chosen = new Set(lastParts());
+    const body = htmlToElement(
+      `<div class="sd-parts"><p>Was soll in die Dokumentation? Weitere Teile lassen sich jederzeit über „+“ neben „Projektmappe“ hinzufügen.</p><div class="sd-parts-list">${DOC_PARTS.map(
+        (d) =>
+          `<label class="sd-part"><input type="checkbox" value="${d.id}"${chosen.has(d.id) ? ' checked' : ''}><span class="sd-part-ic">${icon(d.icon)}</span><span class="sd-part-t">${escapeHtml(d.label)}${d.hint ? `<small>${escapeHtml(d.hint)}</small>` : ''}</span></label>`,
+      ).join('')}</div><p class="sd-parts-note" aria-live="polite"></p></div>`,
+    );
+    const read = () => [...body.querySelectorAll('input:checked')].map((el) => el.value);
+    const result = showDialog({
+      title: 'Neue Anlagendokumentation',
+      icon: 'binder',
+      body,
+      buttons: [
+        { label: 'Abbrechen', value: null },
+        { label: 'Erstellen', primary: true, value: () => (read().some((p) => p !== 'cover') ? read() : null) },
+      ],
+    });
+    const create = body.closest('.dlg').querySelector('.btn.primary');
+    const note = body.querySelector('.sd-parts-note');
+    const update = () => {
+      const content = read().filter((p) => p !== 'cover').length;
+      create.disabled = content === 0;
+      note.textContent = content === 0 ? 'Mindestens einen Teil außer dem Deckblatt wählen.' : content >= 2 ? 'Ein Inhaltsverzeichnis kommt automatisch dazu.' : '';
+    };
+    body.addEventListener('change', update);
+    update();
+    const parts = await result;
+    if (parts)
+      try {
+        localStorage.setItem(PARTS_KEY, JSON.stringify(parts));
+      } catch {}
+    return parts;
   }
 
   /** Neue Dokumentation aus einer eigenen Vorlage (eigene Kennung, Datum von heute). */
