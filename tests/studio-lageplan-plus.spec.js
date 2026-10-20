@@ -9,6 +9,7 @@ import { launch } from './helpers.js';
 async function setup(page) {
   await page.locator('#wsDocs').click();
   await page.locator('.tpl[data-tpl="documentation"]').click();
+  await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
   await page.evaluate(() => {
     const st = window.pdfEditor.studio;
     const site = st.project.sections.find((s) => s.type === 'site');

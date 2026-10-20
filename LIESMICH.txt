@@ -334,6 +334,12 @@ anzeigen“. Lizenz: SIL Open Font License (siehe Hilfe > „Lizenzhinweise“).
 
 LAGEPLAN (BEREICH DOKUMENTATION)
 --------------------------------
+Neue Anlagendokumentation: Nach dem Klick auf die Vorlage wählt man, was
+hinein soll – Deckblatt, Lageplan (mit Geräteliste), Anschlussplan,
+Zugangsdaten, Fotodokumentation. Ab zwei Teilen kommt das Inhaltsverzeichnis
+automatisch dazu. Die Auswahl wird fürs nächste Mal gemerkt; weitere Teile
+lassen sich jederzeit über „+“ neben „Projektmappe“ ergänzen.
+
 „Objekt“ im Werkzeugband öffnet die Auswahl: Symbole (Kamera, Melder …),
 Richtfunk und Zeichnen. Wählen, dann in den Plan klicken.
 

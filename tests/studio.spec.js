@@ -186,6 +186,7 @@ test('Zugangsdaten: Passwörter je PDF ein- oder ausgeblendet – ausgeblendet a
     });
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     await page.locator('.sd-sec', { has: page.locator('b', { hasText: /^Zugangsdaten$/ }) }).click();
     await page.locator('.rb[data-act="device"]').click();
     await page.locator('#sdIBody input').first().fill('Rekorder (NVR)');
@@ -231,6 +232,7 @@ test('Seitenumbruch: langes Inhaltsverzeichnis und überlanger Hinweis bleiben �
   try {
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     const result = await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       st.change('Test', (p) => {
@@ -331,6 +333,7 @@ test('Lageplan: Symbole setzen, ziehen, Erfassungsbereich per Griff, Nummern, R�
   try {
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       const site = st.project.sections.find((s) => s.type === 'site');
@@ -419,6 +422,7 @@ test('Fotodokumentation: Fotos mit EXIF-Datum, 2 je Seite, Verknüpfung, leere A
     await stubPdfMaker(page, context);
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     // leere Vorlage: in der PDF nur Deckblatt und Inhalt
     const empty = await page.evaluate(() => {
       const d = window.pdfEditor.studio;
@@ -528,6 +532,7 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
   try {
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       st.select({ kind: 'section', id: st.project.sections.find((s) => s.type === 'site').id });

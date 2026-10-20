@@ -815,8 +815,27 @@ export const TEMPLATES = [
   },
 ];
 
+/** Teile der Anlagendokumentation, die man beim Anlegen wählen kann (Reihenfolge wie im Dokument). */
+export const DOC_PARTS = [
+  { id: 'cover', label: 'Deckblatt', icon: 'fitp' },
+  { id: 'site', label: 'Lageplan', hint: 'mit Geräteliste', icon: 'map' },
+  { id: 'wiring', label: 'Anschlussplan', icon: 'wiring' },
+  { id: 'access', label: 'Zugangsdaten', icon: 'key' },
+  { id: 'photos', label: 'Fotodokumentation', icon: 'camera' },
+];
+
+/**
+ * Nur die gewählten Teile übernehmen. Das Inhaltsverzeichnis kommt automatisch dazu, sobald
+ * mindestens zwei Inhaltsteile gewählt sind.
+ */
+function pickParts(sections, parts) {
+  const content = parts.filter((p) => p !== 'cover').length;
+  return sections.filter((s) => (s.type === 'toc' ? content >= 2 : parts.includes(s.type)));
+}
+
 export function newProject(templateId = 'documentation', opts = {}) {
   const template = TEMPLATES.find((t) => t.id === templateId) || TEMPLATES[0];
+  const sections = template.sections();
   return {
     v: MODEL_VERSION,
     id: uid('prj'),
@@ -837,7 +856,7 @@ export function newProject(templateId = 'documentation', opts = {}) {
       docNo: '',
       version: '1.0',
     },
-    sections: template.sections(),
+    sections: opts.parts ? pickParts(sections, opts.parts) : sections,
     images: {},
     created: Date.now(),
     modified: Date.now(),

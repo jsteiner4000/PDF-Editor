@@ -157,6 +157,7 @@ test('Neutral: keine Firma, keine Kundenbeispiele in Vorlagen und neuen Dokument
     const previews = await page.locator('#home').innerHTML();
     for (const word of ['Doitronic', 'Zufallsgenerator', 'Arduino', 'Lichtschranke']) expect(previews).not.toContain(word);
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     const project = await page.evaluate(() => window.pdfEditor.studio.project);
     expect(project.company.name).toBe('');
     expect(project.company.tagline).toEqual({ de: '', en: '' });

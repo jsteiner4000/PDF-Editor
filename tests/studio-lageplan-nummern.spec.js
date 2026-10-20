@@ -16,6 +16,7 @@ test('Lageplan: Nummer am Symbol ändern, andere rücken nach; Neu nummerieren n
   try {
     await page.locator('#wsDocs').click();
     await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
     await page.evaluate((list) => {
       const st = window.pdfEditor.studio;
       const s = st.project.sections.find((x) => x.type === 'site');
