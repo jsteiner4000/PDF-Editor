@@ -386,6 +386,13 @@ Strg+Umschalt+↑/↓), bei Symbolen die Lage der Nummer und den
 Erfassungsbereich nur als Umriss. „Plan ausdünnen“ (Lageplan wählen) stellt
 ganze Arten blass oder blendet sie aus – die Legende bleibt vollständig.
 
+Nummern ändern: Symbol wählen und rechts unter „Nummer“ die neue Zahl eingeben
+(z. B. K 5 → 2) – die übrigen Symbole dieser Art rücken nach, die Nummern
+bleiben immer lückenlos. „Neu nummerieren nach Lage“ (Lageplan wählen oder
+Menü „Werkzeuge › Lageplan“) ordnet alle Arten zeilenweise von links oben nach
+rechts unten. Geräteliste, Zugangsdaten und PDF übernehmen die Nummern sofort;
+Strg+Z macht es rückgängig.
+
 Zugangsdaten: Kameras, Rekorder, Antennen, Router, Türsprechstellen,
 Zutrittsleser und Alarmzentralen stehen automatisch unter „Zugangsdaten ›
 Geräte-Zugänge“. IP-Adresse und Benutzer (beliebig viele, je mit Passwort und

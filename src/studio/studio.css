@@ -1344,3 +1344,29 @@ textarea.fld.mono {
   font-size: 12px;
   line-height: 1.45;
 }
+/* Nummer eines Symbols: Kürzel, Zahl, „von n“ */
+.sd-nr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sd-nr-code {
+  min-width: 28px;
+  padding: 0 6px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--acc-soft, rgba(15, 118, 110, 0.1));
+  color: var(--acc);
+  font-weight: 700;
+  font-size: 12px;
+}
+.sd-nr .fld {
+  width: 72px;
+}
+.sd-nr-of {
+  color: var(--ink3);
+  font-size: 12px;
+}

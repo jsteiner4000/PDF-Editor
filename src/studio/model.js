@@ -283,18 +283,67 @@ export function symbolInfo(site, kind) {
   return custom ? { code: custom.code || 'ES', name: custom.name, color: '#475569', glyph: null, image: custom.image } : null;
 }
 
-/** Nummern der Symbole: Kennung → „K 1“ (je Kürzel fortlaufend in der Reihenfolge der Liste). */
-export function symbolLabels(site) {
-  const count = new Map();
-  const out = new Map();
-  for (const sym of site.symbols) {
+/**
+ * Symbole einer Art in Nummernfolge. `seq` (gesetzt beim Ändern der Nummer oder „Neu
+ * nummerieren“) bestimmt die Folge; Symbole ohne `seq` (neu gesetzt) kommen danach in der
+ * Reihenfolge der Liste. Die Liste selbst bleibt die Zeichenreihenfolge.
+ */
+function numberedGroups(site) {
+  const groups = new Map();
+  site.symbols.forEach((sym, i) => {
     const info = symbolInfo(site, sym.kind);
-    if (!info) continue;
-    const n = (count.get(info.code) || 0) + 1;
-    count.set(info.code, n);
-    out.set(sym.id, `${info.code} ${n}`);
-  }
+    if (!info) return;
+    if (!groups.has(info.code)) groups.set(info.code, []);
+    groups.get(info.code).push({ sym, key: Number.isInteger(sym.seq) ? sym.seq : 1e6 + i, i });
+  });
+  for (const list of groups.values()) list.sort((a, b) => a.key - b.key || a.i - b.i);
+  return new Map([...groups].map(([code, list]) => [code, list.map((e) => e.sym)]));
+}
+
+/** Nummern der Symbole: Kennung → „K 1“ (je Kürzel lückenlos fortlaufend). */
+export function symbolLabels(site) {
+  const out = new Map();
+  for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code} ${i + 1}`));
   return out;
+}
+
+/** Alle Symbole in Nummernfolge (je Art zusammen, Arten in der Reihenfolge ihres ersten Auftretens). */
+export function symbolsInOrder(site) {
+  return [...numberedGroups(site).values()].flat();
+}
+
+/** Nummer und Anzahl eines Symbols innerhalb seiner Art: { code, n, count } oder null. */
+export function symbolNumber(site, sym) {
+  const info = symbolInfo(site, sym.kind);
+  const list = info && numberedGroups(site).get(info.code);
+  return list ? { code: info.code, n: list.indexOf(sym) + 1, count: list.length } : null;
+}
+
+/** Nummer ändern: das Symbol rückt an Stelle `n`, die übrigen rücken nach (lückenlos). */
+export function setSymbolNumber(site, sym, n) {
+  const info = symbolInfo(site, sym.kind);
+  const list = info && numberedGroups(site).get(info.code);
+  if (!list) return;
+  list.splice(list.indexOf(sym), 1);
+  list.splice(Math.max(0, Math.min(list.length, Math.round(n) - 1)), 0, sym);
+  list.forEach((y, i) => (y.seq = i));
+}
+
+/**
+ * Alle Arten neu nummerieren nach Lage im Plan: zeilenweise von oben nach unten, in der Zeile
+ * von links nach rechts (Symbole mit kaum unterschiedlicher Höhe gelten als eine Zeile).
+ */
+export function renumberByPosition(site, row = 0.06) {
+  for (const list of numberedGroups(site).values()) {
+    const sorted = [...list].sort((a, b) => a.y - b.y);
+    const rows = [];
+    for (const y of sorted) {
+      const last = rows.at(-1);
+      if (last && y.y - last[0].y < row) last.push(y);
+      else rows.push([y]);
+    }
+    rows.flatMap((r) => r.sort((a, b) => a.x - b.x)).forEach((y, i) => (y.seq = i));
+  }
 }
 
 /* ---------- Lageplan ↔ Zugangsdaten ---------- */
@@ -986,6 +1035,7 @@ function cleanSite(s, id, images) {
       dir: clamp(y.dir, -360, 720, 0),
       angle: clamp(y.angle, 5, 360, 90),
       range: clamp(y.range, 10, 600, 60),
+      ...(Number.isInteger(y.seq) && y.seq >= 0 && y.seq < 100000 ? { seq: y.seq } : {}),
     }, true));
   const point = (q) => (Array.isArray(q) && q.length === 2 ? [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)] : null);
   const shapes = (Array.isArray(s.shapes) ? s.shapes : [])

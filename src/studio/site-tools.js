@@ -9,7 +9,7 @@
 import { $, htmlToElement } from '../ui/dom.js';
 import { showDialog, toast } from '../ui/dialogs.js';
 import { PAGE } from './svg.js';
-import { SHAPE_TYPES, newLink, newShape, newSymbol, symbolInfo, symbolLabels, tx } from './model.js';
+import { SHAPE_TYPES, newLink, newShape, newSymbol, renumberByPosition, symbolInfo, symbolLabels, tx } from './model.js';
 import { siteOrder } from './site.js';
 import { showMenu } from '../ui/menu.js';
 import { SITE_AREA, formatLength, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
@@ -85,11 +85,19 @@ export const siteTools = {
     if (!s) return;
     if (this.sel.section !== s.id && !(this.sel.kind === 'section' && this.sel.id === s.id)) this.select({ kind: 'section', id: s.id }, { reveal: true });
     if (tool === 'again') return this.armAgain();
+    if (tool === 'renumber') return this.renumberSite(s);
     if (tool === 'symbols') {
       const btn = document.querySelector('.rb[data-act="symbols"]');
       return btn && this.symbolMenu(btn, s);
     }
     if (this.armed !== 'tool:' + tool) this.arm('tool:' + tool);
+  },
+
+  /** Alle Symbole je Art nach Lage im Plan nummerieren (rückgängig machbar). */
+  renumberSite(s) {
+    if (s.symbols.length < 2) return toast('Zum Nummerieren braucht es mindestens zwei Symbole.', 'warn', 3000);
+    this.change('Neu nummeriert nach Lage', () => renumberByPosition(s), { inspector: true });
+    toast('Neu nummeriert – von links oben nach rechts unten. Rückgängig mit Strg+Z.');
   },
 
   /** Gewähltes Symbol bzw. gewählte Zeichnung mit den Pfeiltasten verschieben (pt). */
