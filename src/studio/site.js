@@ -8,7 +8,7 @@
  * Hintergrundbild getauscht wird.
  */
 import { C, PAGE, color, esc, line, n, rect, text } from './svg.js';
-import { STRINGS, deviceOf, str, symbolInfo, symbolLabels, tx } from './model.js';
+import { STRINGS, deviceOf, str, symbolInfo, symbolLabels, symbolsInOrder, tx } from './model.js';
 import { wrap } from './measure.js';
 import {
   LEGEND_ROW,
@@ -474,7 +474,7 @@ function listPages(section, ts, labels, project) {
   svg += text(PAGE.left, y, ts.label('deviceList'), { size: 12, weight: 700 });
   y += 22;
   head();
-  section.symbols.forEach((sym, i) => {
+  symbolsInOrder(section).forEach((sym, i) => {
     const info = symbolInfo(section, sym.kind);
     if (!info) return;
     const cell = (value, w, weight = 400) =>

@@ -29,6 +29,9 @@ import {
   sectionTitle,
   symbolInfo,
   symbolLabels,
+  symbolNumber,
+  symbolsInOrder,
+  setSymbolNumber,
   tx,
   uid,
 } from './model.js';
@@ -1089,7 +1092,7 @@ Object.assign(Inspector.prototype, {
     }
     this.group(
       `Im Plan (${s.symbols.length})`,
-      this.rows(s.symbols, {
+      this.rows(symbolsInOrder(s), {
         empty: 'Noch kein Symbol gesetzt.',
         render: (y) => {
           const info = symbolInfo(s, y.kind);
@@ -1098,6 +1101,15 @@ Object.assign(Inspector.prototype, {
         onOpen: (y) => studio.select({ kind: 'sym', id: y.id, section: s.id }, { reveal: true, pulse: true }),
       }),
     );
+    if (s.symbols.length > 1) {
+      const renumber = htmlToElement(`<button type="button" class="btn outline sd-wide" data-a="renumber">${icon('list', 's')}Neu nummerieren nach Lage</button>`);
+      renumber.addEventListener('click', () => studio.renumberSite(s));
+      this.group(
+        'Nummerierung',
+        renumber,
+        this.note('Je Art zeilenweise von links oben nach rechts unten. Eine einzelne Nummer ändert man am Symbol – die anderen rücken nach.'),
+      );
+    }
     this.thinGroup(s);
     if (s.links.length)
       this.group(
@@ -1283,6 +1295,28 @@ Object.assign(Inspector.prototype, {
     this.actions(['Strecke löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
+  /** Nummer eines Symbols ändern: Kürzel, Zahl (1 … Anzahl), die übrigen rücken nach. */
+  symNumberField(s, y, nr) {
+    const studio = this.studio;
+    const box = htmlToElement(
+      `<div class="sd-nr"><span class="sd-nr-code">${escapeHtml(nr.code)}</span><input class="fld num" type="number" min="1" max="${nr.count}" step="1" value="${nr.n}" data-f="nr${y.id}" aria-label="Nummer"><span class="sd-nr-of">von ${nr.count}</span></div>`,
+    );
+    const input = box.querySelector('input');
+    const commit = () => {
+      const v = Math.round(Number(input.value));
+      if (!Number.isFinite(v) || v < 1) return void (input.value = nr.n);
+      const n = Math.min(nr.count, v);
+      if (n === nr.n) return void (input.value = nr.n);
+      studio.change(`Nummer geändert: ${nr.code} ${nr.n} → ${nr.code} ${n}`, () => setSymbolNumber(s, y, n), { inspector: true });
+    };
+    input.addEventListener('change', commit);
+    input.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') input.blur();
+      if (ev.key === 'Escape') ((input.value = nr.n), input.blur());
+    });
+    return this.field('Nummer', box, 'Andere Symbole dieser Art rücken nach.');
+  },
+
   symForm(s, y) {
     const studio = this.studio;
     const lang = langsOf(this.project)[0];
@@ -1291,8 +1325,10 @@ Object.assign(Inspector.prototype, {
     const mpp = metersPerPt(s);
     // Antennen gehören zu Strecken: Art nur unter den übrigen Symbolen wechseln
     const kinds = [...SYMBOLS.filter((k) => !k.link || k.id === y.kind).map((k) => [k.id, tx(k.name, lang)]), ...s.custom.map((c) => ['custom:' + c.id, tx(c.name, lang)])];
+    const nr = symbolNumber(s, y);
     this.group(
       `${labels.get(y.id) || 'Symbol'}`,
+      nr && nr.count > 1 ? this.symNumberField(s, y, nr) : null,
       this.bi('Bezeichnung', y, 'name', { placeholder: info ? tx(info.name, lang) : '' }),
       this.bi('Bemerkung', y, 'note'),
       this.select('Art', kinds, y.kind, (v) =>
@@ -1301,6 +1337,7 @@ Object.assign(Inspector.prototype, {
           () => {
             const next = symbolInfo(s, v);
             y.kind = v;
+            delete y.seq; // in der neuen Art hinten anstellen
             y.fov = !!(next && next.fov);
             if (next && next.fov) {
               y.angle = next.fov.angle;

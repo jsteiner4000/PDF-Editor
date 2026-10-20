@@ -165,7 +165,7 @@ const COMMANDS = {
     ]),
   ),
   ...Object.fromEntries(
-    ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale', 'measure'].map((tool) => ['site:' + tool, () => app.siteFromMenu(tool)]),
+    ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale', 'measure', 'renumber'].map((tool) => ['site:' + tool, () => app.siteFromMenu(tool)]),
   ),
   undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),
