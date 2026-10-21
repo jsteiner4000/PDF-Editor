@@ -9,7 +9,6 @@ import { ACCESS_BLOCKS, STRINGS, tx } from './model.js';
 import { wrap } from './measure.js';
 
 const MASK = '••••••••';
-const WIDTH = 511;
 
 /** Hat ein Bereich Inhalt (Zeilen bzw. Netzwerkangaben)? */
 export function blockHasData(section, block) {
@@ -33,7 +32,8 @@ function cellLines(ts, col, value, width, mask) {
  * Setzt die Zugangsdaten in Seiten: [{ svg, hits }]. Tabellen laufen mit wiederholter Kopfzeile
  * auf Folgeseiten weiter; eine Überschrift steht nie allein am Seitenende.
  */
-export function accessPages(section, ts, { top = 132, bottom = 770 } = {}) {
+export function accessPages(section, ts, { top = 132, bottom = PAGE.bottom } = {}) {
+  const WIDTH = PAGE.right - PAGE.left - 0.276;
   const pages = [];
   let svg = '';
   let hits = [];

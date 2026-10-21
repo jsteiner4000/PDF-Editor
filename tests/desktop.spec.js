@@ -74,7 +74,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
 
     // 1. Per Kommandozeile übergebene Datei ist geöffnet, Titel = Dateiname
     await waitForDocument(page, 'dokument.pdf');
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDFix');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PlantPDF');
 
     // 2. Renderer-Isolation: kein Node, keine Pfade, kein Netz
     const security = await page.evaluate(async () => {
@@ -129,12 +129,12 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !window.pdfEditor.edit.editor && !window.pdfEditor.edit._finishing);
     await idle(page);
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf (Bearbeitet) – PDFix');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf (Bearbeitet) – PlantPDF');
 
     // 4. Strg+S überschreibt die geöffnete Datei (ohne Dialog)
     await page.keyboard.press('Control+s');
     await page.waitForFunction(() => !window.pdfEditor.session.dirty);
-    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PDFix');
+    await expect.poll(() => mainWindowTitle(app)).toBe('dokument.pdf – PlantPDF');
     const saved = readFileSync(pdf);
     expect(Buffer.compare(saved, original)).not.toBe(0);
     expect((await extractText(saved))[0]).toContain('Desktop');
@@ -145,7 +145,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: copy.replace(/\.pdf$/, '') }); // ohne Endung
     }, copy);
     await page.keyboard.press('Control+Shift+s');
-    await expect.poll(() => mainWindowTitle(app)).toBe('kopie.pdf – PDFix');
+    await expect.poll(() => mainWindowTitle(app)).toBe('kopie.pdf – PlantPDF');
     expect(readFileSync(copy).length).toBeGreaterThan(1000);
     expect(readFileSync(pdf).equals(saved)).toBe(true);
 
@@ -414,7 +414,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     });
     await expect
       .poll(() => app.evaluate(() => globalThis.__asked))
-      .toEqual(['PDFix ist unerwartet abgestürzt.']);
+      .toEqual(['PlantPDF ist unerwartet abgestürzt.']);
     await expect
       .poll(() =>
         app.evaluate(({ BrowserWindow }) => {
@@ -423,7 +423,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
         }),
       )
       .toBe('app://pdf-editor/');
-    await expect.poll(() => mainWindowTitle(app)).toBe('PDFix');
+    await expect.poll(() => mainWindowTitle(app)).toBe('PlantPDF');
     const closed = app.waitForEvent('close');
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
     await closed;
@@ -550,7 +550,7 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     expect(text).toContain('Belegung der Arduino-Anschlüsse');
     expect(text).toContain('Seite 2 von 2');
 
-    // Wieder öffnen: PDFix bietet die Dokumentation zum Weiterbearbeiten an
+    // Wieder öffnen: PlantPDF bietet die Dokumentation zum Weiterbearbeiten an
     await page.evaluate(async (b64) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       await window.pdfEditor.openBytes(bytes, 'plan.pdf', null);

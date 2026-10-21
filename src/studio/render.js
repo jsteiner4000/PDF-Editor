@@ -5,16 +5,19 @@
  * Ergebnis von `renderDocument`: { pages: [{ svg, section, kind, hits, layout? }] }. `hits` sind die
  * anklickbaren Bereiche einer Seite (Rechtecke in pt) für die Auswahl in der Vorschau.
  */
-import { C, PAGE, esc, line, n, rect, text, typesetter } from './svg.js';
+import { C, PAGE, esc, isLandscape, line, n, rect, setOrientation, text, typesetter } from './svg.js';
 import { DIAGRAM, layoutWiring, legendSvg, terminalPages, wiringDiagramSvg } from './wiring.js';
 import { accessPages } from './access.js';
 import { sitePages } from './site.js';
 import { photoPages } from './photos.js';
 import { chapterPages } from './chapters.js';
+import { overlaySvg, overlaysOf } from './overlays.js';
 import { BODY, manualCover, manualFrame, manualPages, manualToc } from './manual.js';
 import { isEmptySection, sectionTitle } from './model.js';
 
-const LOGO_BOX = { x: 378.276, y: 42, w: 175, h: 44.144 };
+const LOGO = { y: 42, w: 175, h: 44.144 };
+/** Logo oben rechts, bündig mit dem rechten Rand der Seite (Hoch- oder Querformat). */
+const logoBox = () => ({ ...LOGO, x: PAGE.right - LOGO.w });
 
 /** Datum (JJJJ-MM-TT) in der Schreibweise der Sprache. */
 export function formatDate(iso, lang) {
@@ -30,6 +33,7 @@ export function formatDate(iso, lang) {
 /** Firmenlogo oben rechts (eingepasst, rechtsbündig) – ohne Logo der Firmenname als Schriftzug. */
 function logoSvg(project, ts) {
   const img = project.company.logo && project.images[project.company.logo];
+  const LOGO_BOX = logoBox();
   if (img && img.data && img.w && img.h) {
     const s = Math.min(LOGO_BOX.w / img.w, LOGO_BOX.h / img.h);
     const w = img.w * s;
@@ -47,7 +51,7 @@ function logoSvg(project, ts) {
 /** Kopf einer Inhaltsseite: Titel, Untertitel, Logo, Linie. */
 function headerSvg(project, ts, title, subtitle) {
   // Titel und Untertitel enden vor dem Logo (zu lang: kleiner, notfalls gekürzt)
-  const room = LOGO_BOX.x - 12 - PAGE.left;
+  const room = logoBox().x - 12 - PAGE.left;
   return (
     logoSvg(project, ts) +
     text(PAGE.left, 72, ...fit(ts, title, 20, 14, room, 700)) +
@@ -67,7 +71,7 @@ function fit(ts, value, size, min, room, weight = 400, fill = C.navy) {
 }
 
 /** Fußzeile: Firma links, Dokument und Seitenzahl rechts. */
-function footerSvg(project, ts, label, num, total) {
+function footerSvg(project, ts, label, num, total, cover = false) {
   const company = [project.company.name, ts.inline(project.company.tagline)].filter(Boolean).join('  -  ');
   const pageText = num ? ts.label('pageOf', { n: num, total }) : '';
   const room = PAGE.right - PAGE.left - 16;
@@ -77,10 +81,12 @@ function footerSvg(project, ts, label, num, total) {
   let right = [label, pageText].filter(Boolean).join('   -   ');
   if (w(left) + w(right) > room) left = project.company.name || '';
   if (w(left) + w(right) > room) right = pageText;
+  const f = PAGE.foot;
+  if (cover) return line(COVER_LEFT, f, PAGE.right, f, C.rule, 0.8) + text(COVER_LEFT, f + 14, left, { size: 9, fill: C.body });
   return (
-    line(PAGE.left, 789.89, PAGE.right, 789.89, C.rule, 0.7) +
-    text(PAGE.left, 801.89, left, { size: 7.5, fill: C.muted }) +
-    text(PAGE.right, 801.89, right, { size: 7.5, fill: C.muted, anchor: 'end' })
+    line(PAGE.left, f, PAGE.right, f, C.rule, 0.7) +
+    text(PAGE.left, f + 12, left, { size: 7.5, fill: C.muted }) +
+    text(PAGE.right, f + 12, right, { size: 7.5, fill: C.muted, anchor: 'end' })
   );
 }
 
@@ -99,24 +105,32 @@ export function documentLabel(project, ts = typesetter(project)) {
 
 /* ---------- Deckblatt ---------- */
 
+/** Deckblatt: links 25 mm Heftrand (Lochung im Ordner), Schrift auch ausgedruckt gut lesbar. */
+export const COVER_LEFT = 70.87;
+
 function coverBody(project, ts) {
+  const L = COVER_LEFT;
+  const R = PAGE.right;
   let s = logoSvg(project, ts);
   const hits = [];
   let y = 318;
   const titles = ts.runs(project.title);
   titles.forEach((r) => {
-    s += text(PAGE.left, y, r.text, r.sec ? { size: 14, italic: true, fill: C.muted } : { size: 30, weight: 700 });
-    y += r.sec ? 22 : 28;
+    for (const l of ts.wrap(r.text, r.sec ? 15 : 32, R - L, r.sec ? 400 : 700)) {
+      s += text(L, y, l, r.sec ? { size: 15, italic: true, fill: C.body } : { size: 32, weight: 700 });
+      y += r.sec ? 22 : 36;
+    }
+    if (!r.sec) y -= 6;
   });
   const sub = [project.meta.site, project.meta.customer].find(Boolean);
   if (sub) {
-    s += text(PAGE.left, y, sub, { size: 14, fill: C.muted });
-    y += 8;
+    s += text(L, y + 2, sub, { size: 16, fill: C.body });
+    y += 10;
   }
-  hits.push({ kind: 'project', rect: [PAGE.left, 280, PAGE.right - PAGE.left, y - 270] });
-  y += 14;
-  s += line(PAGE.left, y, PAGE.right, y, C.navy, 2.5);
-  y += 34;
+  hits.push({ kind: 'project', rect: [L, 280, R - L, y - 270] });
+  y += 16;
+  s += line(L, y, R, y, C.navy, 2.5);
+  y += 36;
   const m = project.meta;
   const rows = [
     ['customer', m.customer],
@@ -127,16 +141,17 @@ function coverBody(project, ts) {
     ['docNo', m.docNo],
     ['version', m.version],
   ].filter(([, v]) => v);
-  const top = y - 20;
+  const top = y - 22;
+  const vx = L + 118;
   for (const [key, value] of rows) {
-    const lines = ts.wrap(value, 10.5, PAGE.right - 170);
-    s += text(PAGE.left, y, ts.label(key), { size: 8.5, fill: C.muted });
-    lines.forEach((l, i) => (s += text(170, y + 12.6 * i, l, { size: 10.5 })));
-    y += 12.6 * (lines.length - 1) + 10;
-    s += line(PAGE.left, y, PAGE.right, y, C.rule, 0.5);
-    y += 20;
+    const lines = ts.wrap(value, 12.5, R - vx);
+    s += text(L, y, ts.label(key), { size: 10, weight: 700, fill: C.body });
+    lines.forEach((l, i) => (s += text(vx, y + 15.5 * i, l, { size: 12.5 })));
+    y += 15.5 * (lines.length - 1) + 11;
+    s += line(L, y, R, y, C.rule, 0.8);
+    y += 22;
   }
-  if (rows.length) hits.push({ kind: 'project', rect: [PAGE.left, top, PAGE.right - PAGE.left, y - top] });
+  if (rows.length) hits.push({ kind: 'project', rect: [L, top, R - L, y - top] });
   return { svg: s, hits };
 }
 
@@ -200,12 +215,26 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
   const manual = project.design === 'manual';
   const manualState = { h1: 0, fig: 0 };
 
-  for (const section of project.sections) {
-    // für die fertige PDF: leere Abschnitte (nur Kopfzeile) weglassen
-    if (skipEmpty && isEmptySection(section)) {
-      skipped.push(sectionTitleInline(section, ts));
-      continue;
+  try {
+    for (const section of project.sections) {
+      // für die fertige PDF: leere Abschnitte (nur Kopfzeile) weglassen
+      if (skipEmpty && isEmptySection(section)) {
+        skipped.push(sectionTitleInline(section, ts));
+        continue;
+      }
+      // Querformat je Abschnitt (nicht für Kapitel im Stil der Bedienungsanleitung)
+      const land = isLandscape(section) && !(manual && section.type === 'chapters');
+      setOrientation(land);
+      const from = pages.length;
+      addSection(section);
+      for (let k = from; k < pages.length; k++) pages[k].land = land;
     }
+  } finally {
+    setOrientation(false);
+  }
+
+  /** Seiten eines Abschnitts anfügen (im eingestellten Seitenformat). */
+  function addSection(section) {
     if (section.type === 'cover') {
       pages.push({ section: section.id, kind: 'cover', make: () => (manual ? manualCover(project) : coverBody(project, ts)), plain: true, manual });
     } else if (section.type === 'chapters' && manual) {
@@ -342,34 +371,61 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     });
   }
 
+  // Seite im Abschnitt (für freie Bilder und QR-Codes; erst jetzt, das Verzeichnis kann mehrseitig sein)
+  pages.forEach((p, i) => {
+    const prev = pages[i - 1];
+    p.secPage = prev && prev.section === p.section ? prev.secPage + 1 : 0;
+    p.secLast = !(pages[i + 1] && pages[i + 1].section === p.section);
+  });
   const total = pages.length;
   return {
     label,
     skipped,
     pages: pages.map((p, i) => {
-      const body = p.make();
-      if (p.manual)
-        return {
-          section: p.section,
-          kind: p.kind,
-          manual: true,
-          layout: null,
-          site: null,
-          hits: body.hits || [],
-          svg: svgPage(ts, body.svg + (p.plain ? '' : manualFrame(project, p.chapter || null, i + 1, total)), esc(BODY), 'normal'),
-        };
-      const head = p.plain ? '' : headerSvg(project, ts, p.title, p.subtitle);
-      const foot = footerSvg(project, ts, p.plain ? '' : label, p.plain ? 0 : i + 1, total);
+      setOrientation(!!p.land);
+      try {
+        return finishPage(p, i);
+      } finally {
+        setOrientation(false);
+      }
+    }),
+  };
+
+  /** Fertige Seite: Inhalt mit Kopf- und Fußzeile, im Format des Abschnitts. */
+  function finishPage(p, i) {
+    const body = p.make();
+    // freie Bilder und QR-Codes über dem Inhalt (anklickbar vor allem anderen)
+    const free = overlaysOf(project, p.section, p.secPage, p.secLast);
+    const extra = free.map((o) => overlaySvg(project, o)).join('');
+    const hits = [...(body.hits || []), ...free.map((o) => ({ kind: 'overlay', id: o.id, rect: [o.x, o.y, o.w, o.h] }))];
+    if (p.manual)
       return {
         section: p.section,
         kind: p.kind,
-        layout: p.layout || null,
-        site: p.site || null,
-        hits: body.hits || [],
-        svg: svgPage(ts, head + body.svg + foot),
+        manual: true,
+        layout: null,
+        site: null,
+        hits,
+        secPage: p.secPage,
+        w: PAGE.w,
+        h: PAGE.h,
+        svg: svgPage(ts, body.svg + (p.plain ? '' : manualFrame(project, p.chapter || null, i + 1, total)) + extra, esc(BODY), 'normal'),
       };
-    }),
-  };
+    const head = p.plain ? '' : headerSvg(project, ts, p.title, p.subtitle);
+    const foot = footerSvg(project, ts, p.plain ? '' : label, p.plain ? 0 : i + 1, total, p.kind === 'cover');
+    return {
+      section: p.section,
+      kind: p.kind,
+      layout: p.layout || null,
+      site: p.site || null,
+      hits,
+      secPage: p.secPage,
+      land: !!p.land,
+      w: PAGE.w,
+      h: PAGE.h,
+      svg: svgPage(ts, head + body.svg + foot + extra),
+    };
+  }
 }
 
 function sectionTitleInline(section, ts) {

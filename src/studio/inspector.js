@@ -32,14 +32,16 @@ import {
   symbolNumber,
   symbolsInOrder,
   setSymbolNumber,
+  appendToGroup,
   tx,
   uid,
 } from './model.js';
 import { thumbOf } from './thumbs.js';
+import { QR_CAPTION_H, serialSources } from './overlays.js';
 import { chapterLabels, referenceTargets } from './chapters.js';
 import { sideOf } from './wiring.js';
 import { color as safeColor } from './svg.js';
-import { formatArea, formatLength, metersPerPt, pathLength, polygonArea, ratio, toPt } from './geo.js';
+import { formatArea, formatLength, metersPerPt, pathLength, polygonArea, ratio, siteArea, toPt } from './geo.js';
 
 const KIND_TITLE = {
   project: 'Projekt',
@@ -55,6 +57,7 @@ const KIND_TITLE = {
   link: 'Richtfunk',
   photo: 'Foto',
   block: 'Baustein',
+  overlay: 'Bild / QR-Code',
 };
 
 /** Vorschläge für Fernzugriff-Dienste (frei änderbar). */
@@ -124,6 +127,7 @@ export class Inspector {
     else if (sel.kind === 'device') this.deviceForm(section, item);
     else if (sel.kind === 'wifi') this.wifiForm(section, item);
     else if (sel.kind === 'remote') this.remoteForm(section, item);
+    else if (sel.kind === 'overlay') this.overlayForm(item);
     if (keepFocus) {
       const again = this.body.querySelector(`[data-f="${keepFocus}"]`);
       if (again) again.focus();
@@ -458,6 +462,10 @@ export class Inspector {
     else if (section.type === 'site') this.siteForm(section);
     else if (section.type === 'chapters') this.chaptersForm(section);
     else if (section.type === 'photos') this.photosForm(section);
+    // Seitenformat je Abschnitt (Kapitel im Stil der Bedienungsanleitung bleiben hoch)
+    const first = this.body.querySelector('.sd-grp');
+    if (first && section.type !== 'cover' && section.type !== 'toc' && !(section.type === 'chapters' && this.project.design === 'manual'))
+      first.appendChild(this.seg('Seite', [[false, 'Hochformat'], [true, 'Querformat']], !!section.landscape, (v) => studio.setLandscape(section, v)));
     this.actions(['Abschnitt entfernen', 'trash', () => studio.removeSection(section.id), true]);
   }
 
@@ -773,7 +781,7 @@ Object.assign(Inspector.prototype, {
           studio.change(v ? 'Passwörter sichtbar' : 'Passwörter ausgeblendet', () => (s.showPasswords = v));
           studio.app.renderRibbon();
         },
-        'Sonst erscheinen Punkte. Beim Erstellen der PDF fragt PDFix noch einmal nach.',
+        'Sonst erscheinen Punkte. Beim Erstellen der PDF fragt PlantPDF noch einmal nach.',
       ),
     );
     const blocks = this.group('In der PDF');
@@ -886,7 +894,17 @@ Object.assign(Inspector.prototype, {
       }
       group.appendChild(row);
     });
-    group.appendChild(this.addButton('Benutzer hinzufügen', () => studio.change('Benutzer hinzugefügt', () => d.users.push(newUser()), { inspector: true })));
+    // gut sichtbarer Knopf direkt unter den Benutzern; danach gleich den Namen eintippen
+    const add = htmlToElement(`<button type="button" class="btn outline sd-wide sd-user-add">${icon('plus', 's')}Weiteren Benutzer hinzufügen</button>`);
+    add.addEventListener('click', () => {
+      const user = newUser();
+      studio.change('Benutzer hinzugefügt', () => d.users.push(user), { inspector: true });
+      setTimeout(() => {
+        const input = document.querySelector(`[data-f="u${d.users.length}${d.id}"]`);
+        if (input) input.focus();
+      }, 0);
+    });
+    group.appendChild(add);
   },
 
   /** Reihenfolge-Knöpfe und Löschen für Listeneinträge. */
@@ -1123,7 +1141,7 @@ Object.assign(Inspector.prototype, {
       this.group(
         `Zeichnungen (${s.shapes.length})`,
         this.rows(s.shapes, {
-          render: (z) => `<i class="sd-dot" style="background:${safeColor(z.color)}"></i><span class="t">${escapeHtml(tx(z.name, lang) || studio.shapeName(z))}</span><small>${escapeHtml(mpp ? shapeMeasure(z, mpp) : '')}</small>`,
+          render: (z) => `<i class="sd-dot" style="background:${safeColor(z.color)}"></i><span class="t">${escapeHtml(tx(z.name, lang) || studio.shapeName(z))}</span><small>${escapeHtml(mpp ? shapeMeasure(z, mpp, s) : '')}</small>`,
           onOpen: (z) => studio.select({ kind: 'shape', id: z.id, section: s.id }, { reveal: true, pulse: true }),
         }),
       );
@@ -1250,7 +1268,7 @@ Object.assign(Inspector.prototype, {
       }),
     );
     if (mpp) {
-      group.append(this.field(z.closed ? 'Umfang · Fläche' : 'Länge', htmlToElement(`<span class="sd-val">${escapeHtml(shapeMeasure(z, mpp))}</span>`)));
+      group.append(this.field(z.closed ? 'Umfang · Fläche' : 'Länge', htmlToElement(`<span class="sd-val">${escapeHtml(shapeMeasure(z, mpp, s))}</span>`)));
       if (z.type !== 'dim')
         group.append(this.check(z.closed ? 'Fläche im Plan zeigen' : 'Länge im Plan zeigen', z.showLen, (v) => studio.change('Anzeige geändert', () => (z.showLen = v))));
     } else group.append(this.note('Längen in Metern erscheinen, sobald der Lageplan einen Maßstab hat.'));
@@ -1277,7 +1295,7 @@ Object.assign(Inspector.prototype, {
       document.body.appendChild(htmlToElement('<datalist id="sdBands"><option value="2,4 GHz"><option value="5 GHz"><option value="6 GHz"><option value="24 GHz"><option value="60 GHz"></datalist>'));
     group.querySelector('[data-f^="t:band"]')?.setAttribute('list', 'sdBands');
     const byId = new Map(s.symbols.map((y) => [y.id, y]));
-    const dist = (a, b) => (mpp && a && b ? formatLength(Math.hypot(...[0, 1].map((k) => toPt([a.x, a.y])[k] - toPt([b.x, b.y])[k])) * mpp) : '');
+    const dist = (a, b) => (mpp && a && b ? formatLength(Math.hypot(...[0, 1].map((k) => toPt([a.x, a.y], siteArea(s))[k] - toPt([b.x, b.y], siteArea(s))[k])) * mpp) : '');
     const rows = [{ id: l.from, role: l.mode === 'ptmp' ? 'Basis' : 'Station A', len: '' }, ...l.to.map((t, i) => ({ id: t, role: l.mode === 'ptmp' ? 'Gegenstelle' : 'Station B', len: dist(byId.get(l.from), byId.get(t)), i }))];
     const stations = this.group(
       'Stationen',
@@ -1295,11 +1313,77 @@ Object.assign(Inspector.prototype, {
     this.actions(['Strecke löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
+  /** Freies Bild bzw. QR-Code: Quelle, Beschriftung, Größe, Löschen. */
+  overlayForm(o) {
+    const studio = this.studio;
+    const lang = langsOf(this.project)[0];
+    const size = this.number(Math.round(o.w), (v) =>
+      studio.change('Größe geändert', () => {
+        const cap = o.kind === 'qr' && o.caption ? QR_CAPTION_H : 0;
+        const k = v / o.w;
+        o.w = v;
+        o.h = o.kind === 'qr' ? v + cap : Math.round(o.h * k);
+      }),
+      { min: 24, id: 'ow' + o.id },
+    );
+    if (o.kind === 'image') {
+      const swap = htmlToElement(`<button type="button" class="btn outline">${icon('image', 's')}Anderes Bild …</button>`);
+      swap.addEventListener('click', () => studio.replaceOverlayImage(o));
+      this.group('Bild', this.field('Breite (pt)', size, 'Ziehen am Griff unten rechts ändert die Größe; Pfeiltasten verschieben.'), swap);
+    } else {
+      const sources = serialSources(this.project, lang);
+      const options = [['', 'Eigener Text'], ...sources.map((d) => [d.id, `${d.name || 'Gerät'} – SN ${d.serial}`])];
+      const group = this.group(
+        'QR-Code',
+        this.select('Inhalt', options, o.src || '', (v) => studio.change('QR-Code geändert', () => (o.src = v || null), { inspector: true })),
+      );
+      if (!o.src) group.appendChild(this.text('Text', o, 'text', { placeholder: 'z. B. Seriennummer für die App' }));
+      if (!sources.length) group.appendChild(this.note('Geräte mit Seriennummer (Zugangsdaten › Gerätedaten) erscheinen hier zur Auswahl – der QR-Code folgt dann automatisch.'));
+      group.append(
+        this.check('Beschriftung unter dem Code', o.caption, (v) =>
+          studio.change('Beschriftung geändert', () => {
+            o.caption = v;
+            o.h = o.w + (v ? QR_CAPTION_H : 0);
+          }, { inspector: true }),
+        ),
+        this.field('Breite (pt)', size),
+      );
+    }
+    this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
+  },
+
+  /** Meldegruppenmodul: Zahl der Meldegruppen (MGM 2, MGM 5 oder eigene Zahl) – bestimmt das Kürzel. */
+  mgmField(s, y) {
+    const studio = this.studio;
+    const set = (v) =>
+      studio.change(
+        `Typ: MGM ${v}`,
+        () => {
+          y.groups = v;
+          appendToGroup(s, y); // im neuen Typ hinten anstellen
+        },
+        { inspector: true },
+      );
+    const other = y.groups !== 2 && y.groups !== 5;
+    const box = htmlToElement('<div></div>');
+    box.appendChild(this.seg('Typ', [[2, 'MGM 2'], [5, 'MGM 5'], ['x', 'Andere']], other ? 'x' : y.groups, (v) => set(v === 'x' ? 1 : v)));
+    if (other) {
+      const input = htmlToElement(`<input class="fld num" type="number" min="1" max="99" step="1" value="${y.groups}" aria-label="Meldegruppen" style="width:80px">`);
+      input.addEventListener('change', () => {
+        const v = Math.round(Number(input.value));
+        if (Number.isFinite(v) && v >= 1 && v <= 99 && v !== y.groups) set(v);
+        else input.value = y.groups;
+      });
+      box.appendChild(this.field('Meldegruppen', input, 'Bezeichnung im Plan: MGM-Anzahl-Nummer, z. B. MGM-8-1.'));
+    }
+    return box;
+  },
+
   /** Nummer eines Symbols ändern: Kürzel, Zahl (1 … Anzahl), die übrigen rücken nach. */
   symNumberField(s, y, nr) {
     const studio = this.studio;
     const box = htmlToElement(
-      `<div class="sd-nr"><span class="sd-nr-code">${escapeHtml(nr.code)}</span><input class="fld num" type="number" min="${nr.first}" max="${nr.last}" step="1" value="${nr.n}" data-f="nr${y.id}" aria-label="Nummer"><span class="sd-nr-of">${nr.first === 1 ? `von ${nr.last}` : `${nr.first} bis ${nr.last}`}</span></div>`,
+      `<div class="sd-nr"><span class="sd-nr-code">${escapeHtml(nr.code)}${nr.sep === '-' ? '-' : ''}</span><input class="fld num" type="number" min="${nr.first}" max="${nr.last}" step="1" value="${nr.n}" data-f="nr${y.id}" aria-label="Nummer"><span class="sd-nr-of">${nr.first === 1 ? `von ${nr.last}` : `${nr.first} bis ${nr.last}`}</span></div>`,
     );
     const input = box.querySelector('input');
     const commit = () => {
@@ -1308,7 +1392,7 @@ Object.assign(Inspector.prototype, {
       // bei mehreren Lageplänen: nur innerhalb des Bereichs dieses Plans
       const n = Math.max(nr.first, Math.min(nr.last, v));
       if (n === nr.n) return void (input.value = nr.n);
-      studio.change(`Nummer geändert: ${nr.code} ${nr.n} → ${nr.code} ${n}`, () => setSymbolNumber(s, y, n - nr.first + 1), { inspector: true });
+      studio.change(`Nummer geändert: ${nr.code}${nr.sep}${nr.n} → ${nr.code}${nr.sep}${n}`, () => setSymbolNumber(s, y, n - nr.first + 1), { inspector: true });
     };
     input.addEventListener('change', commit);
     input.addEventListener('keydown', (ev) => {
@@ -1338,7 +1422,7 @@ Object.assign(Inspector.prototype, {
           () => {
             const next = symbolInfo(s, v);
             y.kind = v;
-            delete y.seq; // in der neuen Art hinten anstellen
+            appendToGroup(s, y); // in der neuen Art hinten anstellen
             y.fov = !!(next && next.fov);
             if (next && next.fov) {
               y.angle = next.fov.angle;
@@ -1348,6 +1432,7 @@ Object.assign(Inspector.prototype, {
           { inspector: true },
         ),
       ),
+      y.kind === 'mgm' ? this.mgmField(s, y) : null,
       this.seg('Größe', [[0.75, 'Klein'], [1, 'Mittel'], [1.5, 'Groß']], y.scale, (v) =>
         studio.change('Größe geändert', () => (y.scale = v), { inspector: true }),
       ),
@@ -1362,7 +1447,9 @@ Object.assign(Inspector.prototype, {
       );
       this.usersEditor(group, dev);
       group.appendChild(this.note('Steht genauso unter „Zugangsdaten › Geräte-Zugänge“ – Änderungen gelten an beiden Stellen.'));
-      group.appendChild(this.addButton('In Zugangsdaten zeigen', () => studio.select({ kind: 'device', id: dev.id, section: acc.id }, { reveal: true, pulse: true })));
+      const show = htmlToElement(`<button type="button" class="btn sd-link">${icon('right', 's')}In Zugangsdaten zeigen</button>`);
+      show.addEventListener('click', () => studio.select({ kind: 'device', id: dev.id, section: acc.id }, { reveal: true, pulse: true }));
+      group.appendChild(show);
     }
     if (y.kind === 'radio') {
       const links = s.links.filter((l) => l.from === y.id || l.to.includes(y.id));
@@ -1696,8 +1783,8 @@ function linkTitle(s, l, labels) {
 }
 
 /** Länge bzw. Umfang und Fläche einer Zeichnung in Metern. */
-function shapeMeasure(z, mpp) {
-  const pts = z.pts.map((q) => toPt(q));
+function shapeMeasure(z, mpp, s) {
+  const pts = z.pts.map((q) => toPt(q, siteArea(s)));
   const len = formatLength(pathLength(pts, z.closed) * mpp);
   return z.closed ? `${len} · ${formatArea(polygonArea(pts) * mpp * mpp)}` : len;
 }

@@ -2,9 +2,9 @@
 # Windows: NSIS-Installer (Benutzerinstallation ohne Adminrechte, Deutsch).
 # Vorher bauen: npm run build:desktop (macht npm run dist:win automatisch).
 appId: de.jsteiner.pdfeditor
-productName: PDFix
+productName: PlantPDF
 copyright: © 2026 jsteiner4000
-artifactName: PDFix-${version}-${arch}.${ext}
+artifactName: PlantPDF-${version}-${arch}.${ext}
 
 directories:
   output: release
@@ -24,7 +24,7 @@ files:
   - assets/icon/png/icon-128.png
   - '!node_modules/**'
 extraResources:
-  # Symbol für PDF-Dateien (Explorer/Desktop), wenn PDFix das Standardprogramm ist
+  # Symbol für PDF-Dateien (Explorer/Desktop), wenn PlantPDF das Standardprogramm ist
   - from: assets/icon/document.ico
     to: document.ico
   - from: dist/licenses
@@ -55,19 +55,19 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  legalTrademarks: PDFix
+  legalTrademarks: PlantPDF
   requestedExecutionLevel: asInvoker
 
 nsis:
-  artifactName: PDFix-Setup-${version}.exe
+  artifactName: PlantPDF-Setup-${version}.exe
   oneClick: false
   perMachine: false
   allowElevation: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   createStartMenuShortcut: true
-  shortcutName: PDFix
-  uninstallDisplayName: PDFix
+  shortcutName: PlantPDF
+  uninstallDisplayName: PlantPDF
   installerIcon: assets/icon/icon.ico
   uninstallerIcon: assets/icon/icon.ico
   installerLanguages: [de_DE]

@@ -965,7 +965,7 @@ export function updateField(doc, entry, props, fontCache) {
   return changes;
 }
 
-/** Kontrollkästchen mit den Zuständen Yes/Off (wie von PDFix angelegt): Aussehen neu erzeugbar. */
+/** Kontrollkästchen mit den Zuständen Yes/Off (wie von PlantPDF angelegt): Aussehen neu erzeugbar. */
 export function isOwnCheckbox(ctx, widget) {
   return onStateOf(ctx, widget) === 'Yes';
 }

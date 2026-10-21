@@ -6,7 +6,22 @@
 import { textWidth, wrap } from './measure.js';
 import { FONTS, langsOf, str, tx } from './model.js';
 
-export const PAGE = { w: 595.276, h: 841.89, left: 42, right: 553.276 };
+/**
+ * Maße der Seite, die gerade gesetzt wird. Hochformat ist Standard; für Abschnitte im Querformat
+ * schaltet `setOrientation(true)` um (nur während des Setzens, danach zurück).
+ * `bottom` = Unterkante des Inhalts, `foot` = Linie der Fußzeile.
+ */
+export const PORTRAIT = Object.freeze({ w: 595.276, h: 841.89, left: 42, right: 553.276, bottom: 770, foot: 789.89 });
+export const LANDSCAPE = Object.freeze({ w: 841.89, h: 595.276, left: 42, right: 799.89, bottom: 523.386, foot: 543.276 });
+export const PAGE = { ...PORTRAIT };
+
+/** Seitenformat umschalten (true = Querformat). */
+export function setOrientation(landscape) {
+  Object.assign(PAGE, landscape ? LANDSCAPE : PORTRAIT);
+}
+
+/** Abschnitt im Querformat? (Deckblatt und Inhalt bleiben immer hoch.) */
+export const isLandscape = (section) => !!(section && section.landscape && section.type !== 'cover' && section.type !== 'toc');
 
 /** Farben des Anschlussplan-Vorbilds (exakt übernommen). */
 export const C = {

@@ -186,7 +186,7 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     await users.nth(0).locator('.sd-f', { hasText: 'Benutzer' }).locator('input').fill('admin');
     await users.nth(0).locator('.sd-f', { hasText: 'Passwort' }).locator('input').fill('geheim1');
     await users.nth(0).locator('.sd-f', { hasText: 'Rolle' }).locator('input').fill('Administrator');
-    await page.locator('.sd-add', { hasText: 'Benutzer hinzufügen' }).click();
+    await page.locator('.sd-user-add').click();
     await expect(users).toHaveCount(2);
     await users.nth(1).locator('.sd-f', { hasText: 'Benutzer' }).locator('input').fill('wache');
     await users.nth(1).locator('.sd-f', { hasText: 'Rolle' }).locator('input').fill('Nur ansehen');
@@ -212,7 +212,7 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     await page.locator('.sd-f', { hasText: 'Bezeichnung' }).first().locator('input').first().fill('NVR Halle');
     expect((await access()).devices.find((d) => d.sym === 'nv').name.de).toBe('NVR Halle');
     // „In Zugangsdaten zeigen“: Eintrag öffnen und aufleuchten; dort Name ändern → Symbol folgt
-    await page.locator('.sd-add', { hasText: 'In Zugangsdaten zeigen' }).click();
+    await page.locator('#sdIBody .btn', { hasText: 'In Zugangsdaten zeigen' }).click();
     expect(await page.evaluate(() => window.pdfEditor.studio.sel.kind)).toBe('device');
     await expect(page.locator('.sd-pulse-box')).toHaveCount(1);
     await expect(page.locator('.sd-linked')).toContainText('NVR 1');

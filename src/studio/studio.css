@@ -1370,3 +1370,19 @@ textarea.fld.mono {
   color: var(--ink3);
   font-size: 12px;
 }
+.sd-user-add {
+  margin: 2px 0 10px;
+}
+/* Freies Bild / QR-Code: Griff unten rechts zum Größe-Ziehen */
+.sd-ogrip {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px var(--acc);
+  cursor: nwse-resize;
+  pointer-events: auto;
+}

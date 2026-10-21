@@ -2,7 +2,7 @@
  * PDF aus einem Projekt: Die Seiten (SVG) werden als Druckfassung an den Hauptprozess der
  * Desktop-App gegeben, der sie mit Chromium in eine PDF setzt (Vektoren, Schrift eingebettet,
  * Text auswählbar). Danach wird das Projekt selbst unsichtbar in die PDF gelegt – so lässt sich
- * die Dokumentation später in PDFix weiterbearbeiten.
+ * die Dokumentation später in PlantPDF weiterbearbeiten.
  *
  * Ablage: Katalog-Eintrag /PDFixProject → Datenstrom (Flate) mit dem Projekt als JSON. Kein
  * Dateianhang: „Aktive Inhalte entfernen“ beim Speichern würde Anhänge löschen.
@@ -11,7 +11,7 @@ import { PDFArray, PDFDocument, PDFName, PDFNumber, PDFRawStream, PDFString, dec
 import { assertDecodedSize } from '../pdf/stream-limit.js';
 import { barlowCss } from './fonts.js';
 import { MODEL_VERSION, normalizeProject, pruneImages } from './model.js';
-import { PAGE } from './svg.js';
+import { PORTRAIT } from './svg.js';
 
 const KEY = 'PDFixProject';
 const desktop = typeof window !== 'undefined' ? window.pdfEditorDesktop : undefined;
@@ -28,14 +28,18 @@ export const canMakePdf = () => !!maker();
 /** Vollständige Druckfassung: eine HTML-Seite je Dokumentseite, ohne Skripte. */
 export function printHtml(doc, title = '') {
   const fonts = doc.font === 'barlow' || doc.design === 'manual' ? barlowCss() : '';
-  const pages = doc.pages.map((p) => `<div class="p">${p.svg}</div>`).join('');
+  // Seiten im Querformat: eigener Seitentyp mit gedrehtem Format (gemischte Formate in einer PDF)
+  const pages = doc.pages.map((p) => `<div class="p${p.land ? ' l' : ''}">${p.svg}</div>`).join('');
   const lang = doc.lang === 'en' ? 'en' : 'de';
+  const P = PORTRAIT;
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><title>${title.replace(/[<&]/g, '')}</title><style>
-@page{size:${PAGE.w}pt ${PAGE.h}pt;margin:0}
+@page{size:${P.w}pt ${P.h}pt;margin:0}
+@page land{size:${P.h}pt ${P.w}pt;margin:0}
 html,body{margin:0;padding:0;background:#fff}
-.p{width:${PAGE.w}pt;height:${PAGE.h}pt;overflow:hidden;break-after:page}
+.p{width:${P.w}pt;height:${P.h}pt;overflow:hidden;break-after:page}
+.p.l{page:land;width:${P.h}pt;height:${P.w}pt}
 .p:last-child{break-after:auto}
-.p > svg{display:block;width:${PAGE.w}pt;height:${PAGE.h}pt}
+.p > svg{display:block;width:100%;height:100%}
 ${fonts}
 </style></head><body>${pages}</body></html>`;
 }
@@ -105,8 +109,8 @@ export async function embedProject(bytes, project, info) {
   if (info.title) doc.setTitle(info.title, { showInWindowTitleBar: true });
   if (info.author) doc.setAuthor(info.author);
   if (info.subject) doc.setSubject(info.subject);
-  doc.setCreator('PDFix – Dokumentation erstellen');
-  doc.setProducer('PDFix');
+  doc.setCreator('PlantPDF – Dokumentation erstellen');
+  doc.setProducer('PlantPDF');
   doc.setLanguage(info.lang === 'en' ? 'en' : 'de-DE');
   const now = new Date();
   doc.setCreationDate(now);
@@ -121,8 +125,8 @@ export function hasProject(doc) {
 }
 
 /**
- * Projekt aus einer (mit PDFix erstellten) PDF lesen. Ergebnis: { project, changed } oder null.
- * `changed`: Die Seiten wurden nach dem Erstellen verändert (z. B. in PDFix bearbeitet).
+ * Projekt aus einer (mit PlantPDF erstellten) PDF lesen. Ergebnis: { project, changed } oder null.
+ * `changed`: Die Seiten wurden nach dem Erstellen verändert (z. B. in PlantPDF bearbeitet).
  */
 export function readProject(doc) {
   try {

@@ -24,6 +24,7 @@ import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
 import { THEMES, readTheme, setTheme } from './ui/theme.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
+import { canMakePdf } from './studio/export.js';
 import { STUDIO_TEMPLATES, Studio, deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates, templatePreview } from './studio/studio.js';
 
 /**
@@ -138,7 +139,7 @@ export class App {
   build() {
     this.root.innerHTML = `
 <header id="top">
-  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">PDF<em>ix</em></span></div>
+  <div class="brand"><div class="mark">${LOGO_SMALL}</div><span class="wm">Plant<em>PDF</em></span></div>
   <button class="btn" id="bFile">Datei ${icon('chev', 's caret')}</button>
   <div class="sep"></div>
   <div class="ws" role="radiogroup" aria-label="Arbeitsbereich">
@@ -159,6 +160,7 @@ export class App {
   </div>
   <div class="sep"></div>
   <button class="btn ic" id="bPrint" title="Drucken / im Browser anzeigen" disabled>${icon('print')}</button>
+  <button class="btn outline hidden" id="bToPdf" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Bearbeiten, Unterschreiben oder Ergänzen">${icon('open', 's')}Im PDF-Bereich öffnen</button>
   <button class="btn primary" id="bSave" disabled>${icon('save', 's')}Speichern</button>
 </header>
 <div id="ribbon" class="hidden" role="toolbar" aria-label="Werkzeuge"><div class="rb-bar" id="rbBar"></div></div>
@@ -223,6 +225,7 @@ export class App {
     on('bUndo', 'click', () => this.undo());
     on('bRedo', 'click', () => this.redo());
     on('bSave', 'click', () => this.save());
+    on('bToPdf', 'click', () => this.studio.openAsPdf());
     on('bPrint', 'click', () => this.print());
     on('bPrev', 'click', () => this.goto(this.cur - 1));
     on('bNext', 'click', () => this.goto(this.cur + 1));
@@ -327,7 +330,7 @@ export class App {
       <div class="hs-new">
         ${templates}
         <div class="tpl drop" id="continueZone">
-          <div class="tpl-thumb"><span class="drop-ico" aria-hidden="true">${icon('folderopen')}</span><span>Mit PDFix erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
+          <div class="tpl-thumb"><span class="drop-ico" aria-hidden="true">${icon('folderopen')}</span><span>Mit PlantPDF erstellte PDF wählen oder hierher ziehen</span><button class="btn outline" id="hContinue">PDF wählen</button></div>
           <b>Aus PDF fortsetzen</b><span>Eine fertige Dokumentation weiterbearbeiten</span>
         </div>
       </div>
@@ -669,7 +672,7 @@ export class App {
       this.setTool(null);
       this.studio.offerProject(session);
       if (handle) idbPut('recent', name, { name, handle, time: Date.now() });
-      document.title = name + ' – PDFix';
+      document.title = name + ' – PlantPDF';
       return true;
     });
     if (failure) {
@@ -722,7 +725,7 @@ export class App {
         $('#scroller').classList.remove('hidden');
         $('#bSave').disabled = true;
         $('#bPrint').disabled = true;
-        document.title = 'PDFix';
+        document.title = 'PlantPDF';
         // im Arbeitsbereich „PDF“ bleiben – eine offene Dokumentation läuft im anderen Bereich weiter
         this.showHome();
         this.setView('home');
@@ -756,7 +759,7 @@ export class App {
     await this.showHome();
     this.setView('home');
   }
-  /** Mit PDFix erstellte PDF wählen (oder abgelegte `file`) und die Dokumentation darin weiterbearbeiten. */
+  /** Mit PlantPDF erstellte PDF wählen (oder abgelegte `file`) und die Dokumentation darin weiterbearbeiten. */
   async continueDocumentation(file = null) {
     let handle = null;
     if (!file) {
@@ -779,7 +782,7 @@ export class App {
     const choice = await showDialog({
       title: 'Keine Dokumentation in dieser PDF',
       icon: 'info',
-      body: `<b>${escapeHtml(file.name)}</b> wurde nicht mit PDFix als Dokumentation erstellt. Sie können die Datei im Bereich „PDF“ öffnen und bearbeiten.`,
+      body: `<b>${escapeHtml(file.name)}</b> wurde nicht mit PlantPDF als Dokumentation erstellt. Sie können die Datei im Bereich „PDF“ öffnen und bearbeiten.`,
       buttons: [
         { label: 'Abbrechen', value: false },
         { label: 'Als PDF öffnen', primary: true, value: true },
@@ -826,6 +829,8 @@ export class App {
     $('#bPrint').disabled = !(doc || studio);
     $('#bSave').innerHTML = studio ? `${icon('export', 's')}PDF erstellen` : `${icon('save', 's')}Speichern`;
     $('#bSave').title = studio ? 'PDF erstellen (Strg+S)' : 'Speichern (Strg+S)';
+    // nur in der Desktop-App (dort entsteht die PDF direkt)
+    $('#bToPdf').classList.toggle('hidden', !(studio && canMakePdf()));
     this.renderRibbon();
     this.updateHist();
     this.syncWorkspace();
@@ -1129,7 +1134,7 @@ export class App {
           await writable.close();
           this.file = { name: handle.name, handle };
           $('#docName').textContent = handle.name;
-          document.title = handle.name + ' – PDFix';
+          document.title = handle.name + ' – PlantPDF';
           this.markSaved();
           toast('Gespeichert als ' + handle.name);
           idbPut('recent', handle.name, { name: handle.name, handle, time: Date.now() });

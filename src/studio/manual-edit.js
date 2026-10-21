@@ -5,7 +5,6 @@
  */
 import { $ } from '../ui/dom.js';
 import { pickFiles, toast, withBusy } from '../ui/dialogs.js';
-import { PAGE } from './svg.js';
 import { newCard, newMark, uid } from './model.js';
 import { markNumbers } from './manual.js';
 import { readImage } from './studio.js';
@@ -101,8 +100,8 @@ export const manualEdit = {
     if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) < 3) return;
     d.moved = true;
     const r = d.el.getBoundingClientRect();
-    const px = ((ev.clientX - r.left) / r.width) * PAGE.w;
-    const py = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    const px = (ev.clientX - r.left) / this.scale;
+    const py = (ev.clientY - r.top) / this.scale;
     const [ix, iy, iw, ih] = d.img;
     const fx = (px - ix) / iw;
     const fy = (py - iy) / ih;

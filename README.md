@@ -1,6 +1,6 @@
-# PDFix
+# PlantPDF
 
-PDFix: PDFs bearbeiten, ordnen und unterschreiben.
+PlantPDF: PDFs bearbeiten, ordnen und unterschreiben.
 Ausgeliefert wird die **Desktop-App** für Windows (Electron, `desktop/`): Installer mit
 echter Dateiintegration. Der Build erzeugt dafür **eine einzige HTML-Datei**
 (`dist/PDF-Editor.html` – Skript, Stile, Schriften und der pdf.js-Worker sind eingebettet), die
@@ -175,17 +175,17 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   `codeCache`) – ab dem dritten Start ist die Oberfläche spürbar früher bereit. Der pdf.js-Worker
   startet im Leerlauf vorab (`warmUpRenderer`), nicht erst beim ersten Öffnen.
 - **Schnelldruck**: Der Installer trägt für die ProgID die Verben `print` und `printto` ein
-  (`--pdfix-print=<Datei>`, `--pdfix-printer=<Drucker>`). PDFix rendert die Seiten mit pdf.js
+  (`--pdfix-print=<Datei>`, `--pdfix-printer=<Drucker>`). PlantPDF rendert die Seiten mit pdf.js
   (600 dpi bis 20 Seiten, 300 dpi bis 60, sonst 200; Druck-Anmerkungen, Querformat gedreht), stellt sie unter
   `app://pdf-editor/print/<Kennung>/` bereit und druckt sie in einem unsichtbaren Fenster ohne
-  JavaScript still auf den Standard- bzw. genannten Drucker. Läuft PDFix noch nicht, beendet es
+  JavaScript still auf den Standard- bzw. genannten Drucker. Läuft PlantPDF noch nicht, beendet es
   sich danach wieder; sonst bleibt das offene Dokument unberührt. `PDF_EDITOR_PRINT_TO_PDF=<Pfad>`
   schreibt für Tests eine PDF statt zu drucken.
 - **Dokumentation erstellen**: Die Seiten (SVG) gehen als Druckfassung über `studio:pdf` an den
   Hauptprozess, der sie in einem unsichtbaren Fenster ohne JavaScript per `printToPDF` setzt; danach
   legt pdf-lib das Projekt als `/PDFixProject` (Flate-Datenstrom im Katalog) in die PDF.
 - **Fenster**: Größe/Position werden gemerkt, Mindestgröße 900 × 600, Titel
-  `Datei.pdf (Bearbeitet) – PDFix`, Rückfrage bei ungespeicherten Änderungen als nativer
+  `Datei.pdf (Bearbeitet) – PlantPDF`, Rückfrage bei ungespeicherten Änderungen als nativer
   Dialog (Speichern / Nicht speichern / Abbrechen).
 - **Menü**: Datei, Bearbeiten, Ansicht (Zoom der App), Fenster, Hilfe (Über, Lizenzhinweise,
   Schriftdateien). Kürzel, die die Web-App selbst auswertet (Strg+O/S/Z/Y, Zoom, Strg+A …),

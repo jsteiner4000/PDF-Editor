@@ -195,6 +195,12 @@ export const SYMBOLS = [
   { id: 'intercom', code: 'TS', name: T('Türsprechstelle', 'Door intercom'), color: '#4d7c0f', glyph: 'intercom' },
   { id: 'router', code: 'NW', name: T('Router / Switch', 'Router / switch'), color: '#334155', glyph: 'router' },
   { id: 'recorder', code: 'NVR', name: T('Rekorder', 'Recorder'), color: '#1e3a8a', glyph: 'recorder' },
+  // Installation: Module, Masten, Kästen (Galerie-Gruppe „Installation“)
+  { id: 'mgm', code: 'MGM', name: T('Meldegruppenmodul', 'Zone module'), color: '#9f1239', glyph: 'mgm', group: 'infra' },
+  { id: 'mast', code: 'MA', name: T('Mast', 'Pole'), color: '#57534e', glyph: 'mast', group: 'infra' },
+  { id: 'cabinet', code: 'SK', name: T('Schaltkasten', 'Control cabinet'), color: '#b45309', glyph: 'cabinet', group: 'infra' },
+  { id: 'junction', code: 'AK', name: T('Anschlusskasten', 'Junction box'), color: '#78716c', glyph: 'junction', group: 'infra' },
+  { id: 'rack', code: 'NS', name: T('Netzwerkschrank', 'Network rack'), color: '#1e293b', glyph: 'rack', group: 'infra' },
   // Station einer Richtfunkstrecke: wird über „Richtfunk“ gesetzt, nicht einzeln in der Galerie
   { id: 'radio', code: 'RF', name: T('Richtfunk-Antenne', 'Radio link antenna'), color: '#0891b2', glyph: 'radio', link: true },
 ];
@@ -268,6 +274,7 @@ export function newSymbol(kind, x = 0.5, y = 0.5) {
     dir: 0,
     angle: info && info.fov ? info.fov.angle : 90,
     range: info && info.fov ? info.fov.range : 60,
+    ...(kind === 'mgm' ? { groups: 2 } : {}),
   };
 }
 
@@ -288,13 +295,26 @@ export function symbolInfo(site, kind) {
  * nummerieren“) bestimmt die Folge; Symbole ohne `seq` (neu gesetzt) kommen danach in der
  * Reihenfolge der Liste. Die Liste selbst bleibt die Zeichenreihenfolge.
  */
+/**
+ * Kürzel für die Nummer: das der Art; beim Meldegruppenmodul mit der Zahl der Meldegruppen
+ * („MGM-2“ → MGM-2-1, MGM-2-2 …; jeder Typ zählt für sich).
+ */
+export function symbolCode(site, sym) {
+  const info = symbolInfo(site, sym.kind);
+  if (!info) return null;
+  return sym.kind === 'mgm' ? `MGM-${sym.groups || 2}` : info.code;
+}
+
+/** Trenner zwischen Kürzel und Nummer: „K 1“, aber „MGM-2-1“. */
+export const codeSep = (code) => (code.startsWith('MGM-') ? '-' : ' ');
+
 function numberedGroups(site) {
   const groups = new Map();
   site.symbols.forEach((sym, i) => {
-    const info = symbolInfo(site, sym.kind);
-    if (!info) return;
-    if (!groups.has(info.code)) groups.set(info.code, []);
-    groups.get(info.code).push({ sym, key: Number.isInteger(sym.seq) ? sym.seq : 1e6 + i, i });
+    const code = symbolCode(site, sym);
+    if (!code) return;
+    if (!groups.has(code)) groups.set(code, []);
+    groups.get(code).push({ sym, key: Number.isInteger(sym.seq) ? sym.seq : 1e6 + i, i });
   });
   for (const list of groups.values()) list.sort((a, b) => a.key - b.key || a.i - b.i);
   return new Map([...groups].map(([code, list]) => [code, list.map((e) => e.sym)]));
@@ -318,7 +338,7 @@ function codeOffsets(site, project) {
 export function symbolLabels(site, project = null) {
   const off = codeOffsets(site, project);
   const out = new Map();
-  for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code} ${(off.get(code) || 0) + i + 1}`));
+  for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code}${codeSep(code)}${(off.get(code) || 0) + i + 1}`));
   return out;
 }
 
@@ -332,20 +352,29 @@ export function symbolsInOrder(site) {
  * der Bereich dieser Art in diesem Plan; oder null.
  */
 export function symbolNumber(site, sym, project = null) {
-  const info = symbolInfo(site, sym.kind);
-  const list = info && numberedGroups(site).get(info.code);
+  const code = symbolCode(site, sym);
+  const list = code && numberedGroups(site).get(code);
   if (!list) return null;
-  const off = codeOffsets(site, project).get(info.code) || 0;
-  return { code: info.code, n: off + list.indexOf(sym) + 1, first: off + 1, last: off + list.length, count: list.length };
+  const off = codeOffsets(site, project).get(code) || 0;
+  return { code, sep: codeSep(code), n: off + list.indexOf(sym) + 1, first: off + 1, last: off + list.length, count: list.length };
 }
 
 /** Nummer ändern: das Symbol rückt an Stelle `n`, die übrigen rücken nach (lückenlos). */
 export function setSymbolNumber(site, sym, n) {
-  const info = symbolInfo(site, sym.kind);
-  const list = info && numberedGroups(site).get(info.code);
+  const list = numberedGroups(site).get(symbolCode(site, sym));
   if (!list) return;
   list.splice(list.indexOf(sym), 1);
   list.splice(Math.max(0, Math.min(list.length, Math.round(n) - 1)), 0, sym);
+  list.forEach((y, i) => (y.seq = i));
+}
+
+/** Nach Wechsel von Art oder Typ: in der neuen Gruppe hinten anstellen. */
+export function appendToGroup(site, sym) {
+  delete sym.seq;
+  const list = numberedGroups(site).get(symbolCode(site, sym));
+  if (!list) return;
+  list.splice(list.indexOf(sym), 1);
+  list.push(sym);
   list.forEach((y, i) => (y.seq = i));
 }
 
@@ -877,6 +906,8 @@ export function newProject(templateId = 'documentation', opts = {}) {
       version: '1.0',
     },
     sections: opts.parts ? pickParts(sections, opts.parts) : sections,
+    /** Freie Bilder und QR-Codes: { id, kind: 'image'|'qr', section, page, x, y, w, h, … } */
+    overlays: [],
     images: {},
     created: Date.now(),
     modified: Date.now(),
@@ -902,7 +933,7 @@ const hasImg = (images, key) => typeof key === 'string' && Object.hasOwn(images,
  * einer fremden PDF nichts in die Oberfläche, was dort nicht hingehört.
  */
 export function normalizeProject(raw) {
-  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sections)) throw new Error('Kein PDFix-Projekt');
+  if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sections)) throw new Error('Kein PlantPDF-Projekt');
   const used = new Set();
   const id = (v, prefix) => {
     let out = typeof v === 'string' && ID_RE.test(v) && !used.has(v) ? v : uid(prefix);
@@ -949,11 +980,34 @@ export function normalizeProject(raw) {
     else if (s.type === 'site') project.sections.push(cleanSite(s, id, images));
     else if (s.type === 'photos') project.sections.push(cleanPhotos(s, id, images));
     else if (s.type === 'chapters') project.sections.push(cleanChapters(s, id, images));
+    else continue;
+    // Seitenformat je Abschnitt (Deckblatt und Inhalt immer hoch)
+    if (s.landscape === true && s.type !== 'cover' && s.type !== 'toc') project.sections.at(-1).landscape = true;
   }
+  project.overlays = cleanOverlays(raw.overlays, project.sections, images, id);
   // Fotoverknüpfungen nur auf Symbole, die es gibt
   const symbolIds = new Set(project.sections.flatMap((s) => (s.type === 'site' ? s.symbols.map((y) => y.id) : [])));
   for (const s of project.sections) if (s.type === 'photos') for (const p of s.items) if (p.link && !symbolIds.has(p.link)) p.link = null;
   return project;
+}
+
+/** Freie Bilder und QR-Codes: nur auf vorhandenen Abschnitten, Maße auf der Seite begrenzt. */
+function cleanOverlays(list, sections, images, id) {
+  const ids = new Set(sections.map((s) => s.id));
+  return (Array.isArray(list) ? list : [])
+    .filter((o) => o && typeof o === 'object' && ids.has(o.section) && (o.kind === 'qr' || (o.kind === 'image' && hasImg(images, o.image))))
+    .slice(0, 500)
+    .map((o) => ({
+      id: id(o.id, 'o'),
+      kind: o.kind,
+      section: o.section,
+      page: Math.round(clamp(o.page, 0, 999, 0)),
+      x: clamp(o.x, -200, 1000, 42),
+      y: clamp(o.y, -200, 1000, 120),
+      w: clamp(o.w, 8, 900, 100),
+      h: clamp(o.h, 8, 900, 100),
+      ...(o.kind === 'image' ? { image: o.image } : { src: typeof o.src === 'string' && ID_RE.test(o.src) ? o.src : null, text: str_(o.text, 2000), caption: o.caption !== false }),
+    }));
 }
 
 function cleanManualMeta(m, images) {
@@ -1075,6 +1129,7 @@ function cleanSite(s, id, images) {
       angle: clamp(y.angle, 5, 360, 90),
       range: clamp(y.range, 10, 600, 60),
       ...(Number.isInteger(y.seq) && y.seq >= 0 && y.seq < 100000 ? { seq: y.seq } : {}),
+      ...(y.kind === 'mgm' ? { groups: Number.isInteger(y.groups) && y.groups >= 1 && y.groups <= 99 ? y.groups : 2 } : {}),
     }, true));
   const point = (q) => (Array.isArray(q) && q.length === 2 ? [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)] : null);
   const shapes = (Array.isArray(s.shapes) ? s.shapes : [])

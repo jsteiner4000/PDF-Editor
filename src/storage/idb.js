@@ -18,7 +18,7 @@ const DB_VERSION = 2;
 const OPEN_TIMEOUT = 10000;
 
 export const IDB_BLOCKED_MESSAGE =
-  'PDFix ist noch in einem anderen Fenster geöffnet (ältere Version). Bitte die anderen Fenster schließen.';
+  'PlantPDF ist noch in einem anderen Fenster geöffnet (ältere Version). Bitte die anderen Fenster schließen.';
 
 /** Fehler, wenn die Umstellung der Datenbank durch ein anderes geöffnetes Fenster blockiert ist. */
 export class IdbBlockedError extends Error {

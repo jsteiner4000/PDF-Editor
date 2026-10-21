@@ -134,3 +134,41 @@ test('Mehrere Lagepläne: Nummern zählen durch, Nummer ändern bleibt im eigene
     await context.close();
   }
 });
+
+test('Meldegruppenmodul: MGM-2-1, MGM-2-2, MGM-5-1; Typ ändern; Masten und Kästen in der Galerie', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      const mk = (id, groups, x) => ({ id, kind: 'mgm', groups, x, y: 0.5, name: { de: '', en: '' }, note: { de: '', en: '' }, scale: 1, fov: false, dir: 0, angle: 90, range: 60 });
+      st.change('MGM', () => s.symbols.push(mk('g1', 2, 0.2), mk('g2', 2, 0.4), mk('g3', 5, 0.6)));
+      st.select({ kind: 'section', id: s.id });
+    });
+    await expect(page.locator('#sdIBody .pin')).toHaveText(['MGM-2-1', 'MGM-2-2', 'MGM-5-1']);
+    // Typ von g2 auf MGM 5: wird MGM-5-2, g1 bleibt MGM-2-1
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.select({ kind: 'sym', id: 'g2', section: s.id });
+    });
+    await page.locator('#sdIBody .sd-seg button', { hasText: 'MGM 5' }).click();
+    await expect(page.locator('#sdIBody h4').first()).toHaveText('MGM-5-2');
+    // Andere Zahl
+    await page.locator('#sdIBody .sd-seg button', { hasText: 'Andere' }).click();
+    await page.locator('#sdIBody input[aria-label="Meldegruppen"]').fill('8');
+    await page.locator('#sdIBody input[aria-label="Meldegruppen"]').press('Enter');
+    await expect(page.locator('#sdIBody h4').first()).toHaveText('MGM-8-1');
+    await expect(page.locator('#studio .sd-page', { hasText: 'MGM-8-1' }).first()).toBeVisible();
+    // Galerie: Gruppe Installation
+    await page.locator('.rb[data-act="symbols"]').click();
+    const infra = page.locator('.sd-gallery [data-g="infra"] .sd-symbol span');
+    await expect(infra).toHaveText(['Meldegruppenmodul', 'Mast', 'Schaltkasten', 'Anschlusskasten', 'Netzwerkschrank']);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
