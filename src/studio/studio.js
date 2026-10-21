@@ -1355,17 +1355,24 @@ ${
 <button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
 <button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>`
       : `<span class="rb-note">Abschnitt in der Projektmappe wählen – hier erscheinen seine Befehle.</span>`;
+    // „Im PDF-Bereich öffnen“ rechts im Werkzeugband (nur Desktop-App: dort entsteht die PDF direkt)
+    const toPdf = canMakePdf()
+      ? `<span class="rb-grow"></span><button class="rb c2" data-act="topdf" aria-label="Im PDF-Bereich öffnen" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Unterschreiben, Bearbeiten oder Ergänzen">${icon('open')}<span class="rb-t">Im PDF-Bereich öffnen</span></button>`
+      : '';
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
 <button class="rb c3" data-act="insert" title="Bild oder QR-Code frei auf die Seite legen">${icon('image')}Bild / QR${icon('chev', 's caret')}</button>
 <span class="rb-sep"></span>
 ${context}
+${toPdf}
 `;
+    this.fitRibbon(bar);
     for (const btn of $$('.rb', bar))
       btn.addEventListener('click', () => {
         const act = btn.dataset.act;
         if (act === 'section') this.addSectionMenu(btn);
         else if (act === 'insert') this.insertMenu(btn);
+        else if (act === 'topdf') this.openAsPdf();
         else if (act === 'box') this.addBox();
         else if (act === 'pin') this.addPin();
         else if (act === 'hint') this.addHint();
@@ -1379,6 +1386,18 @@ ${context}
         else if (act === 'measure') this.arm('tool:measure');
         else if (act === 'addphotos') this.pickPhotos(photosSection);
       });
+  }
+
+  /** Werkzeugband zu schmal: „Im PDF-Bereich öffnen“ nur als Symbol (bleibt so sichtbar). */
+  fitRibbon(bar) {
+    if (!this.ribbonObserver && window.ResizeObserver) {
+      this.ribbonObserver = new ResizeObserver(() => this.fitRibbon(bar));
+      this.ribbonObserver.observe(bar);
+    }
+    const btn = bar.querySelector('.rb[data-act="topdf"]');
+    if (!btn) return;
+    btn.classList.remove('rb-ic');
+    if (bar.scrollWidth > bar.clientWidth + 1) btn.classList.add('rb-ic');
   }
 
   /** Nur ein Anschlussplan und sonst nichts (Vorlage „Anschlussplan“): seine Befehle sind immer da. */

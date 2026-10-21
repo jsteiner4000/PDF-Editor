@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.14.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.14.1.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -471,7 +471,7 @@ und folgt Änderungen automatisch; alternativ eigener Text.
 Deckblatt: links 25 mm Heftrand für die Lochung, Schrift groß genug zum
 Ausdrucken.
 
-Im PDF-Bereich öffnen: Knopf oben rechts (Desktop-App). Die Dokumentation wird
+Im PDF-Bereich öffnen: Knopf rechts im Werkzeugband (Desktop-App). Die Dokumentation wird
 als PDF erstellt und im Bereich „PDF“ geöffnet – zum Unterschreiben,
 Bearbeiten oder Seiten ergänzen. Die Dokumentation bleibt offen.
 

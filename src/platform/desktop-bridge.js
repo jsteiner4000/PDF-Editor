@@ -129,6 +129,7 @@ export function notifyDocumentState() {
       stripActive: !!app.stripActive,
       pdfOpen: !!session,
       siteOpen: !!(app.studio.project && app.studio.project.sections.some((s) => s.type === 'site')),
+      studioOpen: !!app.studio.project,
       workspace: app.workspace,
       theme: readTheme(),
     });
@@ -167,6 +168,9 @@ const COMMANDS = {
   ...Object.fromEntries(
     ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale', 'measure', 'renumber'].map((tool) => ['site:' + tool, () => app.siteFromMenu(tool)]),
   ),
+  'studio:image': () => app.studioFromMenu('image'),
+  'studio:qr': () => app.studioFromMenu('qr'),
+  'studio:topdf': () => app.studioFromMenu('topdf'),
   undo: () => (inEditableField() ? document.execCommand('undo') : (app.session || studioActive()) && app.undo()),
   redo: () => (inEditableField() ? document.execCommand('redo') : (app.session || studioActive()) && app.redo()),
   zoomIn: () => zoom(() => app.zoomStep(1), () => app.studio.zoomStep(1)),

@@ -24,7 +24,7 @@ import { SignatureTool } from './ui/signature-panel.js';
 import { ZoomGestures } from './ui/zoom-gestures.js';
 import { THEMES, readTheme, setTheme } from './ui/theme.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
-import { canMakePdf } from './studio/export.js';
+import { keepTopBarFitting } from './platform/title-bar.js';
 import { STUDIO_TEMPLATES, Studio, deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates, templatePreview } from './studio/studio.js';
 
 /**
@@ -160,7 +160,6 @@ export class App {
   </div>
   <div class="sep"></div>
   <button class="btn ic" id="bPrint" title="Drucken / im Browser anzeigen" disabled>${icon('print')}</button>
-  <button class="btn outline hidden" id="bToPdf" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Bearbeiten, Unterschreiben oder Ergänzen">${icon('open', 's')}Im PDF-Bereich öffnen</button>
   <button class="btn primary" id="bSave" disabled>${icon('save', 's')}Speichern</button>
 </header>
 <div id="ribbon" class="hidden" role="toolbar" aria-label="Werkzeuge"><div class="rb-bar" id="rbBar"></div></div>
@@ -187,6 +186,7 @@ export class App {
     <button class="btn ic" id="rThumbs" title="Seitenminiaturen">${icon('thumbs')}</button>
   </nav>
 </div>`;
+    keepTopBarFitting($('#top'));
     const on = (id, type, handler) => $('#' + id).addEventListener(type, handler);
     on('bFile', 'click', (n) => this.fileMenu(n.currentTarget));
     on('bClose', 'click', (ev) => {
@@ -225,7 +225,6 @@ export class App {
     on('bUndo', 'click', () => this.undo());
     on('bRedo', 'click', () => this.redo());
     on('bSave', 'click', () => this.save());
-    on('bToPdf', 'click', () => this.studio.openAsPdf());
     on('bPrint', 'click', () => this.print());
     on('bPrev', 'click', () => this.goto(this.cur - 1));
     on('bNext', 'click', () => this.goto(this.cur + 1));
@@ -829,8 +828,6 @@ export class App {
     $('#bPrint').disabled = !(doc || studio);
     $('#bSave').innerHTML = studio ? `${icon('export', 's')}PDF erstellen` : `${icon('save', 's')}Speichern`;
     $('#bSave').title = studio ? 'PDF erstellen (Strg+S)' : 'Speichern (Strg+S)';
-    // nur in der Desktop-App (dort entsteht die PDF direkt)
-    $('#bToPdf').classList.toggle('hidden', !(studio && canMakePdf()));
     this.renderRibbon();
     this.updateHist();
     this.syncWorkspace();
@@ -1816,6 +1813,18 @@ export class App {
       await this.showStudio();
     }
     return this.studio.siteCommand(tool);
+  }
+
+  /** Befehl der Dokumentation aus dem Menü: zur Dokumentation wechseln und ausführen. */
+  async studioFromMenu(cmd) {
+    if (!this.studio.project) return;
+    if (this.view !== 'studio') {
+      await this.finishEdit();
+      await this.showStudio();
+    }
+    if (cmd === 'image') return this.studio.addOverlayImage();
+    if (cmd === 'qr') return this.studio.addOverlayQr();
+    if (cmd === 'topdf') return this.studio.openAsPdf();
   }
 
   async toolFromMenu(id) {

@@ -1,8 +1,9 @@
 PlantPDF – Markenpaket
 ======================
 
-plantpdf-app.svg             App-Symbol, Master ab 32 px
+plantpdf-app.svg             App-Symbol (dunkle Graphit-Kachel), Master ab 32 px
 plantpdf-app-small.svg       Vereinfachte Fassung für 16–24 px
+plantpdf-symbol.svg          Das P ohne Kachel (Website, Splash, Dokumente); -small für 16–24 px
 plantpdf-document.svg        Dokument-Symbol (Explorer), Master ab 32 px
 plantpdf-document-small.svg  Fassung für 16–24 px (ohne Textzeilen, kräftigere Kontur)
 

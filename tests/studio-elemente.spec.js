@@ -109,7 +109,7 @@ test('Dokumentation im PDF-Bereich öffnen', async ({ browser }) => {
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
     await newDoc(page, context);
-    const btn = page.locator('#bToPdf');
+    const btn = page.locator('.rb[data-act="topdf"]');
     await expect(btn).toBeVisible();
     await btn.click();
     await expect(page.locator('#docTab')).toHaveClass(/on/);
