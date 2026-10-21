@@ -117,12 +117,17 @@ test('Mehrere Lagepläne: Nummern zählen durch, Nummer ändern bleibt im eigene
     const head = page.locator('#sdIBody h4').first();
     await expect(head).toHaveText('K 5');
     await expect(page.locator('#sdIBody .sd-nr-of')).toHaveText('3 bis 5');
-    // Zugangsdaten: jede Nummer nur einmal
+    // Zugangsdaten (Kameras mit IP): jede Nummer nur einmal
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const ids = st.project.sections.filter((x) => x.type === 'site').flatMap((x) => x.symbols.map((y) => y.id));
+      st.change('IP', () => ids.forEach((id, i) => (st.deviceFor(id).ip = '10.0.0.' + (i + 1))));
+    });
     const names = await page.evaluate(() => {
       const acc = window.pdfEditor.studio.project.sections.find((x) => x.type === 'access');
       return acc.devices.map((d) => d.name.de || d.name);
     });
-    expect(names).toEqual(['K 1 Kamera', 'K 2 Kamera', 'K 3 Kamera', 'K 4 Kamera', 'K 5 Kamera']);
+    expect(names.sort()).toEqual(['K 1 Kamera', 'K 2 Kamera', 'K 3 Kamera', 'K 4 Kamera', 'K 5 Kamera']);
     // K 5 → 1: bleibt im eigenen Plan, wird K 3
     const input = page.locator('#sdIBody .sd-nr input');
     await input.fill('1');

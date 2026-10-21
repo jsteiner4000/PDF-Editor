@@ -40,6 +40,8 @@
   --sh2: 0 4px 12px rgba(31, 35, 41, 0.1), 0 2px 4px rgba(31, 35, 41, 0.06);
   --sh3: 0 18px 48px rgba(31, 35, 41, 0.18), 0 4px 12px rgba(31, 35, 41, 0.08);
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* Aufgehen wie in macOS/Fluent: schnell los, weich auslaufen, ohne Überschwingen */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --r: 8px;
   --font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
   /* Akzent als Schrift/Symbol auf Flächen (im Dunkelmodus heller als die Akzentfläche) */
@@ -541,12 +543,14 @@ kbd {
   flex: none;
   transition:
     background-color 0.12s var(--ease),
-    color 0.12s var(--ease);
+    color 0.12s var(--ease),
+    transform 0.12s var(--ease-out);
 }
 .rb:hover {
   background: var(--hover);
 }
 .rb:active {
+  transform: scale(0.97);
   background: var(--press);
 }
 .rb:focus-visible {
@@ -2058,6 +2062,8 @@ button.feat:focus-visible {
   box-shadow: var(--sh3);
   padding: 5px;
   min-width: 230px;
+  transform-origin: top left;
+  animation: menu-in 0.18s var(--ease-out);
 }
 .menu .mi {
   display: flex;
@@ -2120,7 +2126,7 @@ button.feat:focus-visible {
   z-index: 200;
   display: grid;
   place-items: center;
-  animation: fade 0.12s;
+  animation: fade 0.2s var(--ease-out);
 }
 .dlg {
   background: var(--panel);
@@ -2129,7 +2135,7 @@ button.feat:focus-visible {
   width: min(460px, 92vw);
   max-height: 88vh;
   overflow: auto;
-  animation: pop 0.14s;
+  animation: dlg-in 0.26s var(--ease-out);
 }
 .dlg .dh {
   display: flex;
@@ -2288,6 +2294,18 @@ button.feat:focus-visible {
     transform: translateY(6px) scale(0.985);
   }
 }
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+@keyframes dlg-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
 #toasts {
   position: fixed;
   left: 50%;
@@ -2309,7 +2327,7 @@ button.feat:focus-visible {
   display: flex;
   align-items: center;
   gap: 9px;
-  animation: pop 0.16s;
+  animation: pop 0.24s var(--ease-out);
   max-width: 560px;
 }
 .toast.warn {
@@ -2521,6 +2539,7 @@ textarea {
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;

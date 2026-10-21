@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.14.1.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.15.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -414,10 +414,19 @@ Beim Meldegruppenmodul wählt man rechts den Typ (MGM 2, MGM 5 oder eine andere
 Zahl); die Bezeichnung lautet dann MGM-2-1, MGM-2-2, MGM-5-1 … – jeder Typ zählt
 für sich.
 
-Zugangsdaten: Kameras, Rekorder, Antennen, Router, Türsprechstellen,
-Zutrittsleser und Alarmzentralen stehen automatisch unter „Zugangsdaten ›
-Geräte-Zugänge“. IP-Adresse und Benutzer (beliebig viele, je mit Passwort und
-Rolle) pflegt man am Symbol oder in den Zugangsdaten – es sind dieselben Daten.
+Zugangsdaten: Bei Kameras, Rekordern, Antennen, Routern, Türsprechstellen,
+Zutrittslesern und Alarmzentralen stehen rechts IP-Adresse, Benutzer
+(beliebig viele, je mit Passwort und Rolle) und Seriennummer. Unter
+„Zugangsdaten“ erscheint ein Gerät erst, wenn dort etwas eingetragen ist –
+leere Geräte bleiben draußen. Es sind dieselben Daten wie in den
+Zugangsdaten, Änderungen gelten an beiden Stellen.
+
+Anschluss und Montage: Melder, Sirenen, Bedienteile, Schlüsselschalter,
+Zutrittsleser und Türöffner haben Bus, Adresse, Meldegruppe (Vorschläge aus
+den Meldegruppenmodulen) und Bereich; Kameras den Rekorder und Kanal; dazu die
+Montagehöhe. Alles steht in der Geräteliste unter „Bemerkung“. Auf Wunsch
+(Lageplan wählen › „Bus/Adresse an den Symbolen“) steht Bus/Adresse auch im
+Plan, z. B. „BM 3 · 1/12“.
 SSID und WLAN-Schlüssel einer Richtfunkstrecke erscheinen unter „WLAN“.
 Ein Klick auf ein Gerät in einer Liste (Geräteliste, „Im Plan“, „Im Lageplan
 zeigen“) zeigt es im Plan und lässt es kurz aufleuchten.

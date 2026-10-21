@@ -24,6 +24,10 @@ import {
   langsOf,
   projectSymbols,
   deviceOf,
+  NET_KINDS,
+  dropDetails,
+  isBusKind,
+  isHeightKind,
   newUser,
   ROLES,
   sectionTitle,
@@ -98,6 +102,14 @@ export class Inspector {
     }
     this.body.innerHTML = '';
     this.head.innerHTML = '';
+    // neue Auswahl: Inhalt gleitet ein (beim erneuten Aufbau derselben Auswahl nicht)
+    const selKey = `${sel.kind}:${sel.id || ''}:${sel.section || ''}`;
+    this.body.classList.remove('sd-enter');
+    if (selKey !== this.lastSelKey) {
+      void this.body.offsetWidth;
+      this.body.classList.add('sd-enter');
+    }
+    this.lastSelKey = selKey;
     if (!item) {
       studio.sel = { kind: 'project' };
       return this.render();
@@ -900,7 +912,7 @@ Object.assign(Inspector.prototype, {
       const user = newUser();
       studio.change('Benutzer hinzugefügt', () => d.users.push(user), { inspector: true });
       setTimeout(() => {
-        const input = document.querySelector(`[data-f="u${d.users.length}${d.id}"]`);
+        const input = document.querySelector(`[data-f^="t:u${d.users.length}${d.id}:"]`);
         if (input) input.focus();
       }, 0);
     });
@@ -1039,6 +1051,9 @@ Object.assign(Inspector.prototype, {
       this.bi('Überschrift', s, 'title'),
       this.check('Nummern an den Symbolen', s.showNumbers, (v) => studio.change('Nummern geändert', () => (s.showNumbers = v))),
       this.check('Geräteliste auf einer Folgeseite', s.showList, (v) => studio.change('Geräteliste geändert', () => (s.showList = v))),
+      s.symbols.some((y) => isBusKind(y.kind))
+        ? this.check('Bus/Adresse an den Symbolen', s.showBus, (v) => studio.change('Bus/Adresse geändert', () => (s.showBus = v)), 'z. B. „BM 3 · 1/12“')
+        : null,
     );
     // Hintergrund
     const img = s.bg.image && this.project.images[s.bg.image];
@@ -1352,6 +1367,42 @@ Object.assign(Inspector.prototype, {
     this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
   },
 
+  /**
+   * Montage und Anschluss eines Symbols: Melder mit Bus, Adresse, Meldegruppe und Bereich, Kamera
+   * mit Rekorder und Kanal, dazu die Montagehöhe. Erscheint in der Geräteliste unter „Bemerkung“.
+   */
+  detailsGroup(s, y) {
+    const bus = isBusKind(y.kind);
+    const cam = y.kind === 'camera';
+    if (!bus && !cam && !isHeightKind(y.kind)) return;
+    const group = this.group(bus ? 'Anschluss' : 'Montage');
+    if (bus) {
+      // Vorschläge für die Meldegruppe: die Meldegruppenmodule des Projekts
+      const mgm = projectSymbols(this.project).filter((x) => /^MGM-/.test(x.label));
+      document.getElementById('sdGroups')?.remove();
+      document.body.appendChild(htmlToElement(`<datalist id="sdGroups">${mgm.map((x) => `<option value="${escapeHtml(x.label)}">`).join('')}</datalist>`));
+      const groupField = this.text('Meldegruppe', y, 'group', { id: 'mg' + y.id, placeholder: mgm.length ? 'z. B. ' + mgm[0].label : 'z. B. MG 3' });
+      groupField.querySelector('input').setAttribute('list', 'sdGroups');
+      group.append(
+        this.pair(this.text('Bus', y, 'bus', { id: 'bus' + y.id, placeholder: 'z. B. 1' }), this.text('Adresse', y, 'addr', { id: 'adr' + y.id, placeholder: 'z. B. 12' })),
+        groupField,
+        this.text('Bereich', y, 'area', { id: 'ar' + y.id, placeholder: 'z. B. 1 – Halle' }),
+      );
+    }
+    if (cam) {
+      const recorders = this.project.sections.flatMap((x) => (x.type === 'site' ? x.symbols.filter((r) => r.kind === 'recorder').map((r) => r.id) : []));
+      const labels = new Map(projectSymbols(this.project).map((x) => [x.id, `${x.label} ${x.name}`]));
+      const options = [['', recorders.length ? '– kein Rekorder –' : '– kein Rekorder im Plan –'], ...recorders.map((id) => [id, labels.get(id) || id])];
+      group.append(
+        this.pair(
+          this.select('Rekorder', options, recorders.includes(y.nvr) ? y.nvr : '', (v) => this.studio.change('Rekorder geändert', () => (v ? (y.nvr = v) : delete y.nvr), { inspector: true })),
+          this.text('Kanal', y, 'channel', { id: 'ch' + y.id, placeholder: 'z. B. 5' }),
+        ),
+      );
+    }
+    group.append(this.text('Montagehöhe', y, 'height', { id: 'h' + y.id, placeholder: 'z. B. 3,5 m' }));
+  },
+
   /** Meldegruppenmodul: Zahl der Meldegruppen (MGM 2, MGM 5 oder eigene Zahl) – bestimmt das Kürzel. */
   mgmField(s, y) {
     const studio = this.studio;
@@ -1422,6 +1473,7 @@ Object.assign(Inspector.prototype, {
           () => {
             const next = symbolInfo(s, v);
             y.kind = v;
+            dropDetails(y);
             appendToGroup(s, y); // in der neuen Art hinten anstellen
             y.fov = !!(next && next.fov);
             if (next && next.fov) {
@@ -1437,19 +1489,26 @@ Object.assign(Inspector.prototype, {
         studio.change('Größe geändert', () => (y.scale = v), { inspector: true }),
       ),
     );
-    // Netzwerkgerät: Zugang (IP, Benutzer) – dieselben Daten wie unter Zugangsdaten
-    const dev = deviceOf(this.project, y.id);
-    if (dev) {
+    this.detailsGroup(s, y);
+    // Netzwerkgerät: Zugang (IP, Benutzer, Seriennummer) – dieselben Daten wie unter Zugangsdaten;
+    // dort erscheint das Gerät erst, wenn etwas eingetragen ist
+    if (NET_KINDS.includes(y.kind)) {
+      const dev = studio.deviceFor(y.id);
       const acc = this.project.sections.find((x) => x.type === 'access' && x.devices.includes(dev));
       const group = this.group(
         'Zugang',
-        this.pair(this.mono('IP-Adresse', dev, 'ip', { id: 'ip' + dev.id, placeholder: '192.168.1.20' }), this.mono('Port / Web', dev, 'web', { id: 'web' + dev.id, placeholder: '443' })),
+        this.pair(this.mono('IP-Adresse', dev, 'ip', { id: 'ip' + y.id, placeholder: '192.168.1.20' }), this.mono('Port / Web', dev, 'web', { id: 'web' + y.id, placeholder: '443' })),
       );
       this.usersEditor(group, dev);
-      group.appendChild(this.note('Steht genauso unter „Zugangsdaten › Geräte-Zugänge“ – Änderungen gelten an beiden Stellen.'));
-      const show = htmlToElement(`<button type="button" class="btn sd-link">${icon('right', 's')}In Zugangsdaten zeigen</button>`);
-      show.addEventListener('click', () => studio.select({ kind: 'device', id: dev.id, section: acc.id }, { reveal: true, pulse: true }));
-      group.appendChild(show);
+      group.appendChild(this.mono('Seriennummer', dev, 'serial', { id: 'sn' + y.id, placeholder: 'für QR-Code (P2P)' }));
+      group.appendChild(
+        this.note(acc ? 'Steht genauso unter „Zugangsdaten“ – Änderungen gelten an beiden Stellen.' : 'Erscheint unter „Zugangsdaten“, sobald etwas eingetragen ist.'),
+      );
+      if (acc) {
+        const show = htmlToElement(`<button type="button" class="btn sd-link">${icon('right', 's')}In Zugangsdaten zeigen</button>`);
+        show.addEventListener('click', () => studio.select({ kind: 'device', id: dev.id, section: acc.id }, { reveal: true, pulse: true }));
+        group.appendChild(show);
+      }
     }
     if (y.kind === 'radio') {
       const links = s.links.filter((l) => l.from === y.id || l.to.includes(y.id));

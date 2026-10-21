@@ -53,9 +53,9 @@ export function showPopover(el, anchor) {
     x = anchor.x;
     y = anchor.y;
   }
-  const rect = el.getBoundingClientRect();
-  x = Math.min(x, innerWidth - rect.width - 8);
-  y = Math.min(y, innerHeight - rect.height - 8);
+  // Maße ohne die Einblend-Skalierung
+  x = Math.min(x, innerWidth - el.offsetWidth - 8);
+  y = Math.min(y, innerHeight - el.offsetHeight - 8);
   el.style.left = Math.max(8, x) + 'px';
   el.style.top = Math.max(8, y) + 'px';
   openMenuEl = el;

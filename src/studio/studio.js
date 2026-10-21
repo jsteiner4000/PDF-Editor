@@ -342,7 +342,9 @@ export class Studio {
 
   async open(project, sel = null) {
     if (this.project) await this.flush();
-    syncAccess(project);
+    // Angaben zu Geräten aus dem Lageplan, die noch nicht in den Zugangsdaten stehen
+    this.drafts = new Map();
+    syncAccess(project, this.drafts);
     this.project = project;
     this.hist = { undo: [], redo: [] };
     this.snap = this.serialize();
@@ -520,10 +522,11 @@ export class Studio {
     if (!this.project) return;
     const before = this.snap;
     fn(this.project);
-    // Lageplan und Zugangsdaten gleich halten (im selben Verlaufsschritt)
-    syncAccess(this.project);
+    // Lageplan und Zugangsdaten gleich halten (im selben Verlaufsschritt); die gewählte Zeile der
+    // Zugangsdaten bleibt, auch wenn sie gerade leer ist
+    const adopted = syncAccess(this.project, this.drafts, this.sel.kind === 'device' ? this.sel.id : null);
     this.commit(label, before, key);
-    if (inspector) this.inspector.render();
+    if (inspector || adopted) this.inspector.render();
   }
 
   /** Verlaufsschritt für eine bereits ausgeführte Änderung (z. B. nach dem Ziehen). */
@@ -849,10 +852,15 @@ export class Studio {
     if (!this.doc || !this.root) return;
     const { kind, id, section } = this.sel;
     const pages = $$('.sd-page', $('#sdPages'));
+    // Rahmen blendet nur bei einer neuen Auswahl ein (nicht bei jedem Neuzeichnen, z. B. beim Ziehen)
+    const selKey = `${kind}:${id || ''}:${section || ''}`;
+    const fresh = selKey !== this.lastSelKey;
+    this.lastSelKey = selKey;
     pages.forEach((el, i) => {
       const page = this.doc.pages[i];
       const marks = el.querySelector('.sd-marks');
-      marks.innerHTML = '';
+      // Markierungen neu – ein laufendes Aufleuchten bleibt stehen, bis es von selbst endet
+      for (const c of [...marks.children]) if (!c.classList.contains('sd-pulse')) c.remove();
       const sectionSel =
         (kind === 'section' && page.section === id) || (kind === 'project' && page.kind === 'cover');
       el.classList.toggle('sd-cur', sectionSel);
@@ -871,7 +879,7 @@ export class Studio {
           (kind === 'hub' && hit.kind === 'hub') ||
           (kind === 'overlay' && hit.kind === 'overlay' && hit.id === id);
         if (!match) continue;
-        const mark = this.markEl(hit.rect, 'sd-sel');
+        const mark = this.markEl(hit.rect, fresh ? 'sd-sel sd-in' : 'sd-sel');
         if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
         if (kind === 'overlay') mark.appendChild(htmlToElement('<span class="sd-ogrip" title="Größe ziehen"></span>'));
         marks.appendChild(mark);
@@ -1056,6 +1064,8 @@ export class Studio {
         fresh(y, 'y');
         if (to) y.kind = 'custom:' + to;
       });
+      // Kamera → Rekorder auf den Rekorder der Kopie
+      for (const y of copy.symbols) if (y.nvr) y.nvr = remap.get(y.nvr) || y.nvr;
       copy.shapes.forEach((z) => fresh(z, 'z'));
       copy.links.forEach((l) => {
         fresh(l, 'l');
@@ -1128,6 +1138,18 @@ export class Studio {
       ],
       anchor,
     );
+  }
+
+  /**
+   * Geräte-Eintrag eines Netzwerkgeräts im Lageplan: aus den Zugangsdaten oder – solange noch
+   * nichts eingetragen ist – ein Entwurf, der mit der ersten Angabe übernommen wird.
+   */
+  deviceFor(symId) {
+    const d = deviceOf(this.project, symId);
+    if (d) return d;
+    this.drafts ||= new Map();
+    if (!this.drafts.has(symId)) this.drafts.set(symId, { ...newDevice(), sym: symId });
+    return this.drafts.get(symId);
   }
 
   /** Abschnitt im Hoch- oder Querformat; Lagepläne behalten dabei ihre Lage auf dem Hintergrund. */
@@ -1245,6 +1267,7 @@ export class Studio {
         'Symbol gelöscht',
         () => {
           s.symbols = s.symbols.filter((y) => y.id !== id);
+          for (const x of this.project.sections) if (x.type === 'site') for (const y of x.symbols) if (y.nvr === id) delete y.nvr;
           this.dropLinks(new Set([id]));
           this.dropStations(s, new Set([id]));
           // Zugangsdaten des Geräts gehen mit (Rückgängig holt beides zurück)
