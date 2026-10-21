@@ -628,7 +628,7 @@ export const siteTools = {
         const m = site.symbols.find((y) => y.id === sel.id);
         if (!m) return false;
         target = htmlToElement('<span class="sd-pulse sd-pulse-dot"></span>');
-        const d = (m.r + 7) * 2 * this.scale;
+        const d = Math.max((m.r + 9) * 2 * this.scale, 34);
         target.style.cssText = `left:${m.x * this.scale}px;top:${m.y * this.scale}px;width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px`;
         marks.appendChild(target);
       } else {
@@ -656,7 +656,7 @@ export const siteTools = {
     // nach dem Aufleuchten entfernen
     setTimeout(() => {
       for (const el of document.querySelectorAll('#sdPages .sd-pulse')) el.remove();
-    }, 2600);
+    }, 3900);
     return true;
   },
 
@@ -704,6 +704,14 @@ export const siteTools = {
   /** Kontextmenü auf einem Objekt im Plan (Rechtsklick). */
   siteContextMenu(ev, hit) {
     const item = hit && hit.item;
+    // Zeile der Geräteliste: zum Symbol im Lageplan springen
+    if (item && item.kind === 'sym' && !hit.page.site) {
+      ev.preventDefault();
+      const sel = { kind: 'sym', id: item.id, section: hit.page.section };
+      this.select(sel);
+      showMenu([{ label: 'Im Lageplan zeigen', icon: 'map', run: () => this.select(sel, { pulse: true }) }], { x: ev.clientX, y: ev.clientY });
+      return true;
+    }
     if (!item || !['sym', 'shape', 'link'].includes(item.kind) || !hit.page.site) return false;
     ev.preventDefault();
     this.select({ kind: item.kind, id: item.id, section: hit.page.section });

@@ -1,7 +1,7 @@
 {
   "name": "pdf-editor",
   "productName": "PlantPDF",
-  "version": "2.15.1",
+  "version": "2.15.2",
   "private": true,
   "description": "PlantPDF: PDFs bearbeiten, ordnen und unterschreiben – Desktop-App für Windows (Electron).",
   "author": {

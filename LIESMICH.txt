@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.15.1.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.15.2.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -438,8 +438,10 @@ Montagehöhe. Alles steht in der Geräteliste unter „Bemerkung“. Auf Wunsch
 (Lageplan wählen › „Bus/Adresse an den Symbolen“) steht Bus/Adresse auch im
 Plan, z. B. „BM 3 · 1/12“.
 SSID und WLAN-Schlüssel einer Richtfunkstrecke erscheinen unter „WLAN“.
-Ein Klick auf ein Gerät in einer Liste (Geräteliste, „Im Plan“, „Im Lageplan
-zeigen“) zeigt es im Plan und lässt es kurz aufleuchten.
+Ein Klick auf ein Gerät in der Geräteliste öffnet es rechts zum Bearbeiten;
+Rechtsklick > „Im Lageplan zeigen“ springt zum Symbol und lässt es deutlich
+aufleuchten. In den Listen rechts („Im Plan“, „Im Lageplan zeigen“) zeigt ein
+Klick das Gerät direkt im Plan.
 
 
 BEDIENUNGSANLEITUNG (BEREICH DOKUMENTATION)
