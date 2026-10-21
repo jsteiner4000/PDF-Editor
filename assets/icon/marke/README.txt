@@ -9,8 +9,8 @@ app-icon/
   png/                      16, 24, 32, 48, 64, 128, 256, 512, 1024 px
 
 document-icon/
-  pdfix-document.svg        Dokument-Icon (Doc · Clean), Master ab 32 px
-  pdfix-document-small.svg  Vereinfachte Fassung für 16/24 px (Blatt + rote Ecke)
+  pdfix-document.svg        Dokument-Icon (Blatt mit roter Banderole und Buch), Master ab 32 px
+  pdfix-document-small.svg  Vereinfachte Fassung für 16/24 px (kräftiger Rand, rotes Band, Buch als zwei Seiten)
   pdfix-document.ico        Windows-Dateityp-Icon (16–256 px)
   png/                      16–512 px
 
