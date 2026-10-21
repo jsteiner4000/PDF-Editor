@@ -93,3 +93,33 @@ test('Zugangsdaten nur mit Angaben; Bus, Meldegruppe, Bereich, Kanal und Höhe i
     await context.close();
   }
 });
+
+test('Zugangsdaten: neue Geräte nach Nummer einsortiert, Verschieben bleibt', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    const devices = () => page.evaluate(() => window.pdfEditor.studio.project.sections.find((x) => x.type === 'access').devices.map((d) => d.sym));
+    // K 2 zuerst ausgefüllt, dann K 1: K 1 steht trotzdem vorne
+    await page.evaluate((list) => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.change('Symbole', () => s.symbols.push(...list));
+      st.change('IP', () => (st.deviceFor('kb').ip = '10.0.0.2'));
+      st.change('IP', () => (st.deviceFor('ka').ip = '10.0.0.1'));
+    }, [sym('ka', 'camera', 0.2, 0.2), sym('kb', 'camera', 0.5, 0.2)]);
+    expect(await devices()).toEqual(['ka', 'kb']);
+    // von Hand verschieben: bleibt so
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const acc = st.project.sections.find((x) => x.type === 'access');
+      st.select({ kind: 'device', id: acc.devices[1].id, section: acc.id });
+    });
+    await page.locator('#sdIBody .sd-order button[title="Nach oben"]').click();
+    await expect.poll(devices).toEqual(['kb', 'ka']);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
