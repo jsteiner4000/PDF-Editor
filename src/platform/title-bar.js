@@ -108,7 +108,8 @@ export function installTitleBar(desktop) {
 /**
  * Kopfzeile passend halten: Reicht der Platz nicht für die geöffneten Reiter (lange Titel,
  * schmales Fenster), stehen zuerst die Menüs „Datei“ bis „Hilfe“ in einem Menüknopf; reicht es
- * dann noch nicht, entfällt der Schriftzug neben dem Logo und der Bereichsumschalter wird schmaler.
+ * dann noch nicht, entfällt der Schriftzug neben dem Logo und der Bereichsumschalter wird schmaler;
+ * ganz zuletzt zeigen die Reiter nur noch Symbol und Schließen.
  * Gemessen wird bei jeder Größen- oder Inhaltsänderung der Kopfzeile.
  */
 export function keepTopBarFitting(top) {
@@ -116,15 +117,23 @@ export function keepTopBarFitting(top) {
   if (!tabs || !window.ResizeObserver) return;
   const watch = { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] };
   const mo = new MutationObserver(() => fit());
-  const over = () => tabs.scrollWidth > tabs.clientWidth + 1;
+  // zu eng: Reiter laufen über, oder ein Dokumenttitel wird gekürzt und der Reiter ist schmaler
+  // als 220 px (darüber bleibt der Titel gut erkennbar und die Menüs bleiben sichtbar)
+  const squeezed = () =>
+    tabs.scrollWidth > tabs.clientWidth + 1 ||
+    [...tabs.querySelectorAll('.doctab:not(.hidden)')].some((t) => {
+      const nm = t.querySelector('.nm');
+      return nm && nm.scrollWidth > nm.clientWidth + 1 && t.getBoundingClientRect().width < 220;
+    });
   const fit = () => {
     // eigene Änderungen nicht wieder als Anlass nehmen
     mo.disconnect();
     const bar = top.querySelector('.menubar');
-    top.classList.remove('tight');
+    top.classList.remove('tight', 'tighter');
     if (bar) bar.classList.remove('compact');
-    if (over() && bar) bar.classList.add('compact');
-    if (over()) top.classList.add('tight');
+    if (squeezed() && bar) bar.classList.add('compact');
+    if (squeezed()) top.classList.add('tight');
+    if (tabs.scrollWidth > tabs.clientWidth + 1) top.classList.add('tighter');
     mo.observe(top, watch);
   };
   new ResizeObserver(fit).observe(top);

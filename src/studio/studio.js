@@ -1357,7 +1357,7 @@ ${
       : `<span class="rb-note">Abschnitt in der Projektmappe wählen – hier erscheinen seine Befehle.</span>`;
     // „Im PDF-Bereich öffnen“ rechts im Werkzeugband (nur Desktop-App: dort entsteht die PDF direkt)
     const toPdf = canMakePdf()
-      ? `<span class="rb-grow"></span><button class="rb c2" data-act="topdf" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Unterschreiben, Bearbeiten oder Ergänzen">${icon('open')}Im PDF-Bereich öffnen</button>`
+      ? `<span class="rb-grow"></span><button class="rb c2" data-act="topdf" aria-label="Im PDF-Bereich öffnen" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Unterschreiben, Bearbeiten oder Ergänzen">${icon('open')}<span class="rb-t">Im PDF-Bereich öffnen</span></button>`
       : '';
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
@@ -1366,6 +1366,7 @@ ${
 ${context}
 ${toPdf}
 `;
+    this.fitRibbon(bar);
     for (const btn of $$('.rb', bar))
       btn.addEventListener('click', () => {
         const act = btn.dataset.act;
@@ -1385,6 +1386,18 @@ ${toPdf}
         else if (act === 'measure') this.arm('tool:measure');
         else if (act === 'addphotos') this.pickPhotos(photosSection);
       });
+  }
+
+  /** Werkzeugband zu schmal: „Im PDF-Bereich öffnen“ nur als Symbol (bleibt so sichtbar). */
+  fitRibbon(bar) {
+    if (!this.ribbonObserver && window.ResizeObserver) {
+      this.ribbonObserver = new ResizeObserver(() => this.fitRibbon(bar));
+      this.ribbonObserver.observe(bar);
+    }
+    const btn = bar.querySelector('.rb[data-act="topdf"]');
+    if (!btn) return;
+    btn.classList.remove('rb-ic');
+    if (bar.scrollWidth > bar.clientWidth + 1) btn.classList.add('rb-ic');
   }
 
   /** Nur ein Anschlussplan und sonst nichts (Vorlage „Anschlussplan“): seine Befehle sind immer da. */

@@ -436,8 +436,7 @@ kbd {
   background: transparent;
   color: var(--ink2);
   max-width: 340px;
-  /* Titel bleibt lesbar; reicht der Platz nicht, wird er mit „…“ gekürzt */
-  min-width: 96px;
+  min-width: 0;
   cursor: pointer;
   user-select: none;
   transition:
@@ -2485,14 +2484,21 @@ button.feat:focus-visible {
 .menubar.compact .mb-all {
   display: grid;
 }
+/* Dokument-Reiter: Titel bleibt lesbar (mit „…“ gekürzt); erst ganz zuletzt nur Symbol und Schließen */
+.doctab {
+  min-width: 96px;
+}
+#top.tighter .doctab {
+  min-width: 0;
+}
 #top.tight .wm {
   display: none;
 }
 #top.tight .ws-b {
   padding: 0 8px;
 }
-/* Drucken bleibt über Strg+P und das Menü „Datei“ erreichbar */
-#top.tight #bPrint {
+/* Desktop-App: Drucken bleibt über Strg+P und das Menü „Datei“ erreichbar */
+.frame #top.tight #bPrint {
   display: none;
 }
 
@@ -2825,5 +2831,8 @@ select.ff:focus {
 /* „Eigene Vorlagen“ erst zeigen, wenn es welche gibt */
 .hs-item[hidden],
 .hs-sec[hidden] {
+  display: none;
+}
+.rb.rb-ic .rb-t {
   display: none;
 }
