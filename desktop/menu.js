@@ -27,6 +27,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
   // Werkzeuge der PDF: aktiv, sobald eine PDF geöffnet ist (auch aus dem Bereich „Dokumentation“)
   const toolItem = (tool, label, extra) => cmd('tool:' + tool, label, { enabled: false, ...extra });
   const siteItem = (tool, label, extra) => cmd('site:' + tool, label, { enabled: false, ...extra });
+  const studioItem = (tool, label, extra) => cmd('studio:' + tool, label, { enabled: false, ...extra });
 
   const template = [
     {
@@ -106,6 +107,16 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         { type: 'separator' },
         toolItem('fonts', 'Schriften'),
         { type: 'separator' },
+        // Dokumentation: aktiv, sobald eine Dokumentation geöffnet ist (dieselben Befehle wie im Werkzeugband)
+        {
+          label: 'Dokumentation',
+          submenu: [
+            studioItem('image', 'Bild einfügen …'),
+            studioItem('qr', 'QR-Code einfügen'),
+            { type: 'separator' },
+            studioItem('topdf', 'Im PDF-Bereich öffnen'),
+          ],
+        },
         // Lageplan (Bereich „Dokumentation“): aktiv, sobald die Dokumentation einen Lageplan hat
         {
           label: 'Lageplan',
@@ -153,6 +164,9 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
 /** Werkzeuge der PDF (Menü „Werkzeuge“): aktiv, solange eine PDF geöffnet ist. */
 /** Befehle für den Lageplan (Menü „Werkzeuge › Lageplan“). */
 export const SITE_TOOLS = ['symbols', 'again', 'ptp', 'ptmp', 'fence', 'line', 'free', 'scale', 'measure', 'renumber'];
+
+/** Befehle der Dokumentation (Menü „Werkzeuge › Dokumentation“). */
+export const STUDIO_TOOLS = ['image', 'qr', 'topdf'];
 
 export const PDF_TOOLS = ['edit', 'addtext', 'addimage', 'organize', 'insert', 'formdesign', 'signature', 'fonts'];
 

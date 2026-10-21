@@ -1386,3 +1386,7 @@ textarea.fld.mono {
   cursor: nwse-resize;
   pointer-events: auto;
 }
+/* Feld nach einem Kontrollkästchen: gleicher Abstand wie zwischen Feldern */
+.sd-check + .sd-f {
+  margin-top: 12px;
+}

@@ -187,10 +187,13 @@ kbd {
 #app {
   display: grid;
   grid-template-rows: 48px auto 1fr;
+  /* nie breiter als das Fenster: lange Titel kürzen statt die Seitenleisten hinauszuschieben */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 #top {
   grid-row: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -419,6 +422,7 @@ kbd {
   align-items: center;
   gap: 4px;
   min-width: 0;
+  flex: 0 1 auto;
 }
 .tab,
 .doctab {
@@ -432,7 +436,8 @@ kbd {
   background: transparent;
   color: var(--ink2);
   max-width: 340px;
-  min-width: 0;
+  /* Titel bleibt lesbar; reicht der Platz nicht, wird er mit „…“ gekürzt */
+  min-width: 96px;
   cursor: pointer;
   user-select: none;
   transition:
@@ -2436,6 +2441,7 @@ button.feat:focus-visible {
   align-items: center;
   gap: 1px;
   min-width: 0;
+  flex: none;
 }
 .menubar .mb {
   height: 30px;
@@ -2471,14 +2477,23 @@ button.feat:focus-visible {
   padding: 0;
   place-items: center;
 }
-/* schmale Fenster: ein Menüknopf statt fünf Wörter – die Reiter behalten ihren Platz */
-@media (max-width: 1099px) {
-  .menubar .mb {
-    display: none;
-  }
-  .menubar .mb-all {
-    display: grid;
-  }
+/* zu wenig Platz (schmales Fenster, lange Titel): ein Menüknopf statt der Wörter – die Reiter
+   behalten ihren Platz (Klasse „compact“ setzt keepTopBarFitting in title-bar.js) */
+.menubar.compact .mb {
+  display: none;
+}
+.menubar.compact .mb-all {
+  display: grid;
+}
+#top.tight .wm {
+  display: none;
+}
+#top.tight .ws-b {
+  padding: 0 8px;
+}
+/* Drucken bleibt über Strg+P und das Menü „Datei“ erreichbar */
+#top.tight #bPrint {
+  display: none;
 }
 
 /* Browser-Flächen im Farbton der App: Markierung, Eingabemarke, Zahlen */

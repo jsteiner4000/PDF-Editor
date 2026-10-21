@@ -104,3 +104,29 @@ export function installTitleBar(desktop) {
   );
   window.addEventListener('blur', () => (altAlone = false));
 }
+
+/**
+ * Kopfzeile passend halten: Reicht der Platz nicht für die geöffneten Reiter (lange Titel,
+ * schmales Fenster), stehen zuerst die Menüs „Datei“ bis „Hilfe“ in einem Menüknopf; reicht es
+ * dann noch nicht, entfällt der Schriftzug neben dem Logo und der Bereichsumschalter wird schmaler.
+ * Gemessen wird bei jeder Größen- oder Inhaltsänderung der Kopfzeile.
+ */
+export function keepTopBarFitting(top) {
+  const tabs = top.querySelector('#tabs');
+  if (!tabs || !window.ResizeObserver) return;
+  const watch = { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] };
+  const mo = new MutationObserver(() => fit());
+  const over = () => tabs.scrollWidth > tabs.clientWidth + 1;
+  const fit = () => {
+    // eigene Änderungen nicht wieder als Anlass nehmen
+    mo.disconnect();
+    const bar = top.querySelector('.menubar');
+    top.classList.remove('tight');
+    if (bar) bar.classList.remove('compact');
+    if (over() && bar) bar.classList.add('compact');
+    if (over()) top.classList.add('tight');
+    mo.observe(top, watch);
+  };
+  new ResizeObserver(fit).observe(top);
+  mo.observe(top, watch);
+}

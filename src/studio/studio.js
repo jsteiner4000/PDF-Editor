@@ -1355,17 +1355,23 @@ ${
 <button class="rb c2" data-act="pin" title="Anschluss der Steuerung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('plug')}Anschluss</button>
 <button class="rb c5" data-act="hint" title="Hinweis zur Verdrahtung hinzufügen"${hasWiring ? '' : ' disabled'}>${icon('bulb')}Hinweis</button>`
       : `<span class="rb-note">Abschnitt in der Projektmappe wählen – hier erscheinen seine Befehle.</span>`;
+    // „Im PDF-Bereich öffnen“ rechts im Werkzeugband (nur Desktop-App: dort entsteht die PDF direkt)
+    const toPdf = canMakePdf()
+      ? `<span class="rb-grow"></span><button class="rb c2" data-act="topdf" title="Dokumentation als PDF im Bereich „PDF“ öffnen – zum Unterschreiben, Bearbeiten oder Ergänzen">${icon('open')}Im PDF-Bereich öffnen</button>`
+      : '';
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
 <button class="rb c3" data-act="insert" title="Bild oder QR-Code frei auf die Seite legen">${icon('image')}Bild / QR${icon('chev', 's caret')}</button>
 <span class="rb-sep"></span>
 ${context}
+${toPdf}
 `;
     for (const btn of $$('.rb', bar))
       btn.addEventListener('click', () => {
         const act = btn.dataset.act;
         if (act === 'section') this.addSectionMenu(btn);
         else if (act === 'insert') this.insertMenu(btn);
+        else if (act === 'topdf') this.openAsPdf();
         else if (act === 'box') this.addBox();
         else if (act === 'pin') this.addPin();
         else if (act === 'hint') this.addHint();
