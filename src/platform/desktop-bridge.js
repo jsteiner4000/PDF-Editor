@@ -192,11 +192,19 @@ const COMMANDS = {
     if (app.studio.project) await app.studio.flush(); // letzten Stand des Entwurfs sichern
     if (!app.session) return false;
     await app.finishEdit();
+    // nicht (mehr) geändert, z. B. bis zum gespeicherten Stand rückgängig: keine Kopie zurücklassen
+    if (!app.session.dirty) await app.recovery.clear();
     // Name für die Rückfrage: die PDF, auch wenn gerade die Dokumentation sichtbar ist
     return app.session && app.session.dirty ? { dirty: true, name: app.file ? app.file.name : '' } : false;
   },
   /** Rückfrage beim Beenden: die PDF speichern (nicht „PDF erstellen“ der Dokumentation). */
-  saveDocument: () => (app.session ? app.saveDocument() : false),
+  saveDocument: async () => {
+    const ok = app.session ? await app.saveDocument() : false;
+    if (ok) await app.recovery.clear();
+    return ok;
+  },
+  /** Rückfrage beim Beenden: „Nicht speichern“ – die Wiederherstellungs-Kopie verwerfen. */
+  discardRecovery: () => app.recovery.clear(),
 };
 
 /**

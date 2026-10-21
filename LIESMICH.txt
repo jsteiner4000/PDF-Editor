@@ -306,6 +306,16 @@ rückgängig machen und mit Strg+Y wiederholen.
 Beim Schließen mit ungespeicherten Änderungen fragt PlantPDF nach
 („Speichern“, „Nicht speichern“, „Abbrechen“).
 
+Automatische Wiederherstellung: Solange eine PDF ungespeicherte Änderungen hat,
+sichert PlantPDF wenige Sekunden nach jeder Änderung eine Kopie im eigenen
+App-Speicher – die Originaldatei bleibt unverändert, bis Sie speichern. Wird
+PlantPDF unerwartet beendet (Absturz, Stromausfall), bietet der nächste Start
+„Dokument wiederherstellen“ an. Die wiederhergestellte Fassung ist ungespeichert;
+Strg+S schreibt sie in die ursprüngliche Datei. Nach dem Speichern, „Nicht
+speichern“ oder Schließen wird die Kopie gelöscht, nicht abgeholte nach 14 Tagen.
+Dokumentationen sichern sich ohnehin nach jeder Änderung selbst (Startseite >
+Dokumentation > Zuletzt bearbeitet).
+
 Aktive Inhalte entfernen: PDF-Dateien können JavaScript, Programmstarts
 („Launch“-Links), Formular-Versand und eingebettete Dateien enthalten. Der
 PlantPDF führt nichts davon aus – würde sie beim Speichern aber unverändert

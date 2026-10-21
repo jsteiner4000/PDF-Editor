@@ -820,6 +820,23 @@ select.fld {
   color: var(--ink2);
   font-weight: 600;
 }
+.rec-list {
+  margin: 12px 0 8px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+}
+.rec-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
 .note {
   border-radius: 9px;
   padding: 10px 11px;

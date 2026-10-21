@@ -287,7 +287,11 @@ function start() {
       noLink: true,
     });
     if (response === 2) return false;
-    if (response === 1) return true;
+    if (response === 1) {
+      // bewusst verworfen: beim nächsten Start nichts zur Wiederherstellung anbieten
+      await command('discardRecovery', { wait: true, timeout: 3000 }).catch(() => {});
+      return true;
+    }
     try {
       return (await command('saveDocument', { wait: true })) === true;
     } catch {
@@ -444,7 +448,7 @@ function start() {
       title: APP_NAME,
       message: 'PlantPDF ist unerwartet abgestürzt.',
       detail:
-        (name ? `Ungespeicherte Änderungen an „${name}“ sind leider verloren. ` : '') +
+        (name ? `Ungespeicherte Änderungen an „${name}“ bietet PlantPDF beim nächsten Öffnen zur Wiederherstellung an, soweit sie automatisch gesichert wurden. ` : '') +
         'Die zuletzt gespeicherte Fassung der Datei ist unverändert.',
       buttons: ['Neu laden', 'Fenster schließen'],
       defaultId: 0,
