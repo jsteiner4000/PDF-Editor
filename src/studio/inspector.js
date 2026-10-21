@@ -25,6 +25,7 @@ import {
   projectSymbols,
   deviceOf,
   NET_KINDS,
+  dropDetails,
   isBusKind,
   isHeightKind,
   newUser,
@@ -911,7 +912,7 @@ Object.assign(Inspector.prototype, {
       const user = newUser();
       studio.change('Benutzer hinzugefügt', () => d.users.push(user), { inspector: true });
       setTimeout(() => {
-        const input = document.querySelector(`[data-f="u${d.users.length}${d.id}"]`);
+        const input = document.querySelector(`[data-f^="t:u${d.users.length}${d.id}:"]`);
         if (input) input.focus();
       }, 0);
     });
@@ -1394,7 +1395,7 @@ Object.assign(Inspector.prototype, {
       const options = [['', recorders.length ? '– kein Rekorder –' : '– kein Rekorder im Plan –'], ...recorders.map((id) => [id, labels.get(id) || id])];
       group.append(
         this.pair(
-          this.select('Rekorder', options, y.nvr || '', (v) => this.studio.change('Rekorder geändert', () => (v ? (y.nvr = v) : delete y.nvr), { inspector: true })),
+          this.select('Rekorder', options, recorders.includes(y.nvr) ? y.nvr : '', (v) => this.studio.change('Rekorder geändert', () => (v ? (y.nvr = v) : delete y.nvr), { inspector: true })),
           this.text('Kanal', y, 'channel', { id: 'ch' + y.id, placeholder: 'z. B. 5' }),
         ),
       );
@@ -1472,6 +1473,7 @@ Object.assign(Inspector.prototype, {
           () => {
             const next = symbolInfo(s, v);
             y.kind = v;
+            dropDetails(y);
             appendToGroup(s, y); // in der neuen Art hinten anstellen
             y.fov = !!(next && next.fov);
             if (next && next.fov) {

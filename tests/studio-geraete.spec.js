@@ -43,7 +43,7 @@ test('Zugangsdaten nur mit Angaben; Bus, Meldegruppe, Bereich, Kanal und Höhe i
     await page.locator('#sdIBody .sd-f', { hasText: 'Kanal' }).locator('input').fill('5');
     await page.locator('#sdIBody .sd-f', { hasText: 'Montagehöhe' }).locator('input').fill('3,5 m');
     await expect.poll(listText).toContain('NVR 1 / Kanal 5');
-    expect(await listText()).toContain('Höhe 3,5 m');
+    await expect.poll(listText).toContain('Höhe 3,5 m');
     // Kanal ist keine Zugangsangabe: weiterhin nicht in den Zugangsdaten
     expect(await devices()).toEqual([]);
 
@@ -59,9 +59,8 @@ test('Zugangsdaten nur mit Angaben; Bus, Meldegruppe, Bereich, Kanal und Höhe i
     await grp.locator('.sd-f', { hasText: 'Meldegruppe' }).locator('input').fill('MGM-2-1');
     await grp.locator('.sd-f', { hasText: 'Bereich' }).locator('input').fill('2 – Halle');
     await expect.poll(listText).toContain('Bus 1 / Adr. 12');
-    const text = await listText();
-    expect(text).toContain('MG MGM-2-1');
-    expect(text).toContain('Bereich 2');
+    await expect.poll(listText).toContain('Bereich 2');
+    expect(await listText()).toContain('MG MGM-2-1');
 
     // Bus/Adresse an den Symbolen im Plan
     await page.evaluate(() => {
@@ -78,6 +77,17 @@ test('Zugangsdaten nur mit Angaben; Bus, Meldegruppe, Bereich, Kanal und Höhe i
       return s.symbols.filter((y) => ['k1', 'b1'].includes(y.id)).map((y) => [y.nvr, y.channel, y.height, y.bus, y.addr, y.group, y.area].filter(Boolean));
     });
     expect(kept).toEqual([['n1', '5', '3,5 m'], ['1', '12', 'MGM-2-1', '2 – Halle']]);
+
+    // Art wechseln: unpassende Angaben fallen weg (Kamera → Rekorder: Kanal und Höhe weg)
+    const after = await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      st.select({ kind: 'sym', id: 'k1', section: s.id });
+      return s.id;
+    });
+    await page.locator('#sdIBody .sd-f', { hasText: 'Art' }).first().locator('select').selectOption('recorder');
+    const k1 = await page.evaluate((id) => window.pdfEditor.studio.project.sections.find((x) => x.id === id).symbols.find((y) => y.id === 'k1'), after);
+    expect([k1.nvr, k1.channel, k1.height]).toEqual([undefined, undefined, undefined]);
     expect(errors).toEqual([]);
   } finally {
     await context.close();

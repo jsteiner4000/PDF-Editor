@@ -522,10 +522,11 @@ export class Studio {
     if (!this.project) return;
     const before = this.snap;
     fn(this.project);
-    // Lageplan und Zugangsdaten gleich halten (im selben Verlaufsschritt)
-    syncAccess(this.project, this.drafts);
+    // Lageplan und Zugangsdaten gleich halten (im selben Verlaufsschritt); die gewählte Zeile der
+    // Zugangsdaten bleibt, auch wenn sie gerade leer ist
+    const adopted = syncAccess(this.project, this.drafts, this.sel.kind === 'device' ? this.sel.id : null);
     this.commit(label, before, key);
-    if (inspector) this.inspector.render();
+    if (inspector || adopted) this.inspector.render();
   }
 
   /** Verlaufsschritt für eine bereits ausgeführte Änderung (z. B. nach dem Ziehen). */
@@ -1063,6 +1064,8 @@ export class Studio {
         fresh(y, 'y');
         if (to) y.kind = 'custom:' + to;
       });
+      // Kamera → Rekorder auf den Rekorder der Kopie
+      for (const y of copy.symbols) if (y.nvr) y.nvr = remap.get(y.nvr) || y.nvr;
       copy.shapes.forEach((z) => fresh(z, 'z'));
       copy.links.forEach((l) => {
         fresh(l, 'l');
@@ -1264,6 +1267,7 @@ export class Studio {
         'Symbol gelöscht',
         () => {
           s.symbols = s.symbols.filter((y) => y.id !== id);
+          for (const x of this.project.sections) if (x.type === 'site') for (const y of x.symbols) if (y.nvr === id) delete y.nvr;
           this.dropLinks(new Set([id]));
           this.dropStations(s, new Set([id]));
           // Zugangsdaten des Geräts gehen mit (Rückgängig holt beides zurück)

@@ -149,8 +149,8 @@ test('Darstellung je Objekt: Ebene, Aufhellen, Beschriftung, Umriss; Plan ausdü
     await row.locator('button', { hasText: 'Aus' }).click();
     s = await site();
     expect(s.thin.motion).toBe('hidden');
-    const hits = await page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.site).hits.filter((h) => h.kind === 'sym').map((h) => h.id));
-    expect(hits).toEqual(['ya']);
+    const hits = () => page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.site).hits.filter((h) => h.kind === 'sym').map((h) => h.id));
+    await expect.poll(hits).toEqual(['ya']);
     expect(await svg()).toContain('Bewegungsmelder');
     await row.locator('button', { hasText: 'Blass' }).click();
     expect((await site()).thin.motion).toBe('faded');
