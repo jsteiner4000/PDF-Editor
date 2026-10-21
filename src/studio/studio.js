@@ -1559,7 +1559,8 @@ ${toPdf}
     else if (item.kind === 'hub') this.select({ kind: 'hub', section });
     else if (item.kind === 'device' || item.kind === 'wifi' || item.kind === 'remote')
       this.select({ kind: item.kind, id: item.id, section });
-    else if (item.kind === 'sym' && !page.site) this.select({ kind: 'sym', id: item.id, section }, { pulse: true });
+    // Geräteliste: Klick bearbeitet das Gerät; „Im Lageplan zeigen“ über das Kontextmenü
+    else if (item.kind === 'sym' && !page.site) this.select({ kind: 'sym', id: item.id, section });
     else if (item.kind === 'sym' || item.kind === 'photo' || item.kind === 'block') this.select({ kind: item.kind, id: item.id, section });
     else if (item.kind === 'section') this.select({ kind: 'section', id: item.id }, { reveal: true });
     else if (item.kind === 'project') this.select({ kind: 'project' });

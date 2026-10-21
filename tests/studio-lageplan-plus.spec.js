@@ -276,8 +276,12 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
       const k = r.width / 595.276;
       return [r.left + (hit.rect[0] + 30) * k, r.top + (hit.rect[1] + hit.rect[3] / 2) * k];
     });
+    // Klick: Gerät bearbeiten (kein Sprung); Rechtsklick > „Im Lageplan zeigen“: springt und leuchtet auf
     await page.mouse.click(...listRow);
     expect(await page.evaluate(() => window.pdfEditor.studio.sel)).toMatchObject({ kind: 'sym', id: 'r2' });
+    await expect(page.locator('.sd-pulse-dot')).toHaveCount(0);
+    await page.mouse.click(...listRow, { button: 'right' });
+    await page.locator('.menu .mi', { hasText: 'Im Lageplan zeigen' }).click();
     await expect(page.locator('.sd-pulse-dot')).toHaveCount(1);
     // Geräteliste: IP aus den Zugangsdaten
     text = await page.evaluate(() => window.pdfEditor.studio.doc.pages.filter((p) => p.section === window.pdfEditor.studio.project.sections.find((x) => x.type === 'site').id).map((p) => p.svg).join(''));
