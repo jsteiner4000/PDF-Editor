@@ -376,12 +376,12 @@ export class FormDesign {
   /**
    * Eigenschaften des gewählten Felds – gegliedert wie der Eigenschaften-Dialog in Acrobat:
    * Allgemein, Darstellung, Optionen (Aktionen, Format, Prüfen und Berechnen beruhen in Acrobat
-   * auf JavaScript, das PDFix bewusst nicht ausführt).
+   * auf JavaScript, das PlantPDF bewusst nicht ausführt).
    */
   propertiesPanel(body, entry) {
     const isText = entry.type === 'text';
     const hasText = isText || entry.type === 'choice';
-    // Darstellung nur, wo PDFix das Aussehen neu zeichnet: Text, Auswahl, eigene Kontrollkästchen
+    // Darstellung nur, wo PlantPDF das Aussehen neu zeichnet: Text, Auswahl, eigene Kontrollkästchen
     const canDraw = hasText || (entry.type === 'checkbox' && entry.ownAppearance);
     const section = (title) => {
       const sec = htmlToElement(
@@ -682,7 +682,7 @@ export class FormDesign {
     body.appendChild(del);
     body.appendChild(
       htmlToElement(
-        '<p class="hint" style="margin-top:12px">Aktionen, Format, Prüfen und Berechnen arbeiten in Acrobat mit JavaScript. PDFix führt aus Sicherheitsgründen kein JavaScript aus und bietet sie daher nicht an.</p>',
+        '<p class="hint" style="margin-top:12px">Aktionen, Format, Prüfen und Berechnen arbeiten in Acrobat mit JavaScript. PlantPDF führt aus Sicherheitsgründen kein JavaScript aus und bietet sie daher nicht an.</p>',
       ),
     );
   }

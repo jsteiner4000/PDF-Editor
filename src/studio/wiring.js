@@ -12,17 +12,22 @@ import { C, PAGE, color, line, n, pill, rect, text } from './svg.js';
 import { STRINGS, tx } from './model.js';
 
 /** Rahmen des Schaltbilds auf Seite 1. */
-export const DIAGRAM = {
-  top: 135.89,
-  bottom: 709.89,
-  hubX: 232,
-  hubW: 132,
-  leftX: 46,
-  rightX: 398,
-  boxW: 152,
-  bottomX: 46,
-  bottomW: 504,
-};
+/**
+ * Maße des Schaltbilds; folgen dem Seitenformat (Querformat: breitere Baugruppen, Mitte bleibt
+ * mittig). Im Hochformat: Baugruppen 152 pt breit, Steuerung bei x = 232.
+ */
+const DIAGRAM_PORTRAIT = { top: 135.89, bottom: 709.89, hubX: 232, hubW: 132, leftX: 46, rightX: 398, boxW: 152, bottomX: 46, bottomW: 504 };
+// Querformat: Steuerung mittig, Baugruppen links und rechts breiter
+const DIAGRAM_LANDSCAPE = (() => {
+  const w = 841.89;
+  const hubW = 132;
+  const boxW = (w - 92 - hubW - 68) / 2;
+  const hubX = (w - hubW) / 2;
+  return { top: 135.89, bottom: 595.276 - 132, hubX, hubW, leftX: 46, rightX: hubX + hubW + 34, boxW, bottomX: 46, bottomW: w - 91.276 };
+})();
+
+/** Maße des Schaltbilds; folgen dem Seitenformat, das gerade gesetzt wird. */
+export const DIAGRAM = new Proxy({}, { get: (_, k) => (PAGE.w > PAGE.h ? DIAGRAM_LANDSCAPE : DIAGRAM_PORTRAIT)[k] });
 
 const GAP = 20; // Abstand untereinander liegender Baugruppen
 const CHILD_GAP = 16; // Abstand Baugruppe → Unterbaugruppe
@@ -296,7 +301,7 @@ export function wiringDiagramSvg(L, section, ts) {
 
 /** Legende unter dem Schaltbild; `seePage`: Seite des Klemmenplans (oder null). */
 export function legendSvg(section, ts, L, seePage) {
-  const base = 733.89;
+  const base = PAGE.h - 108;
   const title = ts.label('legend');
   let s = text(PAGE.left, base, title, { size: 9.5, weight: 700 });
   const used = new Set(L.boxes.map((b) => b.color));
@@ -323,20 +328,20 @@ export function legendSvg(section, ts, L, seePage) {
     s += text(x0 + p.w + 12.19, y, ts.inline(section.badge.text), { size: 8.5, fill: C.body });
     y += 16;
   }
-  if (seePage) s += text(PAGE.left, Math.max(767.89, y), ts.label('seePage', { page: seePage }), { size: 8.5, fill: C.body });
+  if (seePage) s += text(PAGE.left, Math.max(PAGE.h - 74, y), ts.label('seePage', { page: seePage }), { size: 8.5, fill: C.body });
   return s;
 }
 
 /* ---------- Klemmenplan und Hinweise ---------- */
 
 const COLS = [48, 94, 212, 358];
-const COL_RIGHT = [94, 212, 358, PAGE.right];
-const HINT_TEXT_W = 489.28;
+const colRight = () => [94, 212, 358, PAGE.right];
+const hintTextW = () => PAGE.right - PAGE.left - 22;
 
 /** Zellen einer Tabellenzeile: je Spalte die Zeilen [{ text, sec }]. */
 function rowCells(ts, pin) {
   const cell = (value, i, weight = 400, fallback = '') => {
-    const width = COL_RIGHT[i] - COLS[i] - 6;
+    const width = colRight()[i] - COLS[i] - 6;
     const runs = ts.runs(value);
     if (!runs.length && fallback) runs.push({ text: fallback, sec: false });
     return runs.flatMap((r) =>
@@ -349,7 +354,7 @@ function rowCells(ts, pin) {
 function hintLines(ts, hint) {
   return ts
     .runs(hint.text)
-    .flatMap((r) => ts.wrap(r.text, 9, HINT_TEXT_W, 400, r.sec).map((t) => ({ text: t, sec: r.sec })));
+    .flatMap((r) => ts.wrap(r.text, 9, hintTextW(), 400, r.sec).map((t) => ({ text: t, sec: r.sec })));
 }
 
 const hintHeight = (lines) => 14 + 16 + 12 * Math.max(0, lines.length - 1) + 9;
@@ -358,7 +363,8 @@ const hintHeight = (lines) => 14 + 16 + 12 * Math.max(0, lines.length - 1) + 9;
  * Setzt Klemmenplan und Hinweise in Seiten: [{ svg, hits }]. Tabellenzeilen laufen auf
  * Folgeseiten weiter (mit wiederholter Kopfzeile), Hinweiskarten werden nicht geteilt.
  */
-export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
+export function terminalPages(section, ts, { top = 132, bottom = PAGE.bottom } = {}) {
+  const WIDTH = PAGE.right - PAGE.left;
   const pages = [];
   let svg = '';
   let hits = [];
@@ -375,7 +381,7 @@ export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
   };
   const header = () => {
     const h = ts.bi ? 28 : 20;
-    svg += rect(PAGE.left, y, 511, h, { fill: C.navy });
+    svg += rect(PAGE.left, y, WIDTH, h, { fill: C.navy });
     ['pin', 'func', 'connected', 'remark'].forEach((key, i) => {
       svg += text(COLS[i], y + 13, tx(STRINGS[key], ts.lang), { size: 9, weight: 700, fill: '#fff' });
       const en = STRINGS[key].en;
@@ -396,7 +402,7 @@ export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
         flush();
         header();
       }
-      if (i % 2 === 0) svg += rect(PAGE.left, y, 511, h, { fill: C.alt });
+      if (i % 2 === 0) svg += rect(PAGE.left, y, WIDTH, h, { fill: C.alt });
       cells.forEach((lines, col) =>
         lines.forEach((l, k) => {
           svg += text(COLS[col], y + 11 + 10.56 * k, l.text, {
@@ -407,8 +413,8 @@ export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
           });
         }),
       );
-      svg += line(PAGE.left, y + h, 553, y + h, C.rule, 0.5);
-      hits.push({ kind: 'pin', id: pin.id, rect: [PAGE.left, y, 511, h] });
+      svg += line(PAGE.left, y + h, PAGE.right, y + h, C.rule, 0.5);
+      hits.push({ kind: 'pin', id: pin.id, rect: [PAGE.left, y, WIDTH, h] });
       y += h;
     });
     y += 26;
@@ -435,12 +441,12 @@ export function terminalPages(section, ts, { top = 132, bottom = 770 } = {}) {
         const chunk = lines.slice(0, Math.max(1, room));
         lines = lines.slice(chunk.length);
         const h = hintHeight(chunk);
-        svg += rect(PAGE.left, y, 511.276, h, { fill: C.card }) + rect(PAGE.left, y, 4, h, { fill: c });
+        svg += rect(PAGE.left, y, WIDTH, h, { fill: C.card }) + rect(PAGE.left, y, 4, h, { fill: c });
         svg += text(56, y + 14, part ? `${title} (${ts.label('continued')})` : title, { size: 9.8, weight: 700, fill: c });
         chunk.forEach((l, i) => {
           svg += text(56, y + 30 + 12 * i, l.text, { size: 9, fill: l.sec ? C.muted : C.body, italic: l.sec });
         });
-        hits.push({ kind: 'hint', id: hint.id, rect: [PAGE.left, y, 511.276, h] });
+        hits.push({ kind: 'hint', id: hint.id, rect: [PAGE.left, y, WIDTH, h] });
         y += h + 8;
         if (lines.length) flush();
       }

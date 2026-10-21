@@ -209,7 +209,7 @@ export async function screenshots(page, selectors = ['#right', '.page']) {
   await idle(page);
   // Die schwebende Navigation liegt mit Weichzeichner (backdrop-filter) über der Seite – das
   // Ergebnis ist nicht pixelstabil, daher wird sie für die Aufnahme ausgeblendet.
-  // Symbol, Name und Farbwelt sind ab 2.1 bewusst neu (PDFix) und werden nicht mit 1.0 verglichen:
+  // Symbol, Name und Farbwelt sind ab 2.1 bewusst neu (PlantPDF) und werden nicht mit 1.0 verglichen:
   // Für die Aufnahme gelten die alten Farben und der alte Name, die Anordnung bleibt vergleichbar.
   await page.evaluate((legacy) => {
     const style = document.createElement('style');
@@ -337,10 +337,10 @@ export async function uiState(page) {
     const app = window.pdfEditor;
     const q = (s) => document.querySelector(s);
     return {
-      // der Programmname ist ab 2.1 neu (PDFix); verglichen wird nur der Dateiname
+      // der Programmname ist ab 2.1 neu (PlantPDF); verglichen wird nur der Dateiname
       title: document.title
-        .replace(/ – (PDFix|PDF-Editor)$/, ' – <Programm>')
-        .replace(/^(PDFix|PDF-Editor)$/, '<Programm>'),
+        .replace(/ – (PlantPDF|PDFix|PDF-Editor)$/, ' – <Programm>')
+        .replace(/^(PlantPDF|PDFix|PDF-Editor)$/, '<Programm>'),
       pages: app.session ? app.session.numPages : 0,
       pgN: q('#pgN') && q('#pgN').textContent,
       zoomLabel: q('#bZoom') && q('#bZoom').textContent,

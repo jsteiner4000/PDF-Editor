@@ -6,13 +6,15 @@ import { C, PAGE, esc, n, rect, text } from './svg.js';
 import { projectSymbols } from './model.js';
 
 const TOP = 124;
-const BOTTOM = 770;
 const GAP = 14;
 const GRID = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3] };
 
 /** Seiten der Fotodokumentation: [{ svg, hits }]. */
 export function photoPages(section, ts, project) {
-  const [cols, rows] = GRID[section.perPage] || GRID[4];
+  const [c0, r0] = GRID[section.perPage] || GRID[4];
+  // Querformat: Raster gedreht (z. B. 3 nebeneinander statt untereinander)
+  const [cols, rows] = PAGE.w > PAGE.h ? [r0, c0] : [c0, r0];
+  const BOTTOM = PAGE.bottom;
   const perPage = cols * rows;
   const links = new Map(projectSymbols(project, ts.lang).map((s) => [s.id, s]));
   const cellW = (PAGE.right - PAGE.left - GAP * (cols - 1)) / cols;

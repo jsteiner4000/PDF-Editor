@@ -5,23 +5,51 @@
  * Punkte im Projekt sind Anteile der Planfläche (0–1); gemessen wird in pt auf der Seite und über
  * die Bezugsstrecke des Maßstabs in Meter umgerechnet.
  */
-import { PAGE } from './svg.js';
+import { LANDSCAPE, PORTRAIT } from './svg.js';
 
 export const SITE_TOP = 116;
-export const SITE_BOTTOM = 770;
+export const SITE_BOTTOM = PORTRAIT.bottom;
 const LEGEND_ROW = 16;
 /** Feste Legendenhöhe (4 Zeilen): die Planfläche bleibt immer gleich groß, Symbole behalten ihre Stelle. */
 export const LEGEND_ROWS = 4;
 export const LEGEND_H = 24 + LEGEND_ROWS * LEGEND_ROW;
 export { LEGEND_ROW };
 
-/** Planfläche in pt (für alle Lagepläne gleich). */
-export const SITE_AREA = Object.freeze({
-  x: PAGE.left,
-  y: SITE_TOP,
-  w: PAGE.right - PAGE.left,
-  h: SITE_BOTTOM - SITE_TOP - LEGEND_H - 8,
-});
+const areaFor = (d) => Object.freeze({ x: d.left, y: SITE_TOP, w: d.right - d.left, h: d.bottom - SITE_TOP - LEGEND_H - 8 });
+
+/** Planfläche in pt im Hochformat (Standard). */
+export const SITE_AREA = areaFor(PORTRAIT);
+const SITE_AREA_LANDSCAPE = areaFor(LANDSCAPE);
+
+/** Planfläche eines Lageplans (Hoch- oder Querformat). */
+export const siteArea = (site) => (site && site.landscape ? SITE_AREA_LANDSCAPE : SITE_AREA);
+
+/**
+ * Lageplan zwischen Hoch- und Querformat umstellen: alle Punkte so umrechnen, dass sie auf dem
+ * Hintergrund an derselben Stelle bleiben (ohne Hintergrund: Plan unverzerrt mittig). Reichweiten
+ * in pt wachsen bzw. schrumpfen mit, die Meterangaben bleiben dadurch gleich.
+ */
+export function remapSite(site, images, landscape) {
+  const from = siteArea(site);
+  const to = siteArea({ landscape });
+  const img = site.bg && site.bg.image && images[site.bg.image];
+  const turned = img && (site.bg.rotate === 90 || site.bg.rotate === 270);
+  const w = img && img.w ? (turned ? img.h : img.w) : from.w;
+  const h = img && img.h ? (turned ? img.w : img.h) : from.h;
+  const fit = (a) => (img && site.bg.fit === 'cover' ? Math.max : Math.min)(a.w / w, a.h / h);
+  const k = fit(to) / fit(from);
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const map = ([fx, fy]) => [clamp(((fx - 0.5) * from.w * k + to.w / 2) / to.w), clamp(((fy - 0.5) * from.h * k + to.h / 2) / to.h)];
+  for (const y of site.symbols) {
+    [y.x, y.y] = map([y.x, y.y]);
+    if (y.range) y.range = Math.max(10, Math.min(600, y.range * k));
+  }
+  for (const z of site.shapes) z.pts = z.pts.map(map);
+  if (site.scale) {
+    site.scale.a = map(site.scale.a);
+    site.scale.b = map(site.scale.b);
+  }
+}
 
 /** Anteil der Planfläche → Seitenpunkt (pt). */
 export const toPt = ([fx, fy], a = SITE_AREA) => [a.x + fx * a.w, a.y + fy * a.h];
@@ -144,7 +172,8 @@ export function simplify(pts, tol = 0.8) {
 export function metersPerPt(site) {
   const sc = site && site.scale;
   if (!sc) return null;
-  const d = dist(toPt(sc.a), toPt(sc.b));
+  const area = siteArea(site);
+  const d = dist(toPt(sc.a, area), toPt(sc.b, area));
   return d > 0 ? sc.m / d : null;
 }
 

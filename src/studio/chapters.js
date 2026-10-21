@@ -13,8 +13,9 @@ import { STRINGS, TONES, tx } from './model.js';
 import { wrap } from './measure.js';
 
 const TOP = 124;
-const BOTTOM = 770;
-const W = PAGE.right - PAGE.left;
+// Unterkante und Satzbreite: je nach Seitenformat, beim Setzen eines Abschnitts übernommen
+let BOTTOM = PAGE.bottom;
+let W = PAGE.right - PAGE.left;
 const LEAD = 13.5;
 const SIZE = 9.5;
 
@@ -60,6 +61,8 @@ export function referenceTargets(section, lang = 'de') {
  * Seite (für das Inhaltsverzeichnis).
  */
 export function chapterPages(section, ts, project) {
+  BOTTOM = PAGE.bottom;
+  W = PAGE.right - PAGE.left;
   const labels = chapterLabels(section);
   const images = project.images;
   const numbered = section.numbering;

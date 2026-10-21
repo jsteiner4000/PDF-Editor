@@ -1,5 +1,5 @@
 :root {
-  /* PDFix – Arbeitsoberfläche wie Acrobat/Office: kühle Neutraltöne aus einer Grau-Familie, ein
+  /* PlantPDF – Arbeitsoberfläche wie Acrobat/Office: kühle Neutraltöne aus einer Grau-Familie, ein
      Akzent (Himmelblau, für weiße Schrift abgedunkelt: Kontrast ≥ 4,5 : 1). Mitternachtsblau,
      Violett/Magenta/Minze nur in der Wortmarke und den Werkzeug-Symbolen. */
   --brand-ink: #16181d;
@@ -17,7 +17,7 @@
   --acc-h: #1a56c4;
   --acc-soft: #e8f0fd;
   --acc-line: #8db6ff;
-  --brand-red: #e0412f;
+  --brand-accent: #e8620f;
   --t1: #eaf1ff;
   --t1-ink: #1f66e5;
   --t2: #e4faf8;
@@ -240,7 +240,7 @@ kbd {
   display: grid;
   place-items: center;
 }
-/* Wortmarke „PDFix“ (Markenpaket): „PDF“ in Tinte, „ix“ in Markenrot */
+/* Wortmarke „PlantPDF“ (Markenpaket): „Plant“ in Tinte, „PDF“ in Markenorange */
 .wm {
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -249,7 +249,7 @@ kbd {
 .wm em {
   font-style: normal;
   font-weight: 500;
-  color: var(--brand-red);
+  color: var(--brand-accent);
 }
 .sep {
   width: 1px;

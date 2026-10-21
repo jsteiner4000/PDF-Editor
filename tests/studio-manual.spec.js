@@ -82,6 +82,7 @@ test('Anleitung: Positionen per Klick setzen, ziehen, Esc beendet; Schritte und 
       await page.mouse.click(box.x + (img[0] + img[2] * fx) * k, box.y + (img[1] + img[3] * fy) * k);
     };
     await click(0.3, 0.4);
+    await expect(page.locator('#sdIBody input:focus')).toHaveCount(1);
     await page.keyboard.type('Taster');
     await click(0.7, 0.5);
     await page.keyboard.press('Escape');

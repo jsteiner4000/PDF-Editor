@@ -49,7 +49,7 @@ import {
   uid,
 } from './model.js';
 import { documentLabel, renderDocument } from './render.js';
-import { PAGE, typesetter } from './svg.js';
+import { LANDSCAPE, PAGE, PORTRAIT, isLandscape, typesetter } from './svg.js';
 import { DIAGRAM } from './wiring.js';
 import { blockHasData } from './access.js';
 import { photoDate } from './exif.js';
@@ -63,7 +63,8 @@ import { Inspector } from './inspector.js';
 import { symbolIconSvg } from './site.js';
 import { hitsShape, siteTools, toolOf } from './site-tools.js';
 import { manualEdit } from './manual-edit.js';
-import { toFrac } from './geo.js';
+import { overlayEdit } from './overlay-edit.js';
+import { remapSite, toFrac } from './geo.js';
 
 export { deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates };
 
@@ -417,7 +418,7 @@ export class Studio {
   }
 
   /**
-   * Nach dem Öffnen einer PDF: enthält sie ein PDFix-Projekt, Weiterbearbeiten anbieten. Entpackt
+   * Nach dem Öffnen einer PDF: enthält sie ein PlantPDF-Projekt, Weiterbearbeiten anbieten. Entpackt
    * wird das Projekt erst beim Klick (mit Größengrenze).
    */
   offerProject(session) {
@@ -606,6 +607,7 @@ export class Studio {
     const { kind, id, section } = this.sel;
     if (kind === 'project') return this.project;
     if (kind === 'section') return this.section(id) || null;
+    if (kind === 'overlay') return this.overlayById(id);
     const s = this.section(section);
     if (!s) return null;
     if (kind === 'box') return s.boxes.find((b) => b.id === id) || null;
@@ -696,7 +698,9 @@ export class Studio {
     const scroll = $('#sdScroll');
     if (this.zoom != null) return this.zoom * PX_PER_PT;
     const avail = Math.max(200, scroll.clientWidth - 64);
-    return Math.min(1.5 * PX_PER_PT, avail / PAGE.w);
+    // an die breiteste Seite anpassen (Querformat)
+    const widest = this.project && this.project.sections.some(isLandscape) ? LANDSCAPE.w : PORTRAIT.w;
+    return Math.min(1.5 * PX_PER_PT, avail / widest);
   }
 
   layout() {
@@ -730,9 +734,9 @@ export class Studio {
       return;
     }
     this.doc = doc;
-    const w = PAGE.w * this.scale;
-    const h = PAGE.h * this.scale;
     doc.pages.forEach((page, i) => {
+      const w = (page.w || PAGE.w) * this.scale;
+      const h = (page.h || PAGE.h) * this.scale;
       let el = host.children[i];
       if (!el) {
         el = htmlToElement('<div class="sd-page"><div class="sd-svg"></div><div class="sd-marks"></div><span class="sd-pnum"></span></div>');
@@ -864,10 +868,12 @@ export class Studio {
           (kind === 'block' && hit.kind === 'block' && hit.id === id) ||
           (kind === 'sym' && hit.kind === 'sym' && hit.id === id) ||
           (kind === 'photo' && hit.kind === 'photo' && hit.id === id) ||
-          (kind === 'hub' && hit.kind === 'hub');
+          (kind === 'hub' && hit.kind === 'hub') ||
+          (kind === 'overlay' && hit.kind === 'overlay' && hit.id === id);
         if (!match) continue;
         const mark = this.markEl(hit.rect, 'sd-sel');
         if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
+        if (kind === 'overlay') mark.appendChild(htmlToElement('<span class="sd-ogrip" title="Größe ziehen"></span>'));
         marks.appendChild(mark);
       }
       if (page.site) this.renderSiteSelection(el, page);
@@ -1124,6 +1130,21 @@ export class Studio {
     );
   }
 
+  /** Abschnitt im Hoch- oder Querformat; Lagepläne behalten dabei ihre Lage auf dem Hintergrund. */
+  setLandscape(section, landscape) {
+    this.change(
+      landscape ? 'Querformat' : 'Hochformat',
+      () => {
+        if (section.type === 'site') remapSite(section, this.project.images, landscape);
+        if (landscape) section.landscape = true;
+        else delete section.landscape;
+      },
+      { inspector: true },
+    );
+    // Breite neu einpassen (die Seite ist jetzt breiter bzw. schmaler)
+    if (this.zoom == null) this.layout();
+  }
+
   addSection(type) {
     const section =
       type === 'wiring'
@@ -1193,6 +1214,10 @@ export class Studio {
     const { kind, id, section } = this.sel;
     const s = this.section(section);
     if (kind === 'section') return this.removeSection(id);
+    if (kind === 'overlay') {
+      this.sel = { kind: 'section', id: section };
+      return this.change('Element gelöscht', (p) => (p.overlays = p.overlays.filter((o) => o.id !== id)), { inspector: true });
+    }
     if (!s) return;
     if (kind === 'box') {
       this.sel = { kind: 'section', id: section };
@@ -1332,6 +1357,7 @@ ${
       : `<span class="rb-note">Abschnitt in der Projektmappe wählen – hier erscheinen seine Befehle.</span>`;
     bar.innerHTML = `
 <button class="rb c6" data-act="section">${icon('plus')}Abschnitt${icon('chev', 's caret')}</button>
+<button class="rb c3" data-act="insert" title="Bild oder QR-Code frei auf die Seite legen">${icon('image')}Bild / QR${icon('chev', 's caret')}</button>
 <span class="rb-sep"></span>
 ${context}
 `;
@@ -1339,6 +1365,7 @@ ${context}
       btn.addEventListener('click', () => {
         const act = btn.dataset.act;
         if (act === 'section') this.addSectionMenu(btn);
+        else if (act === 'insert') this.insertMenu(btn);
         else if (act === 'box') this.addBox();
         else if (act === 'pin') this.addPin();
         else if (act === 'hint') this.addHint();
@@ -1369,8 +1396,8 @@ ${context}
     const page = this.doc.pages[+el.dataset.index];
     if (!page) return null;
     const r = el.getBoundingClientRect();
-    const x = ((ev.clientX - r.left) / r.width) * PAGE.w;
-    const y = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    const x = (ev.clientX - r.left) / this.scale;
+    const y = (ev.clientY - r.top) / this.scale;
     let item = null;
     for (let i = page.hits.length - 1; i >= 0; i--) {
       const h = page.hits[i];
@@ -1460,6 +1487,12 @@ ${context}
       ev.preventDefault();
       return toolOf(this.armed) ? this.toolDown(ev, hit) : this.placeSymbol(hit, ev);
     }
+    // freies Bild bzw. QR-Code: Ecke zieht die Größe, sonst verschieben
+    if (target && target.contains('sd-ogrip') && this.sel.kind === 'overlay') return this.startOverlayDrag(ev, hit, 'oresize');
+    if (item && item.kind === 'overlay') {
+      this.select({ kind: 'overlay', id: item.id, section });
+      return this.startOverlayDrag(ev, hit, 'omove');
+    }
     if (item && item.kind === 'sym' && page.site) {
       this.select({ kind: 'sym', id: item.id, section });
       return this.startSymbolDrag(ev, hit, 'move');
@@ -1520,6 +1553,7 @@ ${context}
   dragMove(ev) {
     const d = this.drag;
     if (d.manual) return this.markDragMove(ev);
+    if (d.overlay) return this.overlayDragMove(ev);
     if (d.site) return this.siteDragMove(ev);
     const perPt = this.scale * d.scale;
     const dy = (ev.clientY - d.startY) / perPt;
@@ -1531,9 +1565,10 @@ ${context}
       box.y = Math.max(0, Math.round(d.y + dy));
       if (box.side !== 'bottom' && !box.parent) {
         const r = d.el.getBoundingClientRect();
-        const x = ((ev.clientX - r.left) / r.width) * PAGE.w;
-        if (x < PAGE.w / 2 - 70) box.side = 'left';
-        else if (x > PAGE.w / 2 + 70) box.side = 'right';
+        const x = (ev.clientX - r.left) / this.scale;
+        const mid = r.width / this.scale / 2;
+        if (x < mid - 70) box.side = 'left';
+        else if (x > mid + 70) box.side = 'right';
       }
     } else if (d.mode === 'resize') box.h = Math.max(20, Math.round(d.h + dy));
     else if (d.mode === 'pins') box.pinY = Math.max(4, Math.min(d.h - 4, Math.round(d.pinY + dy)));
@@ -1561,6 +1596,8 @@ ${context}
       vertex: 'Punkt verschoben',
       ref: 'Bezugsstrecke angepasst',
       mark: 'Position verschoben',
+      omove: 'Element verschoben',
+      oresize: 'Größe geändert',
     }[d.mode];
     this.commit(label, d.before);
     this.inspector.render();
@@ -1687,6 +1724,9 @@ ${context}
     if (!symbolInfo(s, this.armed)) return toast('Dieses eigene Symbol gehört zu einem anderen Lageplan.', 'warn', 4000);
     const a = hit.page.site.area;
     const sym = newSymbol(this.armed, Math.max(0, Math.min(1, (hit.x - a.x) / a.w)), Math.max(0, Math.min(1, (hit.y - a.y) / a.h)));
+    // Meldegruppenmodul: Typ wie das zuletzt gesetzte
+    const lastMgm = sym.kind === 'mgm' && this.project.sections.flatMap((x) => (x.type === 'site' ? x.symbols : [])).filter((y) => y.kind === 'mgm').at(-1);
+    if (lastMgm) sym.groups = lastMgm.groups;
     this.change('Symbol gesetzt', () => s.symbols.push(sym));
     // Setzen endet: das neue Symbol ist gewählt und lässt sich sofort verschieben und ausrichten
     this.disarm();
@@ -1737,8 +1777,8 @@ ${context}
     if (!d.moved && Math.hypot(ev.clientX - d.startX, ev.clientY - d.startY) < 3) return;
     d.moved = true;
     const r = d.el.getBoundingClientRect();
-    const px = ((ev.clientX - r.left) / r.width) * PAGE.w;
-    const py = ((ev.clientY - r.top) / r.height) * PAGE.h;
+    const px = (ev.clientX - r.left) / this.scale;
+    const py = (ev.clientY - r.top) / this.scale;
     if (d.shape) {
       this.shapeDragMove(d, px, py, ev.shiftKey);
       return this.schedule();
@@ -1773,9 +1813,9 @@ ${context}
     if (!site) return;
     const kinds = [...SYMBOLS.filter((k) => !k.link).map((k) => k.id), ...site.custom.map((c) => 'custom:' + c.id)];
     const el = htmlToElement(
-      `<div class="menu sd-gallery" role="dialog" aria-label="Objekt wählen"><h5>Symbole</h5><div class="sd-symbols"></div><h5>Richtfunk</h5><div class="sd-symbols" data-g="radio"></div><h5>Zeichnen</h5><div class="sd-symbols" data-g="draw"></div><hr><button type="button" class="mi" data-custom>${icon('plus', 's')}<span>Eigenes Symbol hochladen …</span></button></div>`,
+      `<div class="menu sd-gallery" role="dialog" aria-label="Objekt wählen"><h5>Symbole</h5><div class="sd-symbols"></div><h5>Installation</h5><div class="sd-symbols" data-g="infra"></div><h5>Richtfunk</h5><div class="sd-symbols" data-g="radio"></div><h5>Zeichnen</h5><div class="sd-symbols" data-g="draw"></div><hr><button type="button" class="mi" data-custom>${icon('plus', 's')}<span>Eigenes Symbol hochladen …</span></button></div>`,
     );
-    const [grid, radio, draw] = el.querySelectorAll('.sd-symbols');
+    const [grid, infra, radio, draw] = el.querySelectorAll('.sd-symbols');
     const tile = (cls, kind, label, art, parent) => {
       const on = this.armed === kind;
       const b = htmlToElement(
@@ -1789,7 +1829,7 @@ ${context}
     };
     for (const kind of kinds) {
       const info = symbolInfo(site, kind);
-      tile('sd-symbol', kind, tx(info.name, 'de'), symbolIconSvg(info, this.project.images, 22), grid);
+      tile('sd-symbol', kind, tx(info.name, 'de'), symbolIconSvg(info, this.project.images, 22), info.group === 'infra' ? infra : grid);
     }
     for (const [tool, label] of [['ptp', 'Punkt-zu-Punkt'], ['ptmp', 'Punkt-zu-Mehrpunkt'], ['line', 'Linie'], ['free', 'Freihand'], ['fence', 'Zaun / Zone']])
       tile('sd-tool', 'tool:' + tool, label, TOOL_ART[tool], tool.startsWith('pt') ? radio : draw);
@@ -2099,7 +2139,7 @@ ${context}
     } else if (!inField && mod && ev.shiftKey && (key === 'arrowup' || key === 'arrowdown') && this.siteSelected()) {
       ev.preventDefault();
       this.moveLayer(key === 'arrowup' ? 'forward' : 'backward');
-    } else if (!inField && !mod && (this.sel.kind === 'sym' || this.sel.kind === 'shape') && key.startsWith('arrow')) {
+    } else if (!inField && !mod && (this.sel.kind === 'sym' || this.sel.kind === 'shape' || this.sel.kind === 'overlay') && key.startsWith('arrow')) {
       const step = ev.shiftKey ? 10 : 1;
       const d = { arrowleft: [-step, 0], arrowright: [step, 0], arrowup: [0, -step], arrowdown: [0, step] }[key];
       if (d && this.nudge(...d)) ev.preventDefault();
@@ -2234,6 +2274,26 @@ ${context}
     }
   }
 
+  /**
+   * Dokumentation als PDF im Bereich „PDF“ öffnen – zum Bearbeiten, Unterschreiben oder Ergänzen.
+   * Die Dokumentation bleibt im eigenen Reiter offen.
+   */
+  async openAsPdf() {
+    if (!this.project || !canMakePdf()) return false;
+    await this.flush();
+    const secrets = await this.askSecrets();
+    if (secrets === 'cancel') return false;
+    const show = secrets == null ? null : secrets === 'show';
+    try {
+      const bytes = await withBusy(() => this.buildPdf(show), 100);
+      return await this.app.openBytes(bytes, this.fileName(), null);
+    } catch (err) {
+      console.error('Im PDF-Bereich öffnen', err);
+      toast(failMessage(err), 'err', 6000);
+      return false;
+    }
+  }
+
   async print() {
     if (!this.project) return;
     await this.flush();
@@ -2341,7 +2401,7 @@ function applyCompany(project) {
   } catch {}
 }
 
-Object.assign(Studio.prototype, siteTools, manualEdit);
+Object.assign(Studio.prototype, siteTools, manualEdit, overlayEdit);
 
 /** Kleine Bilder für die Werkzeuge in der Galerie (22 × 22). */
 const TOOL_ART = {

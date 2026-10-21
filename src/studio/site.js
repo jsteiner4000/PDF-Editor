@@ -13,8 +13,7 @@ import { wrap } from './measure.js';
 import {
   LEGEND_ROW,
   LEGEND_ROWS,
-  SITE_AREA,
-  SITE_BOTTOM as BOTTOM,
+  siteArea,
   centroid,
   formatArea,
   formatLength,
@@ -45,6 +44,12 @@ const GLYPHS = {
   intercom: '<circle cx="12" cy="9" r="3.2"/><path d="M6 19.5a6 6 0 0 1 12 0z"/>',
   router: '<rect x="4" y="13.5" width="16" height="5.5" rx="1.5"/><path d="M8 16.2h.1M11.5 16.2h.1M7 10.5a7 7 0 0 1 10 0M9.5 8a3.5 3.5 0 0 1 5 0"/>',
   recorder: '<rect x="4" y="7" width="16" height="10" rx="1.5"/><circle cx="15.5" cy="12" r="2"/><path d="M7 12h4"/>',
+  // Meldegruppenmodul: Modul mit Klemmen
+  mgm: '<rect x="5" y="6" width="14" height="12" rx="1.5"/><path d="M8 18v2.5M12 18v2.5M16 18v2.5M8.5 10.5h7M8.5 13.5h4"/>',
+  mast: '<path d="M12 3.5V20.5M8 20.5h8M12 7l-4 3M12 7l4 3"/><circle cx="12" cy="5" r="1.4" fill="#fff"/>',
+  cabinet: '<rect x="6" y="4" width="12" height="16" rx="1.5"/><path d="M12.8 7.5 10.2 12.2h3.6l-2.6 4.6"/>',
+  junction: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M3.5 12h3M17.5 12h3M12 3.5v3M12 17.5v3"/>',
+  rack: '<rect x="6" y="3.5" width="12" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h7"/>',
   radio: '<path d="M6.5 6.5a8 8 0 0 0 11 11z"/><path d="M12 12l4.5-4.5"/><path d="M15.5 4.5a4 4 0 0 1 4 4"/><path d="M9 20h6"/>',
 };
 
@@ -282,7 +287,7 @@ export function opacityOf(section, it) {
  */
 export function sitePages(section, ts, images, project = null) {
   const kinds = usedKinds(section);
-  const area = SITE_AREA;
+  const area = siteArea(section);
   const labels = symbolLabels(section, project);
   const mpp = metersPerPt(section);
   const clip = (inner) =>
@@ -442,14 +447,18 @@ function stationNote(section, sym, labels, project) {
   return { de: join('de'), en: join('en') };
 }
 
-const COLS = [
+/** Spalten der Geräteliste; die Bemerkung nimmt die übrige Breite (im Querformat mehr). */
+const listCols = () => [
   { x: 48, w: 44, key: 'nr', label: 'nr', bold: true },
   { x: 92, w: 120, key: 'type', label: 'type' },
   { x: 212, w: 150, key: 'name', label: 'name' },
-  { x: 362, w: 191, key: 'note', label: 'remark' },
+  { x: 362, w: PAGE.right - 362, key: 'note', label: 'remark' },
 ];
 
 function listPages(section, ts, labels, project) {
+  const COLS = listCols();
+  const BOTTOM = PAGE.bottom;
+  const WIDTH = PAGE.right - PAGE.left;
   const pages = [];
   let svg = '';
   let hits = [];
@@ -457,7 +466,7 @@ function listPages(section, ts, labels, project) {
   const bi = ts.bi;
   const head = () => {
     const h = bi ? 28 : 20;
-    svg += rect(PAGE.left, y, 511.276, h, { fill: C.navy });
+    svg += rect(PAGE.left, y, WIDTH, h, { fill: C.navy });
     for (const c of COLS) {
       const l = STRINGS[c.label];
       svg += text(c.x, y + 13, tx(l, ts.lang), { size: 9, weight: 700, fill: '#fff' });
@@ -490,7 +499,7 @@ function listPages(section, ts, labels, project) {
       flush();
       head();
     }
-    if (i % 2 === 0) svg += rect(PAGE.left, y, 511.276, h, { fill: C.alt });
+    if (i % 2 === 0) svg += rect(PAGE.left, y, WIDTH, h, { fill: C.alt });
     for (const c of COLS)
       cells[c.key].forEach((l, k) => {
         svg += text(c.x, y + 11 + 10.56 * k, l.text, {
@@ -501,7 +510,7 @@ function listPages(section, ts, labels, project) {
         });
       });
     svg += line(PAGE.left, y + h, PAGE.right, y + h, C.rule, 0.5);
-    hits.push({ kind: 'sym', id: sym.id, rect: [PAGE.left, y, 511.276, h] });
+    hits.push({ kind: 'sym', id: sym.id, rect: [PAGE.left, y, WIDTH, h] });
     y += h;
   });
   pages.push({ kind: 'list', svg, hits });

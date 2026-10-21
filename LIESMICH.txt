@@ -1,37 +1,40 @@
-PDFix
-==========
+PlantPDF
+========
 
-PDFix – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
+PlantPDF – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbeiten, Seiten
 einfügen, löschen und ordnen, Dokumente unterschreiben. Im Bereich „Dokumentation“ entstehen
 Kundendokumentationen (Lageplan, Anschlussplan, Zugangsdaten, Fotos) sowie
 Bedienungsanleitungen und Technische Beschreibungen als PDF. Alles bleibt auf Ihrem
 Rechner – es werden keine Daten ins Internet übertragen.
+
+Bis Version 2.13 hieß das Programm „PDFix“. Ein Update übernimmt Einstellungen,
+Unterschriften, eigene Schriften, Entwürfe und die Wahl als Standardprogramm.
 
 
 STARTEN
 -------
 Windows 10/11
 
-Installation: „PDFix-Setup-2.13.0.exe“ ausführen. PDFix wird nur
+Installation: „PlantPDF-Setup-2.14.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
-Im Installer gibt es die Option „PDFix zum Standardprogramm für PDF-Dateien
+Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
 machen“ (voreingestellt). Windows lässt Programme nicht selbst zum Standard
 werden: Nach der Installation öffnet sich deshalb die Windows-Einstellung
-„Standard-Apps“ bei PDFix – dort mit einem Klick bestätigen. Danach öffnet
-ein Doppelklick auf eine PDF direkt PDFix. Wurde die Option abgewählt:
-Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PDFix“ >
+„Standard-Apps“ bei PlantPDF – dort mit einem Klick bestätigen. Danach öffnet
+ein Doppelklick auf eine PDF direkt PlantPDF. Wurde die Option abgewählt:
+Rechtsklick auf eine PDF > „Öffnen mit“ > „Andere App auswählen“ > „PlantPDF“ >
 „Immer“.
 
 Falls Windows warnt („Der Computer wurde durch Windows geschützt“): Das
 Programm ist nicht digital signiert. „Weitere Informationen“ > „Trotzdem
 ausführen“.
 
-PDF-Dateien haben als Standardprogramm PDFix ein eigenes Dokument-Symbol
-(Blatt mit PDFix-Zeichen und „PDF“), damit man sie vom Programm unterscheidet.
+PDF-Dateien haben als Standardprogramm PlantPDF ein eigenes Dokument-Symbol
+(Blatt mit PlantPDF-Zeichen und „PDF“), damit man sie vom Programm unterscheidet.
 Zeigt Windows noch das alte Symbol, hilft eine Abmeldung oder ein Neustart.
 
-Drucken ohne Öffnen (Outlook-Schnelldruck): Ist PDFix das Standardprogramm für
+Drucken ohne Öffnen (Outlook-Schnelldruck): Ist PlantPDF das Standardprogramm für
 PDF-Dateien, druckt es Anhänge über Outlooks „Schnelldruck“ und über
 Rechtsklick > „Drucken“ im Explorer direkt auf dem Standarddrucker – ohne
 Fenster. Klappt das nicht (kein Drucker, geschützte Datei), erscheint eine
@@ -39,11 +42,11 @@ Meldung.
 
 Neue Version: einfach den neuen Installer ausführen – Einstellungen, eigene
 Schriften und „Zuletzt geöffnet“ bleiben erhalten.
-Deinstallieren: Windows-Einstellungen > Apps > „PDFix“ > Deinstallieren.
+Deinstallieren: Windows-Einstellungen > Apps > „PlantPDF“ > Deinstallieren.
 Die persönlichen Einstellungen liegen in %APPDATA%\PDF-Editor und können danach
 von Hand gelöscht werden.
 
-PDFix stellt keine Verbindung zum Internet her, sucht nicht nach
+PlantPDF stellt keine Verbindung zum Internet her, sucht nicht nach
 Updates und sendet keine Daten.
 
 Zwei Arbeitsbereiche – oben links umschalten:
@@ -53,13 +56,13 @@ Zwei Arbeitsbereiche – oben links umschalten:
   zum Bearbeiten.
 Jeder Bereich hat seine eigene Startseite und Farbe (PDF blau, Dokumentation
 petrol). Beim Umschalten bleibt alles geöffnet; ein Punkt am Umschalter zeigt,
-dass im anderen Bereich noch etwas offen ist. PDFix startet im zuletzt
+dass im anderen Bereich noch etwas offen ist. PlantPDF startet im zuletzt
 genutzten Bereich, beim Öffnen einer PDF-Datei immer im Bereich „PDF“.
 Umschalten auch per Tastatur: Strg+Umschalt+1 (PDF), Strg+Umschalt+2
 (Dokumentation) oder im Menü „Ansicht“. Alle Werkzeuge des Werkzeugbands stehen
 zusätzlich im Menü „Werkzeuge“.
 
-Bedienung: PDFix startet bildschirmfüllend (F11 = Vollbild). Oben in einer Zeile:
+Bedienung: PlantPDF startet bildschirmfüllend (F11 = Vollbild). Oben in einer Zeile:
 Menüs „Datei“ bis „Hilfe“ (Alt oder F10 wechselt per Tastatur hinein), der
 Umschalter, die Reiter der geöffneten Dokumente und Speichern. Darunter das Werkzeugband. Wählt
 man ein Werkzeug (z. B. „Bearbeiten“), tritt seine Befehlsleiste an die Stelle
@@ -71,7 +74,7 @@ PDF ÖFFNEN
 „Datei öffnen“ klicken oder die PDF-Datei einfach ins Fenster ziehen.
 Zuletzt geöffnete Dateien erscheinen auf der Startseite.
 Desktop-App: außerdem per Doppelklick bzw. „Öffnen mit“ oder durch Ziehen der
-PDF auf das Programmsymbol. Läuft PDFix schon, öffnet sich die Datei
+PDF auf das Programmsymbol. Läuft PlantPDF schon, öffnet sich die Datei
 im vorhandenen Fenster. Der Fenstertitel zeigt den Dateinamen, „(Bearbeitet)“
 steht für ungespeicherte Änderungen.
 
@@ -90,7 +93,7 @@ gesperrt.
 Gleiche Darstellung wie in Acrobat: Manche Formulare verlangen, dass jedes
 Programm die Felder selbst neu zeichnet. Acrobat nimmt dafür die vorgesehene
 Schrift (z. B. Calibri), Chrome und andere eine Ersatzschrift – deshalb sahen
-solche Formulare je nach Programm verschieden aus. PDFix nutzt in diesem Fall
+solche Formulare je nach Programm verschieden aus. PlantPDF nutzt in diesem Fall
 die in der Datei gespeicherten Feldbilder und speichert die Datei so, dass auch
 andere Programme diese Bilder zeigen.
 Eingetragene Werte sind Formularfelder, keine Seitenschrift: Sie werden
@@ -117,7 +120,7 @@ Werkzeug „Formularfelder“ im Werkzeugband:
     Rechtschreibprüfung, Kennwort (verdeckte Eingabe), Zeichenbegrenzung,
     Kammfeld (ein Kästchen je Zeichen).
   Aktionen, Format, Prüfen und Berechnen arbeiten in Acrobat mit JavaScript;
-  PDFix führt aus Sicherheitsgründen kein JavaScript aus und bietet sie nicht
+  PlantPDF führt aus Sicherheitsgründen kein JavaScript aus und bietet sie nicht
   an.
 - Ausgeblendete Felder erscheinen im Werkzeug blass und lassen sich wieder
   einblenden.
@@ -249,7 +252,7 @@ diesen Ordner löscht, löscht sie mit.
 Umstieg von Version 1.0: Beim ersten Start stellt der Editor seinen Speicher
 um (eigene Schriften und „Zuletzt geöffnet“ bleiben erhalten). Ist
 dabei noch ein Fenster mit PDF-Editor 1.0 geöffnet, erscheint der Hinweis
-„Bitte die anderen Fenster von PDFix schließen“ – danach geht es normal
+„Bitte die anderen Fenster von PlantPDF schließen“ – danach geht es normal
 weiter. Achtung: Nach der Umstellung kann Version 1.0 diesen Speicher nicht mehr
 öffnen (sie startet dann ohne eigene Schriften und ohne „Zuletzt geöffnet“).
 
@@ -300,12 +303,12 @@ SPEICHERN
 „Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
 (Strg+Umschalt+S) legt eine neue an. Jede Änderung lässt sich mit Strg+Z
 rückgängig machen und mit Strg+Y wiederholen.
-Beim Schließen mit ungespeicherten Änderungen fragt PDFix nach
+Beim Schließen mit ungespeicherten Änderungen fragt PlantPDF nach
 („Speichern“, „Nicht speichern“, „Abbrechen“).
 
 Aktive Inhalte entfernen: PDF-Dateien können JavaScript, Programmstarts
 („Launch“-Links), Formular-Versand und eingebettete Dateien enthalten. Der
-PDFix führt nichts davon aus – würde sie beim Speichern aber unverändert
+PlantPDF führt nichts davon aus – würde sie beim Speichern aber unverändert
 weitergeben, z. B. aus einem zugelieferten Datenblatt in Ihre Anleitung.
 Deshalb entfernt „Speichern“ sie standardmäßig und meldet, was entfernt wurde.
 Text, Bilder, normale Web-Links und Formularfelder bleiben. Skripte in
@@ -405,6 +408,12 @@ eine eigene Geräteliste; die Nummern zählen über alle Pläne durch (Plan 1:
 K 1–K 4, Plan 2: ab K 5), damit jede Nummer – auch in den Zugangsdaten – nur
 einmal vorkommt.
 
+Installation: In der Galerie „Objekt“ stehen unter „Installation“
+Meldegruppenmodul, Mast, Schaltkasten, Anschlusskasten und Netzwerkschrank.
+Beim Meldegruppenmodul wählt man rechts den Typ (MGM 2, MGM 5 oder eine andere
+Zahl); die Bezeichnung lautet dann MGM-2-1, MGM-2-2, MGM-5-1 … – jeder Typ zählt
+für sich.
+
 Zugangsdaten: Kameras, Rekorder, Antennen, Router, Türsprechstellen,
 Zutrittsleser und Alarmzentralen stehen automatisch unter „Zugangsdaten ›
 Geräte-Zugänge“. IP-Adresse und Benutzer (beliebig viele, je mit Passwort und
@@ -443,6 +452,28 @@ Eigene Vorlagen: Projekt wählen › „Als Vorlage speichern …“. Die Vorlag
 danach auf der Startseite unter „Eigene Vorlagen“ – mit Logo, Firma,
 Gestaltung und allen Inhalten (ohne Passwörter); ein Klick startet eine neue
 Dokumentation damit. Entfernen: Papierkorb auf der Kachel oder Entf.
+
+
+SEITEN, BILDER UND QR-CODES (BEREICH DOKUMENTATION)
+---------------------------------------------------
+Querformat: Abschnitt wählen › rechts „Seite“ › Querformat. Gilt für Lageplan,
+Anschlussplan, Zugangsdaten, Fotos und Kapitel; Deckblatt und Inhalt bleiben
+hoch. Symbole und Zeichnungen bleiben beim Umschalten an ihrer Stelle auf dem
+Hintergrund. Die PDF enthält dann hoch- und querformatige Seiten.
+
+Bild / QR: Knopf im Werkzeugband. Bild oder QR-Code landet auf der Seite in der
+Mitte der Ansicht (im gewählten Abschnitt) und lässt sich frei verschieben,
+am Griff unten rechts vergrößern, mit den Pfeiltasten genau setzen und mit Entf
+löschen. Der QR-Code enthält die Seriennummer eines Geräts aus den
+Zugangsdaten (Gerätedaten › Seriennummer) – für die P2P-Einwahl per App –
+und folgt Änderungen automatisch; alternativ eigener Text.
+
+Deckblatt: links 25 mm Heftrand für die Lochung, Schrift groß genug zum
+Ausdrucken.
+
+Im PDF-Bereich öffnen: Knopf oben rechts (Desktop-App). Die Dokumentation wird
+als PDF erstellt und im Bereich „PDF“ geöffnet – zum Unterschreiben,
+Bearbeiten oder Seiten ergänzen. Die Dokumentation bleibt offen.
 
 
 TASTENKÜRZEL

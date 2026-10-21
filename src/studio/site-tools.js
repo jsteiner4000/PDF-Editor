@@ -12,7 +12,7 @@ import { PAGE } from './svg.js';
 import { SHAPE_TYPES, newLink, newShape, newSymbol, renumberByPosition, symbolInfo, symbolLabels, tx } from './model.js';
 import { siteOrder } from './site.js';
 import { showMenu } from '../ui/menu.js';
-import { SITE_AREA, formatLength, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
+import { formatLength, siteArea, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
 
 /** Werkzeuge: Kennung → Name (für Hinweis, Wiederholen). */
 export const TOOLS = {
@@ -103,9 +103,15 @@ export const siteTools = {
   /** Gewähltes Symbol bzw. gewählte Zeichnung mit den Pfeiltasten verschieben (pt). */
   nudge(dx, dy) {
     const { kind, id, section } = this.sel;
+    if (kind === 'overlay') {
+      const o = this.overlayById(id);
+      if (!o) return false;
+      this.change('Element verschoben', () => ((o.x += dx), (o.y += dy)), { key: 'nudge:' + id });
+      return true;
+    }
     const s = this.section(section);
     if (!s || s.type !== 'site') return false;
-    const a = SITE_AREA;
+    const a = siteArea(s);
     const fx = dx / a.w;
     const fy = dy / a.h;
     const clamp = (v) => Math.max(0, Math.min(1, v));
@@ -215,7 +221,7 @@ export const siteTools = {
     if (!d) return;
     const r = d.el.getBoundingClientRect();
     const a = d.page.site.area;
-    let p = [((ev.clientX - r.left) / r.width) * PAGE.w, ((ev.clientY - r.top) / r.height) * PAGE.h];
+    let p = [(ev.clientX - r.left) / this.scale, (ev.clientY - r.top) / this.scale];
     p = [Math.max(a.x, Math.min(a.x + a.w, p[0])), Math.max(a.y, Math.min(a.y + a.h, p[1]))];
     const tool = toolOf(this.armed);
     if (d.stroke) {
@@ -381,7 +387,8 @@ export const siteTools = {
     const marks = el.querySelector('.sd-marks');
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', cls);
-    svg.setAttribute('viewBox', `0 0 ${PAGE.w} ${PAGE.h}`);
+    const page = this.doc && this.doc.pages[+el.dataset.index];
+    svg.setAttribute('viewBox', `0 0 ${(page && page.w) || PAGE.w} ${(page && page.h) || PAGE.h}`);
     svg.setAttribute('preserveAspectRatio', 'none');
     marks.appendChild(svg);
     return svg;

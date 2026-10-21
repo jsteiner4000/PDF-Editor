@@ -1,5 +1,5 @@
 /**
- * Erscheinungsbild: PDFix-Symbol und -Name (Favicon, Kopfzeile, Startseite) und eine Kontextleiste,
+ * Erscheinungsbild: PlantPDF-Symbol und -Name (Favicon, Kopfzeile, Startseite) und eine Kontextleiste,
  * deren Aktionen auch bei schmalem Fenster vollständig sichtbar bleiben.
  */
 import { test, expect } from '@playwright/test';
@@ -11,17 +11,17 @@ import { launch, openPdf, idle } from './helpers.js';
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const GRAFIK = readFileSync(path.join(DIR, 'fixtures', 'grafik.pdf'));
 
-test.describe('PDFix-Symbol und Name', () => {
+test.describe('PlantPDF-Symbol und Name', () => {
   test('Favicon, Kopfzeile und Startseite nutzen das neue Symbol und den neuen Namen', async ({
     browser,
   }) => {
     const { page, context, errors } = await launch(browser, 'neubau');
     try {
-      expect(await page.title()).toBe('PDFix');
+      expect(await page.title()).toBe('PlantPDF');
       expect(await page.locator('link[rel~="icon"]').getAttribute('href')).toMatch(
         /^data:image\/png;base64,/,
       );
-      expect(await page.locator('#top .brand').innerText()).toBe('PDFix');
+      expect(await page.locator('#top .brand').innerText()).toBe('PlantPDF');
       // Name und Symbol nur einmal: in der Kopfzeile (die Startseite wiederholt sie nicht)
       await expect(page.locator('#home .mark')).toHaveCount(0);
       for (const sel of ['#top .brand .mark img']) {

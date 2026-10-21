@@ -1,5 +1,5 @@
 /**
- * PDFix als Desktop-App (Electron-Hauptprozess).
+ * PlantPDF als Desktop-App (Electron-Hauptprozess).
  *
  * Lädt den gebauten Single-File-Editor (dist/PDF-Editor.html) über das eigene Schema
  * app://pdf-editor/ – ohne Netzwerk, ohne Node-Zugriff im Renderer. Dateien werden über eine
@@ -22,7 +22,7 @@ import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS, SITE_TOOLS } from './menu.js';
 import { loadWindowState, rememberTheme, trackWindowState, MIN_SIZE } from './window-state.js';
 
-const APP_NAME = 'PDFix';
+const APP_NAME = 'PlantPDF';
 /**
  * Eigene Titelleiste (Windows/Linux, wie Office und VS Code): Die Kopfzeile der App trägt Menü,
  * Reiter und Befehle; die Fenstertasten legt das System darüber (Window Controls Overlay). macOS
@@ -52,7 +52,7 @@ const FONT_DIR = app.isPackaged
 // Im ausgelieferten Programm keine Fernsteuerung: Debug-Schalter führen zum Beenden (die Fuses
 // sperren --inspect bereits; --remote-debugging-* würde sonst den DevTools-Server öffnen).
 if (app.isPackaged && process.argv.some((a) => /^--(remote-debugging-|inspect|debug)/i.test(a))) {
-  console.error('PDFix: Debug-Schalter sind im ausgelieferten Programm nicht erlaubt.');
+  console.error('PlantPDF: Debug-Schalter sind im ausgelieferten Programm nicht erlaubt.');
   app.exit(1);
 }
 
@@ -241,8 +241,8 @@ function start() {
     const { response } = await dialog.showMessageBox(win, {
       type: 'none',
       icon: path.join(ROOT, 'assets', 'icon', 'png', 'icon-128.png'),
-      title: 'Über PDFix',
-      message: `PDFix ${app.getVersion()}`,
+      title: 'Über PlantPDF',
+      message: `PlantPDF ${app.getVersion()}`,
       detail: [
         'PDFs bearbeiten, ordnen und unterschreiben.',
         'Läuft vollständig offline – es werden keine Daten übertragen.',
@@ -360,7 +360,7 @@ function start() {
       const { response } = await dialog.showMessageBox(win, {
         type: 'warning',
         title: APP_NAME,
-        message: 'PDFix reagiert nicht.',
+        message: 'PlantPDF reagiert nicht.',
         detail:
           'Sie können warten, bis er wieder reagiert, oder das Fenster schließen. Ungespeicherte Änderungen gehen beim Schließen verloren.',
         buttons: ['Warten', 'Fenster schließen'],
@@ -441,7 +441,7 @@ function start() {
     const { response } = await dialog.showMessageBox(win, {
       type: 'error',
       title: APP_NAME,
-      message: 'PDFix ist unerwartet abgestürzt.',
+      message: 'PlantPDF ist unerwartet abgestürzt.',
       detail:
         (name ? `Ungespeicherte Änderungen an „${name}“ sind leider verloren. ` : '') +
         'Die zuletzt gespeicherte Fassung der Datei ist unverändert.',
@@ -731,7 +731,7 @@ function start() {
   });
 }
 
-/** Höchstzahl der Seiten für den Schnelldruck (größere Dateien: in PDFix öffnen und drucken). */
+/** Höchstzahl der Seiten für den Schnelldruck (größere Dateien: in PlantPDF öffnen und drucken). */
 const MAX_PRINT_PAGES = 500;
 
 /** Druckauftrag mit sofort begonnenem Lesen der Datei (`bytes`: Promise<Uint8Array>). */
@@ -756,9 +756,9 @@ function printErrorText(err, printer) {
       : 'Es ist kein Standarddrucker eingerichtet.';
   if (/cancel/i.test(reason)) return 'Der Druckauftrag wurde abgebrochen.';
   if (/password|encrypt/i.test(reason))
-    return 'Die Datei ist kennwortgeschützt. Bitte in PDFix öffnen und von dort drucken.';
+    return 'Die Datei ist kennwortgeschützt. Bitte in PlantPDF öffnen und von dort drucken.';
   if (/^Die Datei/.test(reason)) return reason;
-  return 'Bitte die Datei in PDFix öffnen und über „Drucken“ ausgeben.';
+  return 'Bitte die Datei in PlantPDF öffnen und über „Drucken“ ausgeben.';
 }
 
 /**

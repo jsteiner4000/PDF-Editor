@@ -31,9 +31,9 @@ const packages = Object.entries(lock.packages)
 
 const line = '='.repeat(78);
 const parts = [
-  `PDFix ${pkg.version} – Lizenzhinweise`,
+  `PlantPDF ${pkg.version} – Lizenzhinweise`,
   '',
-  'PDFix enthält die folgenden Bibliotheken und Schriften Dritter. Die Desktop-App',
+  'PlantPDF enthält die folgenden Bibliotheken und Schriften Dritter. Die Desktop-App',
   'basiert zusätzlich auf Electron (MIT) und Chromium; deren Lizenzen liegen im',
   'Programmordner (LICENSE.electron.txt, LICENSES.chromium.html).',
   '',
