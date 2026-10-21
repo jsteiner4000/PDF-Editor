@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { launch } from './helpers.js';
+import { launch, openPdf } from './helpers.js';
 
 /**
  * Fensterbreite: Die App wird nie breiter als das Fenster, die rechte Leiste bleibt vollständig,
@@ -56,3 +56,21 @@ for (const frame of [false, true])
       await context.close();
     }
   });
+
+test('Umschalten PDF ↔ Dokumentation: Knöpfe oben behalten ihre Größe', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await openPdf(page);
+    const sizes = () => page.evaluate(() => ['wsPdf', 'wsDocs', 'bSave', 'bFile'].map((id) => document.getElementById(id).offsetWidth));
+    const first = await sizes();
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    expect(await sizes()).toEqual(first);
+    await page.locator('#wsPdf').click(); // Punkt „Dokumentation geöffnet“ erscheint
+    expect(await sizes()).toEqual(first);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
