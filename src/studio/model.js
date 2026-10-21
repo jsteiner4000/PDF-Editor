@@ -256,6 +256,8 @@ export const newSite = () => ({
   thin: {},
   showNumbers: true,
   showList: true,
+  /** Bus/Adresse an den Symbolen im Plan („BM 3 · 1/12“) */
+  showBus: false,
 });
 
 /** Neues Symbol an der Stelle (x, y) – Anteile der Planfläche (0–1). */
@@ -400,6 +402,16 @@ export function renumberByPosition(site, row = 0.06) {
 /** Symbolarten mit Netzwerkzugang: erscheinen automatisch in „Zugangsdaten › Geräte-Zugänge“. */
 export const NET_KINDS = ['camera', 'recorder', 'radio', 'router', 'intercom', 'access', 'panel'];
 
+/** Melder und Teilnehmer der Alarmanlage: Bus, Adresse, Meldegruppe und Bereich (auch eigene Symbole). */
+export const BUS_KINDS = ['motion', 'smoke', 'contact', 'glass', 'barrier', 'siren', 'keypad', 'keyswitch', 'access', 'opener'];
+export const isBusKind = (kind) => BUS_KINDS.includes(kind) || String(kind).startsWith('custom:');
+
+/** Arten mit Montagehöhe. */
+export const isHeightKind = (kind) => kind === 'camera' || kind === 'mast' || kind === 'radio' || isBusKind(kind);
+
+/** Montage- und Anschlussangaben eines Symbols (Texte; leer = nicht angegeben). */
+export const SYMBOL_DETAILS = { bus: 20, addr: 20, group: 40, area: 60, channel: 10, height: 20 };
+
 /** Anzeigename eines Symbols: eigene Bezeichnung, sonst „K 1 Kamera“. */
 function symbolName(site, sym, labels) {
   const info = symbolInfo(site, sym.kind);
@@ -427,7 +439,24 @@ export function wifiOf(project, linkId) {
  * Verschwindet ein Symbol, bleibt sein Eintrag als gewöhnliches Gerät erhalten (keine Daten gehen
  * verloren); gelöscht wird er mit dem Symbol über die Oberfläche.
  */
-export function syncAccess(project) {
+/**
+ * Hat ein Geräte-Eintrag eigene Angaben? Name und Standort setzt der Lageplan selbst – sie zählen
+ * nicht. Geräte aus dem Lageplan stehen erst mit eigenen Angaben in den Zugangsdaten.
+ */
+export function deviceHasData(d) {
+  const t = (v) => (v && typeof v === 'object' ? `${v.de || ''}${v.en || ''}` : String(v || '')).trim();
+  return (
+    ['ip', 'web', 'user', 'password', 'role', 'note', 'model', 'serial', 'mac', 'firmware'].some((k) => t(d[k])) ||
+    (d.users || []).some((u) => t(u.user) || t(u.password) || t(u.role))
+  );
+}
+
+/**
+ * Lageplan und Zugangsdaten abgleichen. Geräte aus dem Lageplan (Netzwerkgeräte) bekommen erst
+ * einen Eintrag, wenn etwas eingetragen ist: `drafts` (Kennung des Symbols → Entwurf) hält die
+ * Angaben bis dahin; ein Entwurf mit Angaben wird übernommen, ein Eintrag ohne Angaben entfernt.
+ */
+export function syncAccess(project, drafts = null) {
   const sites = project.sections.filter((s) => s.type === 'site');
   const syms = [];
   const links = [];
@@ -436,22 +465,38 @@ export function syncAccess(project) {
     for (const y of site.symbols) if (NET_KINDS.includes(y.kind)) syms.push({ y, name: symbolName(site, y, labels), site, labels });
     for (const l of site.links) if (l.ssid || l.key) links.push({ l, site, labels });
   }
+  const symIds = new Set(syms.map((x) => x.y.id));
+  // Entwürfe mit Angaben übernehmen
+  const adopt = drafts ? [...drafts.values()].filter((d) => symIds.has(d.sym) && deviceHasData(d) && !deviceOf(project, d.sym)) : [];
+  const wanted = adopt.length || links.length || syms.some(({ y }) => y.ip);
   let access = project.sections.find((s) => s.type === 'access');
   if (!access) {
-    if (!syms.length && !links.length) return;
+    if (!wanted) return;
     access = newAccess();
     const last = project.sections.lastIndexOf(sites[sites.length - 1]);
     project.sections.splice(last + 1, 0, access);
   }
+  for (const d of adopt) {
+    access.devices.push(d);
+    drafts.delete(d.sym);
+  }
   const all = project.sections.filter((s) => s.type === 'access');
-  const symIds = new Set(syms.map((x) => x.y.id));
   for (const s of all) for (const d of s.devices) if (d.sym && !symIds.has(d.sym)) d.sym = null;
+  // Einträge aus dem Lageplan ohne eigene Angaben entfallen (der Entwurf bleibt für die Eingabe)
+  for (const s of all)
+    s.devices = s.devices.filter((d) => {
+      if (!d.sym || deviceHasData(d)) return true;
+      if (drafts) drafts.set(d.sym, d);
+      return false;
+    });
   for (const { y, name, site } of syms) {
     let d = deviceOf(project, y.id);
-    if (!d) {
+    // frühere IP an der Antenne: Eintrag anlegen
+    if (!d && y.ip) {
       d = { ...newDevice(), sym: y.id };
       access.devices.push(d);
     }
+    if (!d) continue;
     if (d.name.de !== name.de || d.name.en !== name.en) d.name = name;
     // frühere IP an der Antenne in den Eintrag übernehmen
     if (y.ip) {
@@ -1130,6 +1175,8 @@ function cleanSite(s, id, images) {
       range: clamp(y.range, 10, 600, 60),
       ...(Number.isInteger(y.seq) && y.seq >= 0 && y.seq < 100000 ? { seq: y.seq } : {}),
       ...(y.kind === 'mgm' ? { groups: Number.isInteger(y.groups) && y.groups >= 1 && y.groups <= 99 ? y.groups : 2 } : {}),
+      ...Object.fromEntries(Object.entries(SYMBOL_DETAILS).filter(([k]) => str_(y[k]).trim()).map(([k, max]) => [k, str_(y[k], max)])),
+      ...(typeof y.nvr === 'string' && ID_RE.test(y.nvr) ? { nvr: y.nvr } : {}),
     }, true));
   const point = (q) => (Array.isArray(q) && q.length === 2 ? [clamp(q[0], 0, 1, 0), clamp(q[1], 0, 1, 0)] : null);
   const shapes = (Array.isArray(s.shapes) ? s.shapes : [])
@@ -1183,6 +1230,7 @@ function cleanSite(s, id, images) {
     ),
     showNumbers: s.showNumbers !== false,
     showList: s.showList !== false,
+    showBus: bool(s.showBus),
   };
 }
 

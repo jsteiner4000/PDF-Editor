@@ -8,7 +8,7 @@
  * Hintergrundbild getauscht wird.
  */
 import { C, PAGE, color, esc, line, n, rect, text } from './svg.js';
-import { STRINGS, deviceOf, str, symbolInfo, symbolLabels, symbolsInOrder, tx } from './model.js';
+import { STRINGS, deviceOf, projectSymbols, str, symbolInfo, symbolLabels, symbolsInOrder, tx } from './model.js';
 import { wrap } from './measure.js';
 import {
   LEGEND_ROW,
@@ -356,7 +356,9 @@ export function sitePages(section, ts, images, project = null) {
     let out = symbolSvg(info, x, y, r, images);
     const where = section.showNumbers ? sym.labelPos || 'auto' : 'none';
     if (where !== 'none') {
-      const text_ = labels.get(sym.id);
+      // auf Wunsch Bus/Adresse an der Nummer („BM 3 · 1/12“)
+      const bus = section.showBus && (sym.bus || sym.addr) ? ` · ${[sym.bus, sym.addr].filter(Boolean).join('/')}` : '';
+      const text_ = labels.get(sym.id) + bus;
       const w = ts.width(text_, 7.5, 700);
       const side = where === 'auto' ? (x + r + 2 + w > area.x + area.w ? 'left' : 'right') : where;
       if (side === 'right') out += label(x + r + 2, y + 2.6, text_, 'start');
@@ -442,6 +444,19 @@ function stationNote(section, sym, labels, project) {
   // IP aus den Zugangsdaten (dieselben Daten, an einer Stelle gepflegt)
   const ip = (project && deviceOf(project, sym.id)?.ip) || sym.ip;
   if (ip) for (const lang of ['de', 'en']) parts[lang].push(`IP ${ip}`);
+  // Montage und Anschluss: Bus/Adresse, Meldegruppe, Bereich, Rekorder-Kanal, Montagehöhe
+  const add = (de, en) => (parts.de.push(de), parts.en.push(en));
+  if (sym.bus || sym.addr) {
+    const bus = [sym.bus && `Bus ${sym.bus}`, sym.addr && `Adr. ${sym.addr}`].filter(Boolean).join(' / ');
+    add(bus, bus.replace('Adr.', 'Addr.'));
+  }
+  if (sym.group) add(`MG ${sym.group}`, `Zone ${sym.group}`);
+  if (sym.area) add(`Bereich ${sym.area}`, `Area ${sym.area}`);
+  if (sym.nvr || sym.channel) {
+    const nvr = sym.nvr && project ? (projectSymbols(project).find((x) => x.id === sym.nvr) || {}).label : '';
+    add([nvr, sym.channel && `Kanal ${sym.channel}`].filter(Boolean).join(' / '), [nvr, sym.channel && `channel ${sym.channel}`].filter(Boolean).join(' / '));
+  }
+  if (sym.height) add(`Höhe ${sym.height}`, `Height ${sym.height}`);
   if (!parts.de.length) return sym.note;
   const join = (lang) => [...parts[lang], tx(sym.note, lang)].filter(Boolean).join(' · ');
   return { de: join('de'), en: join('en') };

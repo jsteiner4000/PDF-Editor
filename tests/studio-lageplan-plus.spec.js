@@ -175,10 +175,9 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
       });
       st.select({ kind: 'sym', id: 'nv', section: s.id });
     }, [sym('nv', 'recorder', 0.3, 0.3), sym('r1', 'radio', 0.6, 0.3), sym('r2', 'radio', 0.8, 0.6), sym('mo', 'motion', 0.5, 0.7)]);
-    // jedes Netzwerkgerät hat einen Eintrag in den Zugangsdaten, Melder nicht
+    // noch nichts eingetragen: kein Gerät in den Zugangsdaten
     let acc = await access();
-    expect(acc.devices.map((d) => d.sym).sort()).toEqual(['nv', 'r1', 'r2']);
-    expect(acc.devices.find((d) => d.sym === 'nv').name.de).toBe('NVR 1 Rekorder');
+    expect(acc.devices).toEqual([]);
 
     // Zugang am Symbol: IP und zwei Benutzer mit Rolle
     await page.locator('.sd-grp', { hasText: 'Zugang' }).locator('.sd-f', { hasText: 'IP-Adresse' }).locator('input').fill('192.168.1.10');
@@ -191,6 +190,9 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     await users.nth(1).locator('.sd-f', { hasText: 'Benutzer' }).locator('input').fill('wache');
     await users.nth(1).locator('.sd-f', { hasText: 'Rolle' }).locator('input').fill('Nur ansehen');
     acc = await access();
+    // mit der ersten Angabe steht der Rekorder in den Zugangsdaten (nur er)
+    expect(acc.devices.map((d) => d.sym)).toEqual(['nv']);
+    expect(acc.devices[0].name.de).toBe('NVR 1 Rekorder');
     const nvr = acc.devices.find((d) => d.sym === 'nv');
     expect(nvr).toMatchObject({ ip: '192.168.1.10', user: 'admin', password: 'geheim1', role: 'Administrator' });
     expect(nvr.users.map((u) => [u.user, u.role])).toEqual([['wache', 'Nur ansehen']]);
@@ -222,7 +224,7 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     await page.evaluate(() => document.activeElement.blur());
     await page.keyboard.press('Delete');
     await expect(page.locator('#toasts')).toContainText('gehört zum Lageplan');
-    expect((await access()).devices).toHaveLength(3);
+    expect((await access()).devices).toHaveLength(1);
     // „Im Lageplan zeigen“: Symbol leuchtet im Plan
     await page.locator('.sd-linkbtn', { hasText: 'Im Lageplan zeigen' }).click();
     expect(await page.evaluate(() => window.pdfEditor.studio.sel)).toMatchObject({ kind: 'sym', id: 'nv' });
@@ -257,7 +259,7 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     });
     await page.evaluate(() => document.activeElement && document.activeElement.blur());
     await page.keyboard.press('Delete');
-    expect((await access()).devices.map((d) => d.sym).sort()).toEqual(['r1', 'r2']);
+    expect((await access()).devices.map((d) => d.sym)).toEqual([]);
     await page.keyboard.press('Control+z');
     acc = await access();
     expect(acc.devices.find((d) => d.sym === 'nv').users).toHaveLength(1);
