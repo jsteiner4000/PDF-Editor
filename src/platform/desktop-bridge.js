@@ -196,7 +196,13 @@ const COMMANDS = {
     return app.session && app.session.dirty ? { dirty: true, name: app.file ? app.file.name : '' } : false;
   },
   /** Rückfrage beim Beenden: die PDF speichern (nicht „PDF erstellen“ der Dokumentation). */
-  saveDocument: () => (app.session ? app.saveDocument() : false),
+  saveDocument: async () => {
+    const ok = app.session ? await app.saveDocument() : false;
+    if (ok) await app.recovery.clear();
+    return ok;
+  },
+  /** Rückfrage beim Beenden: „Nicht speichern“ – die Wiederherstellungs-Kopie verwerfen. */
+  discardRecovery: () => app.recovery.clear(),
 };
 
 /**

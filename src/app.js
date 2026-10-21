@@ -25,6 +25,7 @@ import { ZoomGestures } from './ui/zoom-gestures.js';
 import { THEMES, readTheme, setTheme } from './ui/theme.js';
 import { fileErrorReason, notifyDocumentState, reviveFileHandle } from './platform/desktop-bridge.js';
 import { keepTopBarFitting } from './platform/title-bar.js';
+import { Recovery } from './ui/recovery.js';
 import { STUDIO_TEMPLATES, Studio, deleteDraft, deleteTemplate, ensureBarlow, listDrafts, listTemplates, templatePreview } from './studio/studio.js';
 
 /**
@@ -129,12 +130,15 @@ export class App {
     this.design = new FormDesign(this);
     this.fontsPanel = new FontsPanel(this);
     this.studio = new Studio(this);
+    this.recovery = new Recovery(this);
     this.view = 'home';
     this.workspace = readWorkspace();
     this.build();
     this.loadFonts();
     this.showHome();
     this.setView('home');
+    // nach einem unerwarteten Ende: gesicherte Kopie anbieten
+    setTimeout(() => this.recovery.offer(), 400);
   }
   build() {
     this.root.innerHTML = `
@@ -702,6 +706,7 @@ export class App {
     document.getElementById('sdOffer')?.remove();
     this.session = null;
     this.file = null;
+    this.recovery.clear(true);
   }
   /** Schließen (Menü): was gerade sichtbar ist – Dokumentation oder PDF. */
   async close() {
@@ -1153,6 +1158,7 @@ export class App {
   }
   markSaved() {
     this.session.savedVersion = this.session.version;
+    this.recovery.clear();
     this.updateHist();
     this.announceStripped();
   }
