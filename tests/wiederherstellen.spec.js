@@ -81,6 +81,11 @@ test('Speichern löscht die Kopie; Verwerfen beim Start ebenso', async ({ browse
   const { page, context, errors } = await launch(browser, 'neubau');
   try {
     await openPdf(page);
+    // offene Textbearbeitung: keine Kopie (der Absatz fehlt solange im Dokument)
+    await page.evaluate(() => window.pdfEditor.session.beginEdit(0, null));
+    await page.waitForTimeout(4500);
+    expect(await copies(page)).toEqual([]);
+    await page.evaluate(() => window.pdfEditor.session.cancelEdit());
     await rotate(page);
     await expect.poll(() => copies(page), { timeout: 10_000 }).toEqual(['dokument.pdf']);
     // Speichern (ohne Datei: Download) → Kopie weg

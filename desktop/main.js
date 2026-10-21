@@ -448,7 +448,7 @@ function start() {
       title: APP_NAME,
       message: 'PlantPDF ist unerwartet abgestürzt.',
       detail:
-        (name ? `Ungespeicherte Änderungen an „${name}“ wurden automatisch gesichert und werden beim nächsten Öffnen angeboten. ` : '') +
+        (name ? `Ungespeicherte Änderungen an „${name}“ bietet PlantPDF beim nächsten Öffnen zur Wiederherstellung an, soweit sie automatisch gesichert wurden. ` : '') +
         'Die zuletzt gespeicherte Fassung der Datei ist unverändert.',
       buttons: ['Neu laden', 'Fenster schließen'],
       defaultId: 0,

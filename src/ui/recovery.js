@@ -28,16 +28,19 @@ export class Recovery {
     this.lastAt = -Infinity;
     this.gap = MIN_GAP;
     this.more = false; // nach dem Wiederherstellen liegen weitere Kopien bereit
+    this.gen = 0; // zählt beim Löschen hoch: ältere Sicherungen schreiben nicht mehr
     setInterval(() => this.tick(), 1000);
   }
 
   tick() {
-    const session = this.app.session;
+    const app = this.app;
+    const session = app.session;
     if (!session || !session.dirty) {
       if (this.saved) this.clear();
       return;
     }
-    if (this.pending) return;
+    // während einer offenen Textbearbeitung fehlt der Absatz im Dokument: erst danach sichern
+    if (this.pending || session.pending || (app.edit && app.edit.editor)) return;
     if (this.saved && this.saved.session === session && this.saved.version === session.version) return;
     const now = performance.now();
     if (!this.seen || this.seen.session !== session || this.seen.version !== session.version) {
@@ -54,17 +57,19 @@ export class Recovery {
     const session = app.session;
     if (!session || this.pending) return this.pending;
     const version = session.version;
+    const gen = this.gen;
     const t0 = performance.now();
+    const current = () => app.session === session && session.dirty && this.gen === gen;
     this.pending = (async () => {
       try {
         const bytes = await session.save({ clean: false });
-        const ms = performance.now() - t0;
-        this.gap = Math.max(MIN_GAP, ms * 10);
-        if (app.session !== session || !session.dirty) return;
+        // während des Sicherns geändert (z. B. Bearbeitung begonnen): verwerfen, später neu
+        if (!current() || session.version !== version || session.pending) return;
         await putCopy(windowId, { name: app.file.name, bytes, handle: app.file.handle });
-        this.saved = { session, version };
-        // inzwischen gespeichert oder geschlossen: Kopie gleich wieder weg
-        if (app.session !== session || !session.dirty) await this.drop();
+        this.gap = Math.max(MIN_GAP, (performance.now() - t0) * 10);
+        if (current()) this.saved = { session, version };
+        // inzwischen gespeichert, verworfen oder geschlossen: Kopie gleich wieder weg
+        else await deleteCopy(windowId);
       } catch (err) {
         console.warn('Wiederherstellungs-Kopie nicht gesichert', err);
       } finally {
@@ -75,21 +80,15 @@ export class Recovery {
     return this.pending;
   }
 
-  async drop() {
-    this.saved = null;
-    await deleteCopy(windowId);
-  }
-
-  /** Kopie dieses Fensters löschen (gespeichert, verworfen, geschlossen); `closed`: Dokument geschlossen. */
+  /**
+   * Kopie dieses Fensters löschen (gespeichert, verworfen, geschlossen); `closed`: Dokument
+   * geschlossen. Eine laufende Sicherung schreibt danach nichts mehr (sofort, auch bei großen PDFs).
+   */
   clear(closed = false) {
+    this.gen++;
     this.saved = null;
     this.seen = null;
-    this.clearing = (async () => {
-      if (this.pending) await this.pending;
-      try {
-        await this.drop();
-      } catch {}
-    })();
+    this.clearing = deleteCopy(windowId).catch(() => {});
     if (closed && this.more) {
       this.more = false;
       setTimeout(() => this.offer(), 300);
@@ -112,7 +111,8 @@ export class Recovery {
       icon: 'save',
       body:
         `PlantPDF wurde nicht ordnungsgemäß beendet. Diese ungespeicherten Änderungen wurden automatisch gesichert:<ul class="rec-list">${rows}</ul>` +
-        (list.length > 1 ? '<span class="hint">Das neueste wird geöffnet, die übrigen danach angeboten.</span>' : ''),
+        (list.length > 1 ? '<span class="hint">Das neueste wird geöffnet, die übrigen danach angeboten.</span> ' : '') +
+        (this.app.session ? `<span class="hint">„${escapeHtml(this.app.file.name)}“ wird dabei geschlossen.</span>` : ''),
       buttons: [
         { label: 'Später', value: 'later' },
         { label: list.length > 1 ? 'Alle verwerfen' : 'Verwerfen', value: 'discard' },
@@ -143,11 +143,13 @@ export class Recovery {
     }
     if (!(await app.openBytes(data.bytes, meta.name, data.handle ? reviveFileHandle(data.handle) : null))) return false;
     await this.clearing;
-    await deleteCopy(meta.id).catch(() => {});
     const session = app.session;
     session.savedVersion = -1; // ungespeichert, bis gespeichert wird
     app.updateHist();
-    await this.backup(); // ab jetzt unter diesem Fenster gesichert
+    // erst unter diesem Fenster sichern, dann die alte Kopie löschen (nie ohne Kopie)
+    await this.backup();
+    if (this.saved && this.saved.session === session) await deleteCopy(meta.id).catch(() => {});
+    else this.more = true; // Sicherung gescheitert: die alte Kopie bleibt und wird wieder angeboten
     toast(`„${meta.name}“ wiederhergestellt (Stand ${when(meta.time)}). Mit Strg+S speichern.`, '', 7000);
     return true;
   }
