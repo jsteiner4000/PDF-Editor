@@ -483,8 +483,15 @@ export function syncAccess(project, drafts = null, keep = null) {
     const last = project.sections.lastIndexOf(sites[sites.length - 1]);
     project.sections.splice(last + 1, 0, access);
   }
+  // neue Einträge nach der Nummer einsortieren (die übrige Reihenfolge bleibt, auch selbst verschobene)
+  const rank = new Map(sites.flatMap((site) => symbolsInOrder(site)).map((y, i) => [y.id, i]));
+  const place = (d) => {
+    const r = rank.get(d.sym) ?? Infinity;
+    const at = access.devices.findIndex((x) => x.sym && rank.has(x.sym) && rank.get(x.sym) > r);
+    access.devices.splice(at < 0 ? access.devices.length : at, 0, d);
+  };
   for (const d of adopt) {
-    access.devices.push(d);
+    place(d);
     drafts.delete(d.sym);
   }
   const all = project.sections.filter((s) => s.type === 'access');
@@ -499,19 +506,12 @@ export function syncAccess(project, drafts = null, keep = null) {
       if (drafts) drafts.set(d.sym, d);
       return false;
     });
-  // Geräte aus dem Lageplan in der Reihenfolge der Nummern (eigene Einträge bleiben an ihrem Platz)
-  const rank = new Map(syms.map(({ y }, i) => [y.id, i]));
-  for (const s of all) {
-    const slots = s.devices.map((d, i) => (d.sym && rank.has(d.sym) ? i : -1)).filter((i) => i >= 0);
-    const linked = slots.map((i) => s.devices[i]).sort((a, b) => rank.get(a.sym) - rank.get(b.sym));
-    slots.forEach((i, k) => (s.devices[i] = linked[k]));
-  }
   for (const { y, name, site } of syms) {
     let d = deviceOf(project, y.id);
     // frühere IP an der Antenne: Eintrag anlegen
     if (!d && y.ip) {
       d = { ...newDevice(), sym: y.id };
-      access.devices.push(d);
+      place(d);
     }
     if (!d) continue;
     if (d.name.de !== name.de || d.name.en !== name.en) d.name = name;

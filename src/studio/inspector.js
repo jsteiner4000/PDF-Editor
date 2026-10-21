@@ -1472,6 +1472,9 @@ Object.assign(Inspector.prototype, {
           'Art geändert',
           () => {
             const next = symbolInfo(s, v);
+            // kein Rekorder mehr: Kameras verweisen nicht mehr darauf
+            if (y.kind === 'recorder' && v !== 'recorder')
+              for (const x of this.project.sections) if (x.type === 'site') for (const c of x.symbols) if (c.nvr === y.id) delete c.nvr;
             y.kind = v;
             dropDetails(y);
             appendToGroup(s, y); // in der neuen Art hinten anstellen
