@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.22.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.22.1.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -58,7 +58,10 @@ ausgefüllt ist; bei vielen Kontakten geht es auf einer Folgeseite weiter.
 
 Tabs (wie im Browser): Jede PDF und jede Dokumentation öffnet in einem eigenen
 Tab oben in der Leiste; das Haus-Symbol ist die Startseite. Eine Datei, die
-schon offen ist, öffnet nicht doppelt – ihr Tab kommt nach vorn. Tabs lassen
+schon offen ist, öffnet nicht doppelt – ihr Tab kommt nach vorn. Die Leiste
+zeigt nur die Tabs des aktuellen Bereichs: unter „PDF“ die PDFs, unter
+„Dokumentation“ die Dokumentationen; die anderen laufen im Hintergrund weiter
+und erscheinen beim Wechsel des Bereichs. Tabs lassen
 sich per Ziehen umordnen; nach unten aus der Leiste gezogen öffnet ein Tab ein
 eigenes Fenster, auf die Tab-Leiste eines anderen Fensters gezogen wandert er
 dorthin (mit allem, auch dem Rückgängig-Verlauf). Kürzel: Strg+W Tab schließen,

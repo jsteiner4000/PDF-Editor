@@ -96,6 +96,7 @@ desktop/                  Desktop-App (Electron-Hauptprozess)
   installer.nsh           NSIS-Ergänzung: optionale Zuordnung .pdf („Öffnen mit“, „Drucken“)
 electron-builder.yml      Paketierung (NSIS-Installer, Linux-Verzeichnis zum Testen)
 .github/workflows/release.yml  Windows-Build in GitHub Actions (Tags v*, manuell)
+.github/workflows/auto-release.yml  setzt bei neuer Version auf main den Tag und startet das Release
 scripts/build.mjs         Build (esbuild) → dist/PDF-Editor.html
 scripts/licenses.mjs      Lizenzhinweise der eingebundenen Bibliotheken und Schriften
 tests/                    Playwright-Regressionstests, Test-PDFs und deren Generator
@@ -201,6 +202,9 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
   Zuordnung, Startmenü, Deinstallation). Der Installer wird als
   Artefakt hochgeladen; bei Tags legt der getrennte Job `release` (als einziger mit
   Schreibrecht) daraus die Release-Assets an. Der Tag muss zur Version in `package.json` passen.
+- **Automatisch**: `.github/workflows/auto-release.yml` prüft bei jedem Push auf `main`, ob es zur
+  Version in `package.json` schon einen Tag gibt. Wenn nicht, setzt er `vX.Y.Z` und startet
+  `release.yml` für diesen Tag. Ein Release entsteht also allein durch das Hochzählen der Version.
   Aktionen sind auf Commit-SHAs festgelegt (Version im Kommentar); beim Aktualisieren SHA und
   Kommentar gemeinsam ändern.
 - **Fehlerfälle**: Dateifehler (schreibgeschützt, gesperrt, Datenträger voll, Ordner fehlt …)

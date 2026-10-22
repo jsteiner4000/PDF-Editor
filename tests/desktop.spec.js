@@ -677,6 +677,23 @@ test('Desktop-App: Tabs – zweite PDF im neuen Tab, umordnen, herausziehen, zur
     await expect.poll(() => app.evaluate(() => globalThis.__plantpdf.windows())).toBe(1);
     expect(await tabCount(app)).toBe(2);
 
+    // Bereiche: in „Dokumentation“ nur deren Tabs, in „PDF“ nur die PDFs
+    await b.locator('#wsDocs').click();
+    await expect.poll(() => tabCount(app)).toBe(3);
+    const home = await activePage(app);
+    await expect(home.locator('#tabs .xtab')).toHaveCount(0);
+    await home.locator('.tpl[data-tpl="documentation"]').click();
+    await home.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    await expect.poll(() => names(home)).toHaveLength(1);
+    expect((await names(home))[0]).not.toMatch(/\.pdf$/);
+    await home.locator('#wsPdf').click();
+    const pdfHome = await activePage(app);
+    await expect.poll(() => names(pdfHome)).toEqual(['a.pdf', 'b.pdf']);
+    await pdfHome.locator('#tabs .xtab', { hasText: 'a.pdf' }).click();
+    await expect.poll(() => mainWindowTitle(app)).toBe('a.pdf – PlantPDF');
+    await expect.poll(() => names(a)).toEqual(['a.pdf', 'b.pdf']);
+    expect(await tabCount(app)).toBe(4);
+
     // Fenster schließen: Rückfrage für jeden geänderten Tab (beide), „Abbrechen“ beim zweiten hält offen
     await makeDirty(a);
     await makeDirty(b);
