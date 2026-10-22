@@ -950,7 +950,7 @@ export class App {
     const file = files[0];
     const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
-    if (isImage && this.view === 'studio') return this.studio.dropImages(files.filter((f) => /^image\//.test(f.type)));
+    if (isImage && this.view === 'studio') return this.studio.dropImages(files.filter((f) => /^image\//.test(f.type)), ev);
     // Arbeitsbereich „Dokumentation“: eine abgelegte PDF ist eine fertige Dokumentation zum Fortsetzen
     if (isPdf && this.workspace === 'docs' && this.view !== 'doc') return this.continueDocumentation(file);
     const inDoc = this.session && this.view === 'doc';

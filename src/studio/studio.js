@@ -2093,8 +2093,8 @@ ${toPdf}
     if (files && files.length) await this.addPhotos(section, files);
   }
 
-  async addPhotos(section, files) {
-    if (!section) return;
+  /** Bilddateien lesen: neue Fotos (noch nicht im Projekt), Aufnahmedatum aus den Bilddaten. */
+  async readPhotos(files) {
     const items = [];
     await withBusy(async () => {
       for (const file of files) {
@@ -2108,13 +2108,64 @@ ${toPdf}
         }
       }
     }, 100);
+    return items;
+  }
+
+  /** Fotodokumentation für neue Fotos: die erste vorhandene, sonst eine neue hinter dem letzten Lageplan. */
+  photosTarget(p) {
+    let sec = p.sections.find((x) => x.type === 'photos');
+    if (!sec) {
+      sec = newPhotos();
+      const last = p.sections.map((x) => x.type).lastIndexOf('site');
+      p.sections.splice(last >= 0 ? last + 1 : p.sections.length, 0, sec);
+    }
+    return sec;
+  }
+
+  /** Fotos zu einem Symbol im Lageplan: in die Fotodokumentation, mit dem Symbol verknüpft. */
+  async addPhotosFor(symId, files = null) {
+    files ||= await pickFiles('image/jpeg,image/png,image/webp', true);
+    if (!files || !files.length) return;
+    const items = await this.readPhotos(files);
+    if (!items.length) return;
+    for (const it of items) it.link = symId;
+    this.change(items.length === 1 ? 'Foto hinzugefügt' : 'Fotos hinzugefügt', (p) => this.photosTarget(p).items.push(...items), { inspector: true });
+    toast(items.length === 1 ? 'Foto in die Fotodokumentation übernommen.' : `${items.length} Fotos in die Fotodokumentation übernommen.`);
+  }
+
+  /** Rechtsklick auf freie Stelle im Plan: Fotostandort setzen und Foto(s) dazu übernehmen. */
+  async addPhotoHere(hit) {
+    const s = this.section(hit.page.section);
+    if (!s || s.type !== 'site') return;
+    const a = hit.page.site.area;
+    const at = [Math.max(0, Math.min(1, (hit.x - a.x) / a.w)), Math.max(0, Math.min(1, (hit.y - a.y) / a.h))];
+    const files = await pickFiles('image/jpeg,image/png,image/webp', true);
+    if (!files || !files.length) return;
+    const items = await this.readPhotos(files);
+    if (!items.length) return;
+    const sym = newSymbol('photo', ...at);
+    for (const it of items) it.link = sym.id;
+    this.change('Fotostandort gesetzt', (p) => {
+      s.symbols.push(sym);
+      this.photosTarget(p).items.push(...items);
+    });
+    this.select({ kind: 'sym', id: sym.id, section: s.id });
+    toast('Fotostandort gesetzt – Blickrichtung am Punkt des Kegels ziehen.', '', 4000);
+  }
+
+  async addPhotos(section, files) {
+    if (!section) return;
+    const items = await this.readPhotos(files);
     if (!items.length) return;
     this.change(items.length === 1 ? 'Foto hinzugefügt' : 'Fotos hinzugefügt', () => section.items.push(...items), { inspector: true });
     this.select({ kind: 'photo', id: items[0].id, section: section.id }, { reveal: true });
   }
 
-  /** Bilder aus Drag & Drop: auf Fotodokumentation → Fotos, auf Lageplan → Hintergrund. */
-  async dropImages(files) {
+  /** Bilder aus Drag & Drop: auf ein Symbol → Fotos dazu, Fotodokumentation → Fotos, Lageplan → Hintergrund. */
+  async dropImages(files, ev = null) {
+    // auf ein Symbol (Plan oder Geräteliste) gezogen: Fotos zu diesem Gerät
+    const hit = ev && this.hitAt(ev);
+    if (hit && hit.item && hit.item.kind === 'sym') return this.addPhotosFor(hit.item.id, files);
     const id = this.sel.section || (this.sel.kind === 'section' ? this.sel.id : null);
     const section = id && this.section(id);
     if (section && section.type === 'photos') return this.addPhotos(section, files);

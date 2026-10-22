@@ -29,6 +29,7 @@ import {
 /** Bildzeichen (24 × 24, weiße Linien auf der Farbfläche). */
 const GLYPHS = {
   camera: '<rect x="4" y="8" width="11" height="8" rx="1.5"/><path d="M15 11.2l5-2.7v7l-5-2.7"/>',
+  photo: '<rect x="4" y="8.5" width="16" height="10" rx="2"/><circle cx="12" cy="13.5" r="2.8"/><path d="M9 8.5l1.3-2h3.4l1.3 2"/>',
   motion: '<path d="M5 14.5a10 10 0 0 1 14 0M8 17.2a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r=".9" fill="#fff"/>',
   smoke: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/>',
   contact: '<rect x="3.5" y="9" width="7.5" height="6" rx="1"/><rect x="13" y="9" width="7.5" height="6" rx="1"/>',
@@ -319,9 +320,17 @@ export function sitePages(section, ts, images, project = null) {
   const shapes = [];
   const links = [];
   const dots = [];
+  const ghosts = [];
   for (const it of order) {
     const op = opacityOf(section, it);
-    if (op <= 0) continue;
+    if (op <= 0) {
+      // ausgeblendet: Lage trotzdem merken („Im Lageplan zeigen“ findet es)
+      if (it.kind === 'sym') {
+        const [x, y] = pos.get(it.obj.id);
+        ghosts.push({ id: it.obj.id, x, y, r: 8 * it.obj.scale });
+      }
+      continue;
+    }
     if (it.kind === 'shape') {
       const z = it.obj;
       const pts = z.pts.map((q) => toPt(q, area));
@@ -373,7 +382,9 @@ export function sitePages(section, ts, images, project = null) {
   if (mpp && section.scaleBar) svg += scaleBarSvg(area, mpp, ts);
 
   // Legende: Symbole, dann Zaun und Richtfunk
-  const entries = kinds.map(({ info, count }) => ({
+  // ausgeblendete Fotostandorte: auch nicht in der Legende (der Plan bleibt ruhig)
+  const shownKinds = (section.thin || {}).photo === 'hidden' ? kinds.filter(({ info }) => info.id !== 'photo') : kinds;
+  const entries = shownKinds.map(({ info, count }) => ({
     head: `${info.code}  ${ts.inline(info.name)}`,
     tail: `  (${count})`,
     draw: (x, y) => symbolSvg(info, x + 6, y - 3, 6, images),
@@ -414,12 +425,12 @@ export function sitePages(section, ts, images, project = null) {
       kind: 'plan',
       svg,
       hits,
-      site: { area, symbols: marks, shapes, links, mpp },
+      site: { area, symbols: marks, ghosts, shapes, links, mpp },
     },
   ];
 
   // Geräteliste
-  if (section.showList && section.symbols.length) pages.push(...listPages(section, ts, labels, project));
+  if (section.showList && symbolsInOrder(section).length) pages.push(...listPages(section, ts, labels, project));
   return pages;
 }
 

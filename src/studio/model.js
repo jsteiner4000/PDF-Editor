@@ -201,6 +201,8 @@ export const SYMBOLS = [
   { id: 'cabinet', code: 'SK', name: T('Schaltkasten', 'Control cabinet'), color: '#b45309', glyph: 'cabinet', group: 'infra' },
   { id: 'junction', code: 'AK', name: T('Anschlusskasten', 'Junction box'), color: '#78716c', glyph: 'junction', group: 'infra' },
   { id: 'rack', code: 'NS', name: T('Netzwerkschrank', 'Network rack'), color: '#1e293b', glyph: 'rack', group: 'infra' },
+  // Fotostandort: wo ein Foto der Fotodokumentation aufgenommen wurde (Nummer = Foto, „F 3“)
+  { id: 'photo', code: 'F', name: T('Fotostandort', 'Photo location'), color: '#0d9488', glyph: 'photo', fov: { angle: 60, range: 50 } },
   // Station einer Richtfunkstrecke: wird über „Richtfunk“ gesetzt, nicht einzeln in der Galerie
   { id: 'radio', code: 'RF', name: T('Richtfunk-Antenne', 'Radio link antenna'), color: '#0891b2', glyph: 'radio', link: true },
 ];
@@ -303,7 +305,8 @@ export function symbolInfo(site, kind) {
  */
 export function symbolCode(site, sym) {
   const info = symbolInfo(site, sym.kind);
-  if (!info) return null;
+  // Fotostandorte zählen nicht mit: ihre Nummer ist die des Fotos (photoLabels)
+  if (!info || sym.kind === 'photo') return null;
   return sym.kind === 'mgm' ? `MGM-${sym.groups || 2}` : info.code;
 }
 
@@ -341,7 +344,32 @@ export function symbolLabels(site, project = null) {
   const off = codeOffsets(site, project);
   const out = new Map();
   for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code}${codeSep(code)}${(off.get(code) || 0) + i + 1}`));
+  if (site.symbols.some((y) => y.kind === 'photo')) {
+    const nums = photoNumbers(project);
+    for (const y of site.symbols) if (y.kind === 'photo') out.set(y.id, photoLabel(nums.get(y.id)));
+  }
   return out;
+}
+
+/** Nummern der Fotos je verknüpftem Symbol: Kennung → [3, 4] (wie in der Fotodokumentation). */
+export function photoNumbers(project) {
+  const out = new Map();
+  for (const s of project ? project.sections : [])
+    if (s.type === 'photos') s.items.forEach((p, i) => p.link && (out.get(p.link) || out.set(p.link, []).get(p.link)).push(i + 1));
+  return out;
+}
+
+/** „F 3“, „F 3, 5“, „F 3–5“; ohne Foto nur „F“. */
+function photoLabel(list) {
+  if (!list || !list.length) return 'F';
+  const parts = [];
+  for (let i = 0; i < list.length; i++) {
+    let j = i;
+    while (j + 1 < list.length && list[j + 1] === list[j] + 1) j++;
+    parts.push(j > i + 1 ? `${list[i]}–${list[j]}` : j === i + 1 ? `${list[i]}, ${list[j]}` : `${list[i]}`);
+    i = j;
+  }
+  return `F ${parts.join(', ')}`;
 }
 
 /** Alle Symbole in Nummernfolge (je Art zusammen, Arten in der Reihenfolge ihres ersten Auftretens). */
