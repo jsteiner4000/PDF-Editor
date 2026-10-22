@@ -413,21 +413,21 @@ export function sitePages(section, ts, images, project = null, pdf = null) {
       tail: `  (${links.length})`,
       draw: (x, y) => `<line x1="${n(x)}" y1="${n(y - 3)}" x2="${n(x + 12)}" y2="${n(y - 3)}" stroke="${RADIO}" stroke-width="1.5" stroke-dasharray="3 2"/>`,
     });
-  if (entries.length) {
+  // Legende: unter dem Plan (passt sie nicht, auf eigener Seite), eigene Seite oder keine
+  const mode = section.legend === 'page' || section.legend === 'none' ? section.legend : 'below';
+  const fitsBelow = entries.length <= 6 * LEGEND_ROWS;
+  if (entries.length && mode === 'below' && fitsBelow) {
     const cols = Math.min(6, Math.max(3, Math.ceil(entries.length / LEGEND_ROWS)));
     const colW = (area.w + 10) / cols;
-    const shown = entries.slice(0, cols * LEGEND_ROWS);
     const top = area.y + area.h + 8 + 12;
     svg += text(PAGE.left, top, ts.label('legend'), { size: 9.5, weight: 700 });
-    shown.forEach(({ head, tail, draw }, i) => {
+    entries.forEach(({ head, tail, draw }, i) => {
       const x = PAGE.left + (i % cols) * colW;
       const y = top + 16 + Math.floor(i / cols) * LEGEND_ROW;
       const cut = ellipsize(ts, head, 8.5, colW - 17 - 8 - ts.width(tail, 8.5, 400));
       svg += draw(x, y);
       svg += text(x + 17, y, cut + tail, { size: 8.5, fill: C.body });
     });
-    if (shown.length < entries.length)
-      svg += text(PAGE.right, top, `+ ${entries.length - shown.length}`, { size: 8.5, fill: C.muted, anchor: 'end' });
   }
   const pages = [
     {
@@ -439,9 +439,31 @@ export function sitePages(section, ts, images, project = null, pdf = null) {
       site: { area, symbols: marks, ghosts, shapes, links, mpp },
     },
   ];
+  if (entries.length && (mode === 'page' || (mode === 'below' && !fitsBelow))) pages.push(...legendPages(entries, ts));
 
   // Geräteliste
   if (section.showList && symbolsInOrder(section).length) pages.push(...listPages(section, ts, labels, project));
+  return pages;
+}
+
+/** Legende als eigene Seite(n): zwei Spalten, vollständig (nichts abgeschnitten). */
+function legendPages(entries, ts) {
+  const pages = [];
+  const ROW = 22;
+  const colW = (PAGE.right - PAGE.left) / 2;
+  const top = 156;
+  const perCol = Math.floor((PAGE.bottom - top) / ROW);
+  for (let start = 0; start < entries.length; start += perCol * 2) {
+    let svg = text(PAGE.left, 132, ts.label('legend'), { size: 12, weight: 700 });
+    entries.slice(start, start + perCol * 2).forEach(({ head, tail, draw }, i) => {
+      const x = PAGE.left + Math.floor(i / perCol) * colW;
+      const y = top + (i % perCol) * ROW;
+      svg += draw(x, y);
+      svg += text(x + 20, y, ellipsize(ts, head, 9.5, colW - 30 - ts.width(tail, 9.5, 400)) + tail, { size: 9.5, fill: C.body });
+      svg += line(x, y + 8, x + colW - 14, y + 8, '#e4e7eb', 0.5);
+    });
+    pages.push({ kind: 'legend', svg, hits: [] });
+  }
   return pages;
 }
 
@@ -487,16 +509,20 @@ function stationNote(section, sym, labels, project) {
 
 /** Spalten der Geräteliste; die Bemerkung nimmt die übrige Breite (im Querformat mehr). */
 const listCols = () => [
-  { x: 48, w: 44, key: 'nr', label: 'nr', bold: true },
-  { x: 92, w: 120, key: 'type', label: 'type' },
-  { x: 212, w: 150, key: 'name', label: 'name' },
+  { x: 48, w: 62, key: 'nr', label: 'nr', bold: true },
+  { x: 110, w: 106, key: 'type', label: 'type' },
+  { x: 216, w: 146, key: 'name', label: 'name' },
   { x: 362, w: PAGE.right - 362, key: 'note', label: 'remark' },
 ];
+
+/** Geräteliste: heller Kopf, feine Linien, nach Geräteart gegliedert, Plan-Symbol vor der Nummer. */
+const LIST = { head: '#f1f3f5', headInk: '#1f2933', headRule: '#9aa5b1', rule: '#e4e7eb', nr: '#0e7a6e', type: '#7b8794' };
 
 function listPages(section, ts, labels, project) {
   const COLS = listCols();
   const BOTTOM = PAGE.bottom;
   const WIDTH = PAGE.right - PAGE.left;
+  const images = (project && project.images) || {};
   const pages = [];
   let svg = '';
   let hits = [];
@@ -504,13 +530,14 @@ function listPages(section, ts, labels, project) {
   const bi = ts.bi;
   const head = () => {
     const h = bi ? 28 : 20;
-    svg += rect(PAGE.left, y, WIDTH, h, { fill: C.navy });
+    svg += rect(PAGE.left, y, WIDTH, h, { fill: LIST.head });
     for (const c of COLS) {
       const l = STRINGS[c.label];
-      svg += text(c.x, y + 13, tx(l, ts.lang), { size: 9, weight: 700, fill: '#fff' });
-      if (bi && l.en !== l.de) svg += text(c.x, y + 23, l.en, { size: 7.5, italic: true, fill: '#c8d3db' });
+      svg += text(c.x, y + 13, tx(l, ts.lang), { size: 9, weight: 700, fill: LIST.headInk });
+      if (bi && l.en !== l.de) svg += text(c.x, y + 23, l.en, { size: 7.5, italic: true, fill: C.muted });
     }
     y += h;
+    svg += line(PAGE.left, y, PAGE.right, y, LIST.headRule, 1.2);
   };
   const flush = () => {
     pages.push({ kind: 'list', svg, hits });
@@ -518,10 +545,21 @@ function listPages(section, ts, labels, project) {
     hits = [];
     y = 132;
   };
+  // Zwischenzeile je Geräteart: „Kamera (4)“
+  const GROUP_H = 22;
+  const group = (info, count, cont = false) => {
+    svg += text(PAGE.left + 4, y + 15, `${ts.inline(info.name)} (${count})${cont ? ` – ${ts.label('continued')}` : ''}`, { size: 9, weight: 700, fill: C.navy });
+    y += GROUP_H;
+    svg += line(PAGE.left, y, PAGE.right, y, LIST.headRule, 0.6);
+  };
   svg += text(PAGE.left, y, ts.label('deviceList'), { size: 12, weight: 700 });
   y += 22;
   head();
-  symbolsInOrder(section).forEach((sym, i) => {
+  const list = symbolsInOrder(section);
+  const counts = new Map();
+  for (const sym of list) counts.set(sym.kind, (counts.get(sym.kind) || 0) + 1);
+  let lastKind = null;
+  list.forEach((sym) => {
     const info = symbolInfo(section, sym.kind);
     if (!info) return;
     const cell = (value, w, weight = 400) =>
@@ -532,22 +570,31 @@ function listPages(section, ts, labels, project) {
       name: cell(sym.name, COLS[2].w, 700),
       note: cell(stationNote(section, sym, labels, project), COLS[3].w),
     };
-    const h = 16 + 10.56 * (Math.max(1, ...Object.values(cells).map((l) => l.length)) - 1);
-    if (y + h > BOTTOM) {
+    const h = 17 + 10.56 * (Math.max(1, ...Object.values(cells).map((l) => l.length)) - 1);
+    const newGroup = sym.kind !== lastKind;
+    // Überschrift der Gruppe nie allein am Seitenende
+    if (y + h + (newGroup ? GROUP_H : 0) > BOTTOM) {
       flush();
       head();
+      if (!newGroup) group(info, counts.get(sym.kind), true);
     }
-    if (i % 2 === 0) svg += rect(PAGE.left, y, WIDTH, h, { fill: C.alt });
+    if (newGroup) {
+      group(info, counts.get(sym.kind));
+      lastKind = sym.kind;
+    }
+    // Symbol wie im Plan, daneben die Nummer
+    svg += symbolSvg(info, COLS[0].x + 5, y + 8.5, 5, images);
     for (const c of COLS)
       cells[c.key].forEach((l, k) => {
-        svg += text(c.x, y + 11 + 10.56 * k, l.text, {
+        const nr = c.key === 'nr';
+        svg += text(nr ? c.x + 15 : c.x, y + 11.5 + 10.56 * k, l.text, {
           size: 8.8,
-          weight: c.bold && !l.sec ? 700 : 400,
+          weight: (c.bold || c.key === 'name') && !l.sec ? 700 : 400,
           italic: l.sec,
-          fill: l.sec ? C.muted : c.bold ? C.navy : C.body,
+          fill: l.sec ? C.muted : nr ? LIST.nr : c.key === 'type' ? LIST.type : c.key === 'name' ? C.navy : C.body,
         });
       });
-    svg += line(PAGE.left, y + h, PAGE.right, y + h, C.rule, 0.5);
+    svg += line(PAGE.left, y + h, PAGE.right, y + h, LIST.rule, 0.5);
     hits.push({ kind: 'sym', id: sym.id, rect: [PAGE.left, y, WIDTH, h] });
     y += h;
   });

@@ -1382,7 +1382,8 @@ ${
   siteSection.scale
     ? `<button class="rb c5${toolOf(this.armed) === 'measure' ? ' on' : ''}" data-act="measure" title="Messen: eine Strecke im Plan ziehen – die Länge erscheint sofort">${icon('ruler')}Messen</button>`
     : `<button class="rb c5${toolOf(this.armed) === 'scale' ? ' on' : ''}" data-act="scale" title="Maßstab: eine bekannte Strecke im Plan ziehen und ihre Länge eingeben">${icon('ruler')}Maßstab</button>`
-}`
+}
+<button class="rb c4" data-act="legend" title="Legende: alle Symbole dieses Plans – Klick zeigt sie im Plan">${icon('list')}Legende${icon('chev', 's caret')}</button>`
       : photosSection
         ? `<button class="rb c3" data-act="addphotos" title="Fotos hinzufügen (Aufnahmedatum wird gelesen)">${icon('image')}Fotos hinzufügen</button>`
         : access
@@ -1421,6 +1422,7 @@ ${toPdf}
         else if (act === 'block') this.blockMenu(btn, chaptersSection);
         else if (act === 'replace') this.replaceDialog();
         else if (act === 'symbols') this.symbolMenu(btn, siteSection);
+        else if (act === 'legend') this.legendMenu(btn, siteSection);
         else if (act === 'again') this.armAgain();
         else if (act === 'scale') this.arm('tool:scale');
         else if (act === 'measure') this.arm('tool:measure');

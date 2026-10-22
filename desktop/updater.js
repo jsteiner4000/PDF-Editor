@@ -90,7 +90,10 @@ export async function downloadUpdate(info, onProgress = () => {}) {
   let got = 0;
   try {
     const r = await fetchNet(info.url, { signal: guard.signal });
-    if (!r.ok || !r.body || !allowedUrl(r.url)) throw new Error('Download fehlgeschlagen');
+    // Electron liefert nach Weiterleitungen oft keine Ziel-Adresse (r.url leer) – dann zählt allein die
+    // Prüfsumme; ist eine Adresse da, muss sie zu GitHub gehören
+    if (!r.ok) throw new Error(`Download fehlgeschlagen (HTTP ${r.status})`);
+    if (!r.body || (r.url && !allowedUrl(r.url))) throw new Error('Download fehlgeschlagen (unerwartete Adresse)');
     out = await fs.open(file + '.part', 'w');
     const reader = r.body.getReader();
     for (;;) {

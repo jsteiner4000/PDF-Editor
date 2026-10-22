@@ -268,6 +268,8 @@ export const newSite = () => ({
   /** Bus/Adresse an den Symbolen im Plan („BM 3 · 1/12“) */
   showBus: false,
   photoSpotsInPdf: true,
+  /** Legende in der PDF: 'below' (unter dem Plan, sonst eigene Seite), 'page' oder 'none' */
+  legend: 'below',
 });
 
 /** Neues Symbol an der Stelle (x, y) – Anteile der Planfläche (0–1). */
@@ -1303,6 +1305,7 @@ function cleanSite(s, id, images) {
     showList: s.showList !== false,
     showBus: bool(s.showBus),
     photoSpotsInPdf: s.photoSpotsInPdf !== false,
+    legend: oneOf(s.legend, ['below', 'page', 'none'], 'below'),
   };
 }
 

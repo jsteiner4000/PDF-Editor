@@ -385,16 +385,16 @@ export function renderDocument(project, { skipEmpty = false, forPdf = false } = 
     } else if (section.type === 'site') {
       const title = ts.inline(section.title) || ts.label('sitePlan');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
-      sitePages(section, ts, project.images, project, pdf && { ...pdf, noPhotoSpots: !section.photoSpotsInPdf || !pdf.photosShown }).forEach((p, i) =>
+      sitePages(section, ts, project.images, project, pdf && { ...pdf, noPhotoSpots: !section.photoSpotsInPdf || !pdf.photosShown }).forEach((p, i, arr) =>
         pages.push({
           section: section.id,
-          kind: p.kind === 'plan' ? 'site' : 'sitelist',
+          kind: p.kind === 'plan' ? 'site' : p.kind === 'legend' ? 'sitelegend' : 'sitelist',
           title,
-          subtitle: p.kind === 'list' ? ts.label('deviceList') : subtitle,
+          subtitle: p.kind === 'list' ? ts.label('deviceList') : p.kind === 'legend' ? ts.label('legend') : subtitle,
           site: p.site || null,
           make: () => p,
           toc: i === 0 ? { title, id: section.id, plain: true } : null,
-          tocSub: i === 1 ? ts.label('deviceList') : null,
+          tocSub: p.kind === 'list' && arr[i - 1].kind !== 'list' ? ts.label('deviceList') : null,
         }),
       );
     } else if (section.type === 'chapters') {

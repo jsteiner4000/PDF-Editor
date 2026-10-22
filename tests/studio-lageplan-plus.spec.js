@@ -291,3 +291,41 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     await context.close();
   }
 });
+
+test('Legende: Dropdown im Werkzeugband, Klick zeigt Geräte, in der PDF unter dem Plan / eigene Seite / keine', async ({ browser }) => {
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      const mk = (id, kind, x) => ({ id, kind, x, y: 0.5, name: { de: '', en: '' }, note: { de: '', en: '' }, scale: 1, fov: false, dir: 0, angle: 90, range: 60 });
+      st.change('x', () => s.symbols.push(mk('k1', 'camera', 0.2), mk('k2', 'camera', 0.4), mk('b1', 'motion', 0.6)));
+      st.select({ kind: 'section', id: s.id });
+    });
+    await page.locator('.rb[data-act="legend"]').click();
+    await expect(page.locator('.sd-legend .sd-leg-row')).toHaveCount(2);
+    await expect(page.locator('.sd-legend .sd-leg-row').first()).toContainText('Kamera');
+    await page.locator('.sd-legend .sd-leg-row', { hasText: 'Kamera' }).click();
+    await expect(page.locator('.sd-pulse-dot')).toHaveCount(2);
+    const kinds = () =>
+      page.evaluate(() => {
+        const st = window.pdfEditor.studio;
+        const id = st.project.sections.find((x) => x.type === 'site').id;
+        return st.doc.pages.filter((p) => p.section === id).map((p) => p.kind + (p.svg.includes('>Legende<') ? '+L' : ''));
+      });
+    await expect.poll(kinds).toEqual(['site+L', 'sitelist']);
+    // eigene Seite
+    await page.locator('.rb[data-act="legend"]').click();
+    await page.locator('.sd-legend [data-mode="page"]').click();
+    await expect.poll(kinds).toEqual(['site', 'sitelegend+L', 'sitelist']);
+    // keine
+    await page.locator('.sd-legend [data-mode="none"]').click();
+    await expect.poll(kinds).toEqual(['site', 'sitelist']);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
