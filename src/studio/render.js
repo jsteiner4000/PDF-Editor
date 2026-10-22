@@ -205,7 +205,7 @@ function tocBody(ts, entries) {
  * Seiten eines Projekts. Zwei Durchgänge: erst die Seiten je Abschnitt (für die Seitenzahlen im
  * Inhaltsverzeichnis und im Hinweis „siehe Seite …“), dann Kopf- und Fußzeilen.
  */
-export function renderDocument(project, { skipEmpty = false } = {}) {
+export function renderDocument(project, { skipEmpty = false, forPdf = false } = {}) {
   const ts = typesetter(project);
   const label = documentLabel(project, ts);
   const pages = [];
@@ -215,8 +215,23 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
   const manual = project.design === 'manual';
   const manualState = { h1: 0, fig: 0 };
 
+  // fertige PDF: Fotodokumentation nur, wenn eingestellt; Sprünge zwischen Foto und Lageplan
+  const inPdf = (s) => !(forPdf && s.type === 'photos' && s.inPdf === false) && !(skipEmpty && isEmptySection(s));
+  let pdf = null;
+  if (forPdf) {
+    const photoOf = new Map();
+    const symbols = new Set();
+    for (const s of project.sections) {
+      if (!inPdf(s)) continue;
+      if (s.type === 'photos') for (const p of s.items) if (p.link && !photoOf.has(p.link)) photoOf.set(p.link, p.id);
+      if (s.type === 'site') for (const y of s.symbols) symbols.add(y.id);
+    }
+    pdf = { photoOf, symbols };
+  }
+
   try {
     for (const section of project.sections) {
+      if (forPdf && section.type === 'photos' && section.inPdf === false) continue;
       // für die fertige PDF: leere Abschnitte (nur Kopfzeile) weglassen
       if (skipEmpty && isEmptySection(section)) {
         skipped.push(sectionTitleInline(section, ts));
@@ -284,7 +299,7 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     } else if (section.type === 'site') {
       const title = ts.inline(section.title) || ts.label('sitePlan');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
-      sitePages(section, ts, project.images, project).forEach((p, i) =>
+      sitePages(section, ts, project.images, project, pdf && { ...pdf, noPhotoSpots: !section.photoSpotsInPdf }).forEach((p, i) =>
         pages.push({
           section: section.id,
           kind: p.kind === 'plan' ? 'site' : 'sitelist',
@@ -313,7 +328,7 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
     } else if (section.type === 'photos') {
       const title = ts.inline(section.title) || ts.label('photos');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
-      photoPages(section, ts, project).forEach((p, i) =>
+      photoPages(section, ts, project, pdf).forEach((p, i) =>
         pages.push({
           section: section.id,
           kind: 'photos',
@@ -406,6 +421,8 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
         layout: null,
         site: null,
         hits,
+        links: body.links || [],
+        anchors: body.anchors || [],
         secPage: p.secPage,
         w: PAGE.w,
         h: PAGE.h,
@@ -419,6 +436,8 @@ export function renderDocument(project, { skipEmpty = false } = {}) {
       layout: p.layout || null,
       site: p.site || null,
       hits,
+      links: body.links || [],
+      anchors: body.anchors || [],
       secPage: p.secPage,
       land: !!p.land,
       w: PAGE.w,

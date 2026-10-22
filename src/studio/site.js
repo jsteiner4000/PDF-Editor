@@ -286,7 +286,11 @@ export function opacityOf(section, it) {
  * Seiten des Lageplans: [{ kind: 'plan' | 'list', svg, hits, site? }]. `site` (nur Plan) liefert dem
  * Editor Planfläche und Lage der Symbole in Seitenkoordinaten.
  */
-export function sitePages(section, ts, images, project = null) {
+/**
+ * `pdf` (nur für die fertige PDF): { noPhotoSpots, photoOf: Symbol → Foto-Kennung } – Fotostandorte
+ * weglassen bzw. Symbole mit Foto anklickbar machen (Sprung zum Foto).
+ */
+export function sitePages(section, ts, images, project = null, pdf = null) {
   const kinds = usedKinds(section);
   const area = siteArea(section);
   const labels = symbolLabels(section, project);
@@ -319,10 +323,11 @@ export function sitePages(section, ts, images, project = null) {
   const order = siteOrder(section);
   const shapes = [];
   const links = [];
+  const pdfLinks = []; // nur PDF: Sprünge zum Foto
   const dots = [];
   const ghosts = [];
   for (const it of order) {
-    const op = opacityOf(section, it);
+    const op = pdf && pdf.noPhotoSpots && it.kind === 'sym' && it.obj.kind === 'photo' ? 0 : opacityOf(section, it);
     if (op <= 0) {
       // ausgeblendet: Lage trotzdem merken („Im Lageplan zeigen“ findet es)
       if (it.kind === 'sym') {
@@ -377,13 +382,17 @@ export function sitePages(section, ts, images, project = null) {
     }
     svg += faded(out, op);
     hits.push({ kind: 'sym', id: sym.id, rect: [x - r - 2, y - r - 2, 2 * r + 4, 2 * r + 4] });
+    const photo = pdf && pdf.photoOf.get(sym.id);
+    if (photo) pdfLinks.push({ to: 'ph-' + photo, rect: [x - r - 2, y - r - 2, 2 * r + 4, 2 * r + 4] });
     marks.push({ id: sym.id, x, y, r, tip, fov: !!tip });
   }
+  // Sprungziele der PDF: jedes Symbol (auch ausgeblendete, z. B. aus der Fotodokumentation)
+  const anchors = pdf ? [...pos].map(([id, [x, y]]) => ({ id: 'sy-' + id, x: x - 40, y: y - 60 })) : [];
   if (mpp && section.scaleBar) svg += scaleBarSvg(area, mpp, ts);
 
   // Legende: Symbole, dann Zaun und Richtfunk
   // ausgeblendete Fotostandorte: auch nicht in der Legende (der Plan bleibt ruhig)
-  const shownKinds = (section.thin || {}).photo === 'hidden' ? kinds.filter(({ info }) => info.id !== 'photo') : kinds;
+  const shownKinds = (section.thin || {}).photo === 'hidden' || (pdf && pdf.noPhotoSpots) ? kinds.filter(({ info }) => info.id !== 'photo') : kinds;
   const entries = shownKinds.map(({ info, count }) => ({
     head: `${info.code}  ${ts.inline(info.name)}`,
     tail: `  (${count})`,
@@ -425,6 +434,8 @@ export function sitePages(section, ts, images, project = null) {
       kind: 'plan',
       svg,
       hits,
+      links: pdfLinks,
+      anchors,
       site: { area, symbols: marks, ghosts, shapes, links, mpp },
     },
   ];

@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.16.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.17.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -448,6 +448,15 @@ ausblenden (rechts beim Fotostandort oder unter „Plan ausdünnen“); sie steh
 nicht in der Geräteliste. Rechtsklick auf ein Foto der Fotodokumentation >
 „Im Lageplan zeigen“ springt zum Gerät bzw. Fotostandort – auch wenn er
 ausgeblendet ist.
+
+Fotos in der fertigen PDF – je Dokument wählbar:
+- Fotodokumentation > „In die fertige PDF übernehmen“: aus = die Fotos bleiben
+  nur im Programm (Seiten grau mit „Nicht in der PDF“), Verknüpfung und
+  „Im Lageplan zeigen“ funktionieren weiter.
+- Lageplan > „Fotostandorte in der fertigen PDF“: aus = im Programm sichtbar,
+  in der PDF nicht.
+- In der PDF sind Foto und Lageplan verknüpft: Klick auf ein Gerät bzw. einen
+  Fotostandort im Plan springt zum Foto, Klick auf ein Foto zum Gerät im Plan.
 
 Ein Klick auf ein Gerät in der Geräteliste öffnet es rechts zum Bearbeiten;
 Rechtsklick > „Im Lageplan zeigen“ springt zum Symbol und lässt es deutlich

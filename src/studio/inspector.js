@@ -1054,6 +1054,9 @@ Object.assign(Inspector.prototype, {
       s.symbols.some((y) => isBusKind(y.kind))
         ? this.check('Bus/Adresse an den Symbolen', s.showBus, (v) => studio.change('Bus/Adresse geändert', () => (s.showBus = v)), 'z. B. „BM 3 · 1/12“')
         : null,
+      s.symbols.some((y) => y.kind === 'photo')
+        ? this.check('Fotostandorte in der fertigen PDF', s.photoSpotsInPdf !== false, (v) => studio.change('Fotostandorte in der PDF geändert', () => (s.photoSpotsInPdf = v)), 'Hier im Plan bleiben sie sichtbar (Ausblenden: „Plan ausdünnen“).')
+        : null,
     );
     // Hintergrund
     const img = s.bg.image && this.project.images[s.bg.image];
@@ -1555,9 +1558,10 @@ Object.assign(Inspector.prototype, {
     const addPhoto = htmlToElement(`<button type="button" class="btn outline sd-wide">${icon('camera', 's')}Foto hinzufügen …</button>`);
     addPhoto.addEventListener('click', () => studio.addPhotosFor(y.id));
     fotos.appendChild(addPhoto);
-    // Fotostandorte: alle auf einmal blass oder aus (Plan bleibt übersichtlich)
+    // Fotostandorte: alle auf einmal blass oder aus (Plan bleibt übersichtlich), in der PDF ja/nein
     if (y.kind === 'photo')
-      fotos.appendChild(
+      fotos.append(
+        this.check('Fotostandorte in der fertigen PDF', s.photoSpotsInPdf !== false, (v) => studio.change('Fotostandorte in der PDF geändert', () => (s.photoSpotsInPdf = v))),
         this.seg('Fotostandorte im Plan', [['', 'Zeigen'], ['faded', 'Blass'], ['hidden', 'Aus']], (s.thin || {}).photo || '', (v) =>
           studio.change(
             'Fotostandorte ' + (v === 'hidden' ? 'ausgeblendet' : v === 'faded' ? 'blass' : 'gezeigt'),
@@ -1584,6 +1588,12 @@ Object.assign(Inspector.prototype, {
         studio.change('Fotos je Seite geändert', () => (s.perPage = v), { inspector: true }),
       ),
       this.check('Aufnahmedatum zeigen', s.showDate, (v) => studio.change('Datum geändert', () => (s.showDate = v))),
+      this.check(
+        'In die fertige PDF übernehmen',
+        s.inPdf !== false,
+        (v) => studio.change(v ? 'Fotodokumentation in der PDF' : 'Fotodokumentation nicht in der PDF', () => (s.inPdf = v), { inspector: true }),
+        s.inPdf === false ? 'Nur hier im Programm: Fotos, Verknüpfung und „Im Lageplan zeigen“ bleiben nutzbar.' : 'In der PDF führt ein Klick auf ein Foto zum Gerät im Lageplan und zurück.',
+      ),
     );
     const list = this.group(
       `Fotos (${s.items.length})`,

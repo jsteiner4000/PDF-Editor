@@ -10,7 +10,8 @@ const GAP = 14;
 const GRID = { 1: [1, 1], 2: [1, 2], 4: [2, 2], 6: [2, 3] };
 
 /** Seiten der Fotodokumentation: [{ svg, hits }]. */
-export function photoPages(section, ts, project) {
+/** `pdf` (nur für die fertige PDF): { symbols: Kennungen der Symbole in der PDF } – Gerät anklickbar. */
+export function photoPages(section, ts, project, pdf = null) {
   const [c0, r0] = GRID[section.perPage] || GRID[4];
   // Querformat: Raster gedreht (z. B. 3 nebeneinander statt untereinander)
   const [cols, rows] = PAGE.w > PAGE.h ? [r0, c0] : [c0, r0];
@@ -23,6 +24,8 @@ export function photoPages(section, ts, project) {
   for (let start = 0; start < section.items.length || !pages.length; start += perPage) {
     let svg = '';
     const hits = [];
+    const jumps = [];
+    const anchors = [];
     section.items.slice(start, start + perPage).forEach((photo, i) => {
       const x = PAGE.left + (i % cols) * (cellW + GAP);
       const y = TOP + Math.floor(i / cols) * (cellH + GAP);
@@ -61,8 +64,13 @@ export function photoPages(section, ts, project) {
       }
       if (meta) svg += text(x, ty + 11, meta, { size: 8, fill: C.muted });
       hits.push({ kind: 'photo', id: photo.id, rect: [x, y, cellW, cellH] });
+      if (pdf) {
+        anchors.push({ id: 'ph-' + photo.id, x, y: y - 20 });
+        // Gerät bzw. Fotostandort → Lageplan (Foto und Angabe darunter)
+        if (link && pdf.symbols.has(photo.link)) jumps.push({ to: 'sy-' + photo.link, rect: [x, y, cellW, cellH] });
+      }
     });
-    pages.push({ svg, hits });
+    pages.push({ svg, hits, links: jumps, anchors });
   }
   return pages;
 }

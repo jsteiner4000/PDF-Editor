@@ -260,6 +260,7 @@ export const newSite = () => ({
   showList: true,
   /** Bus/Adresse an den Symbolen im Plan („BM 3 · 1/12“) */
   showBus: false,
+  photoSpotsInPdf: true,
 });
 
 /** Neues Symbol an der Stelle (x, y) – Anteile der Planfläche (0–1). */
@@ -576,6 +577,7 @@ export const newPhotos = () => ({
   title: T('Fotodokumentation', 'Photo documentation'),
   perPage: 4,
   showDate: true,
+  inPdf: true,
   items: [],
 });
 
@@ -1277,6 +1279,7 @@ function cleanSite(s, id, images) {
     showNumbers: s.showNumbers !== false,
     showList: s.showList !== false,
     showBus: bool(s.showBus),
+    photoSpotsInPdf: s.photoSpotsInPdf !== false,
   };
 }
 
@@ -1388,6 +1391,7 @@ function cleanPhotos(s, id, images) {
     title: toT(s.title || d.title),
     perPage: oneOf(s.perPage, PHOTO_LAYOUTS, 4),
     showDate: s.showDate !== false,
+    inPdf: s.inPdf !== false,
     items,
   };
 }

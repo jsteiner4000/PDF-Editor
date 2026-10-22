@@ -29,14 +29,22 @@ export const canMakePdf = () => !!maker();
 export function printHtml(doc, title = '') {
   const fonts = doc.font === 'barlow' || doc.design === 'manual' ? barlowCss() : '';
   // Seiten im Querformat: eigener Seitentyp mit gedrehtem Format (gemischte Formate in einer PDF)
-  const pages = doc.pages.map((p) => `<div class="p${p.land ? ' l' : ''}">${p.svg}</div>`).join('');
+  // Sprünge innerhalb der PDF (Foto ↔ Lageplan): durchsichtige Verweise über der Seite, Ziele als Marken
+  const pt = (v) => Math.round(v * 100) / 100 + 'pt';
+  const id = (v) => String(v).replace(/[^\w-]/g, '');
+  const extras = (p) =>
+    (p.links || []).map((l) => `<a class="lk" href="#${id(l.to)}" style="left:${pt(l.rect[0])};top:${pt(l.rect[1])};width:${pt(l.rect[2])};height:${pt(l.rect[3])}"></a>`).join('') +
+    (p.anchors || []).map((a) => `<span class="an" id="${id(a.id)}" style="left:${pt(Math.max(0, a.x))};top:${pt(Math.max(0, a.y))}"></span>`).join('');
+  const pages = doc.pages.map((p) => `<div class="p${p.land ? ' l' : ''}">${p.svg}${extras(p)}</div>`).join('');
   const lang = doc.lang === 'en' ? 'en' : 'de';
   const P = PORTRAIT;
   return `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><title>${title.replace(/[<&]/g, '')}</title><style>
 @page{size:${P.w}pt ${P.h}pt;margin:0}
 @page land{size:${P.h}pt ${P.w}pt;margin:0}
 html,body{margin:0;padding:0;background:#fff}
-.p{width:${P.w}pt;height:${P.h}pt;overflow:hidden;break-after:page}
+.p{position:relative;width:${P.w}pt;height:${P.h}pt;overflow:hidden;break-after:page}
+.lk{position:absolute;display:block}
+.an{position:absolute;width:1pt;height:1pt}
 .p.l{page:land;width:${P.h}pt;height:${P.w}pt}
 .p:last-child{break-after:auto}
 .p > svg{display:block;width:100%;height:100%}
