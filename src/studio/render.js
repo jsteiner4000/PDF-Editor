@@ -108,12 +108,12 @@ export function documentLabel(project, ts = typesetter(project)) {
 /** Deckblatt: links 25 mm Heftrand (Lochung im Ordner), Schrift auch ausgedruckt gut lesbar. */
 export const COVER_LEFT = 70.87;
 
-function coverBody(project, ts) {
+function coverBody(project, ts, start = 318) {
   const L = COVER_LEFT;
   const R = PAGE.right;
   let s = logoSvg(project, ts);
   const hits = [];
-  let y = 318;
+  let y = start;
   const titles = ts.runs(project.title);
   titles.forEach((r) => {
     for (const l of ts.wrap(r.text, r.sec ? 15 : 32, R - L, r.sec ? 400 : 700)) {
@@ -127,12 +127,35 @@ function coverBody(project, ts) {
     s += text(L, y + 2, sub, { size: 16, fill: C.body });
     y += 10;
   }
-  hits.push({ kind: 'project', rect: [L, 280, R - L, y - 270] });
+  hits.push({ kind: 'project', rect: [L, start - 38, R - L, y - start + 48] });
   y += 16;
   s += line(L, y, R, y, C.navy, 2.5);
   y += 36;
+  const items = coverItems(project, ts);
+  const first = layoutRows(items, y, PAGE.bottom - 8, ts, L, R);
+  // passt nicht alles: Titelblock nach oben rücken (höchstens bis unter das Logo), dann neu setzen
+  if (first.rest.length && start === 318) {
+    const need = layoutRows(first.rest, 0, Infinity, ts, L, R).end;
+    return coverBody(project, ts, 318 - Math.min(150, need + 12));
+  }
+  s += first.svg;
+  if (first.top !== null) hits.push({ kind: 'project', rect: [L, first.top, R - L, first.end - first.top] });
+  // passt nicht alles aufs Deckblatt (viele Ansprechpartner): Rest auf Folgeseiten
+  const more = [];
+  let rest = first.rest;
+  while (rest.length) {
+    const page = layoutRows(rest, 150, PAGE.bottom - 8, ts, PAGE.left, R);
+    if (page.rest.length === rest.length) break; // Sicherheit: nichts passt
+    more.push({ svg: page.svg, hits: page.top !== null ? [{ kind: 'project', rect: [PAGE.left, page.top, R - PAGE.left, page.end - page.top] }] : [] });
+    rest = page.rest;
+  }
+  return { svg: s, hits, more };
+}
+
+/** Zeilen der Projektangaben: Kunde … Version, dann Ansprechpartner und Wachschutz (nur ausgefüllte). */
+function coverItems(project, ts) {
   const m = project.meta;
-  const rows = [
+  const items = [
     ['customer', m.customer],
     ['address', m.address],
     ['site', m.site],
@@ -140,19 +163,71 @@ function coverBody(project, ts) {
     ['technician', m.technician],
     ['docNo', m.docNo],
     ['version', m.version],
+  ]
+    .filter(([, v]) => v)
+    .map(([key, value]) => ({ label: ts.label(key), value }));
+  const tel = ts.lang === 'en' ? 'Phone' : 'Tel.';
+  const contacts = (project.contacts || []).filter((c) => c.name || c.role || c.phone || c.email);
+  if (contacts.length) {
+    items.push({ head: ts.label('contacts') });
+    for (const c of contacts)
+      items.push({
+        label: c.role,
+        value: [c.name, [c.phone && `${tel} ${c.phone}`, c.email].filter(Boolean).join('  ·  ')].filter(Boolean).join('\n'),
+      });
+  }
+  const g = project.guard || {};
+  const guard = [
+    ['guardCompany', g.company],
+    ['guardPhone', g.phone],
+    ['guardNo', g.customerNo],
+    ['guardCenter', g.center],
   ].filter(([, v]) => v);
-  const top = y - 22;
+  if (guard.length) {
+    items.push({ head: ts.label('guard') });
+    for (const [key, value] of guard) items.push({ label: ts.label(key), value });
+  }
+  return items;
+}
+
+/** Zeilen ab `y` bis `bottom` setzen; liefert { svg, top, end, rest } (rest = was nicht passte). */
+function layoutRows(items, y, bottom, ts, L, R) {
+  let s = '';
   const vx = L + 118;
-  for (const [key, value] of rows) {
-    const lines = ts.wrap(value, 12.5, R - vx);
-    s += text(L, y, ts.label(key), { size: 10, weight: 700, fill: C.body });
-    lines.forEach((l, i) => (s += text(vx, y + 15.5 * i, l, { size: 12.5 })));
-    y += 15.5 * (lines.length - 1) + 11;
+  const top = items.length ? y - 22 : null;
+  let i = 0;
+  for (; i < items.length; i++) {
+    const it = items[i];
+    if (it.head) {
+      // Überschrift nie allein am Seitenende
+      if (y + 18 + 40 > bottom && i) break;
+      y += 10;
+      s += text(L, y, it.head, { size: 11.5, weight: 700, fill: C.navy });
+      y += 9;
+      s += line(L, y, R, y, C.navy, 1.2);
+      y += 21;
+      continue;
+    }
+    const lines = String(it.value)
+      .split('\n')
+      .flatMap((v) => ts.wrap(v, 12.5, R - vx));
+    const labels = ts.wrap(it.label || '', 10, vx - L - 8, 700).slice(0, 3);
+    // Höhe nach der längeren Spalte (Beschriftung zweisprachig oft zweizeilig)
+    const extra = Math.max(15.5 * (lines.length - 1), 13 * (labels.length - 1));
+    if (y + extra + 11 > bottom && i) break;
+    labels.forEach((l, k) => (s += text(L, y + 13 * k, l, { size: 10, weight: 700, fill: C.body })));
+    lines.forEach((l, k) => (s += text(vx, y + 15.5 * k, l, { size: 12.5 })));
+    y += extra + 11;
     s += line(L, y, R, y, C.rule, 0.8);
     y += 22;
   }
-  if (rows.length) hits.push({ kind: 'project', rect: [L, top, R - L, y - top] });
-  return { svg: s, hits };
+  // Fortsetzung mitten in einer Gruppe: Überschrift auf der nächsten Seite wiederholen
+  const rest = items.slice(i);
+  if (rest.length && !rest[0].head) {
+    const head = items.slice(0, i).reverse().find((x) => x.head);
+    if (head) rest.unshift({ head: `${head.head} (${ts.label('continued')})` });
+  }
+  return { svg: s, top, end: y, rest };
 }
 
 /* ---------- Inhaltsverzeichnis ---------- */
@@ -256,7 +331,13 @@ export function renderDocument(project, { skipEmpty = false, forPdf = false } = 
   /** Seiten eines Abschnitts anfügen (im eingestellten Seitenformat). */
   function addSection(section) {
     if (section.type === 'cover') {
-      pages.push({ section: section.id, kind: 'cover', make: () => (manual ? manualCover(project) : coverBody(project, ts)), plain: true, manual });
+      if (manual) pages.push({ section: section.id, kind: 'cover', make: () => manualCover(project), plain: true, manual });
+      else {
+        // Deckblatt; viele Ansprechpartner: Fortsetzung der Projektangaben auf Folgeseiten
+        const body = coverBody(project, ts);
+        pages.push({ section: section.id, kind: 'cover', make: () => body, plain: true });
+        for (const b of body.more) pages.push({ section: section.id, kind: 'coverinfo', title: ts.label('projectData'), subtitle: `${ts.label('continued')}`, make: () => b });
+      }
     } else if (section.type === 'chapters' && manual) {
       const title = ts.inline(section.title) || ts.label('chapters');
       manualPages(section, project, manualState).forEach((p, i) =>

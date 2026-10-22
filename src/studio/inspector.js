@@ -29,6 +29,8 @@ import {
   isBusKind,
   isHeightKind,
   newUser,
+  newContact,
+  newGuard,
   ROLES,
   sectionTitle,
   symbolInfo,
@@ -361,11 +363,51 @@ export class Inspector {
         two(this.text('Datum', m, 'date', { type: 'date' }), this.text('Version', m, 'version')),
         two(this.text('Techniker', m, 'technician'), this.text('Dokument-Nr.', m, 'docNo')),
       );
+      this.contactsGroup(p);
+      p.guard ||= newGuard();
+      const g = p.guard;
+      this.group(
+        'Wachschutz',
+        this.text('Firma', g, 'company', { id: 'gco', placeholder: 'z. B. Muster Sicherheitsdienst' }),
+        two(this.text('Notruf', g, 'phone', { id: 'gph', type: 'tel', placeholder: '+49 …' }), this.text('Kunden-/Objekt-Nr.', g, 'customerNo', { id: 'gno' })),
+        this.text('Leitstelle / Aufschaltung', g, 'center', { id: 'gce', placeholder: 'z. B. NSL Musterstadt, IP + GSM' }),
+        this.note('Erscheint auf dem Deckblatt, sobald etwas eingetragen ist.'),
+      );
     }
     // Eigene Vorlage: erscheint auf der Startseite unter „Neue Dokumentation“
     const save = htmlToElement(`<button type="button" class="btn outline sd-wide" data-a="tpl">${icon('binder', 's')}Als Vorlage speichern …</button>`);
     save.addEventListener('click', () => studio.saveAsTemplate());
     this.group('Vorlage', save, htmlToElement('<p class="sd-hint">Für weitere Kunden oder Projekte: neue Dokumentationen starten dann mit diesem Stand.</p>'));
+  }
+
+  /** Ansprechpartner des Kunden: je Person Name, Funktion, Telefon, E-Mail; „+“ fügt hinzu. */
+  contactsGroup(p) {
+    const studio = this.studio;
+    p.contacts ||= [];
+    const group = this.group(p.contacts.length ? `Ansprechpartner (${p.contacts.length})` : 'Ansprechpartner');
+    p.contacts.forEach((c, i) => {
+      const card = htmlToElement('<div class="sd-user sd-contact"></div>');
+      const pair = (a, b) => {
+        const el = htmlToElement('<div class="sd-two"></div>');
+        el.append(a, b);
+        return el;
+      };
+      card.append(
+        pair(this.text('Name', c, 'name', { id: `cn${c.id}` }), this.text('Funktion', c, 'role', { id: `cr${c.id}`, placeholder: 'z. B. Haustechnik' })),
+        pair(this.text('Telefon', c, 'phone', { id: `cp${c.id}`, type: 'tel', placeholder: '+49 …' }), this.text('E-Mail', c, 'email', { id: `ce${c.id}`, type: 'email' })),
+      );
+      const del = htmlToElement(`<button type="button" class="btn ic sd-user-del" title="Ansprechpartner entfernen" aria-label="Ansprechpartner ${escapeHtml(c.name || String(i + 1))} entfernen">${icon('trash', 's')}</button>`);
+      del.addEventListener('click', () => studio.change('Ansprechpartner entfernt', () => p.contacts.splice(i, 1), { inspector: true }));
+      card.appendChild(del);
+      group.appendChild(card);
+    });
+    const add = htmlToElement(`<button type="button" class="btn outline sd-wide sd-user-add">${icon('plus', 's')}Ansprechpartner hinzufügen</button>`);
+    add.addEventListener('click', () => {
+      const c = newContact();
+      studio.change('Ansprechpartner hinzugefügt', () => p.contacts.push(c), { inspector: true });
+      setTimeout(() => document.querySelector(`[data-f^="t:cn${c.id}:"]`)?.focus(), 0);
+    });
+    group.appendChild(add);
   }
 
   /** Deckblatt der Bedienungsanleitung: Dokumentart, Foto, Ausführung, Hinweis, Farben. */

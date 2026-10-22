@@ -865,7 +865,7 @@ export class Studio {
       // Markierungen neu – ein laufendes Aufleuchten bleibt stehen, bis es von selbst endet
       for (const c of [...marks.children]) if (!c.classList.contains('sd-pulse')) c.remove();
       const sectionSel =
-        (kind === 'section' && page.section === id) || (kind === 'project' && page.kind === 'cover');
+        (kind === 'section' && page.section === id) || (kind === 'project' && (page.kind === 'cover' || page.kind === 'coverinfo'));
       el.classList.toggle('sd-cur', sectionSel);
       if (page && page.site && kind === 'section' && page.section === id) this.renderSiteSelection(el, page);
       if (!page || page.section !== section) return;

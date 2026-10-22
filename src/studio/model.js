@@ -68,6 +68,13 @@ export const STRINGS = {
   technician: T('Techniker', 'Technician'),
   docNo: T('Dokument-Nr.', 'Document no.'),
   version: T('Version', 'Version'),
+  contacts: T('Ansprechpartner', 'Contacts'),
+  guard: T('Wachschutz', 'Security service'),
+  guardCompany: T('Firma', 'Company'),
+  guardPhone: T('Notruf', 'Emergency line'),
+  guardNo: T('Kunden-/Objekt-Nr.', 'Customer/site no.'),
+  guardCenter: T('Leitstelle', 'Monitoring centre'),
+  projectData: T('Projektangaben', 'Project data'),
   access: T('Zugangsdaten', 'Access data'),
   continued: T('Fortsetzung', 'continued'),
   sitePlan: T('Lageplan', 'Site plan'),
@@ -569,6 +576,11 @@ export function syncAccess(project, drafts = null, keep = null) {
   return adopt.length;
 }
 
+/* ---------- Ansprechpartner und Wachschutz (Deckblatt) ---------- */
+
+export const newContact = () => ({ id: uid('c'), name: '', role: '', phone: '', email: '' });
+export const newGuard = () => ({ company: '', phone: '', customerNo: '', center: '' });
+
 /* ---------- Fotodokumentation ---------- */
 
 export const PHOTO_LAYOUTS = [1, 2, 4, 6];
@@ -1000,6 +1012,10 @@ export function newProject(templateId = 'documentation', opts = {}) {
       docNo: '',
       version: '1.0',
     },
+    /** Ansprechpartner des Kunden: [{ id, name, role, phone, email }] */
+    contacts: [],
+    /** Wachschutz: Firma, Notruf, Kunden-/Objektnummer, Leitstelle/Aufschaltung */
+    guard: newGuard(),
     sections: opts.parts ? pickParts(sections, opts.parts) : sections,
     /** Freie Bilder und QR-Codes: { id, kind: 'image'|'qr', section, page, x, y, w, h, … } */
     overlays: [],
@@ -1060,6 +1076,11 @@ export function normalizeProject(raw) {
       logo: hasImg(images, company.logo) ? company.logo : null,
     },
     meta: Object.fromEntries(Object.keys(base.meta).map((k) => [k, str_(meta[k], 1000)])),
+    contacts: (Array.isArray(raw.contacts) ? raw.contacts : [])
+      .filter((c) => c && typeof c === 'object')
+      .slice(0, 50)
+      .map((c) => ({ id: id(c.id, 'c'), name: str_(c.name, 200), role: str_(c.role, 200), phone: str_(c.phone, 80), email: str_(c.email, 200) })),
+    guard: Object.fromEntries(Object.keys(newGuard()).map((k) => [k, str_(raw.guard && typeof raw.guard === 'object' ? raw.guard[k] : '', 300)])),
     design: oneOf(raw.design, ['classic', 'manual'], 'classic'),
     manual: cleanManualMeta(raw.manual, images),
     sections: [],
