@@ -9,9 +9,12 @@
 import { $, htmlToElement } from '../ui/dom.js';
 import { showDialog, toast } from '../ui/dialogs.js';
 import { PAGE } from './svg.js';
-import { SHAPE_TYPES, newLink, newShape, newSymbol, renumberByPosition, symbolInfo, symbolLabels, tx } from './model.js';
+import { SHAPE_TYPES, newLink, newShape, newSymbol, renumberByPosition, symbolInfo, symbolLabels, symbolsInOrder, tx } from './model.js';
 import { siteOrder } from './site.js';
-import { showMenu } from '../ui/menu.js';
+import { closeMenu, showMenu, showPopover } from '../ui/menu.js';
+import { escapeHtml } from '../ui/dom.js';
+import { icon } from '../ui/icons.js';
+import { symbolIconSvg } from './site.js';
 import { formatLength, siteArea, inPolygon, metersPerPt, pathDist, segDist, simplify, toFrac, toPt } from './geo.js';
 
 /** Werkzeuge: Kennung → Name (für Hinweis, Wiederholen). */
@@ -758,6 +761,92 @@ export const siteTools = {
       { x: ev.clientX, y: ev.clientY },
     );
     return true;
+  },
+
+  /**
+   * Legende als Dropdown (Ansichtshilfe): jede Symbolart dieses Plans mit Kürzel, Name und Anzahl,
+   * nach Geräten geordnet. Klick lässt alle Geräte dieser Art im Plan aufleuchten. Unten: ob und
+   * wo die Legende in der PDF erscheint.
+   */
+  legendMenu(anchor, site) {
+    if (!site) return;
+    const kinds = new Map();
+    for (const y of symbolsInOrder(site).concat(site.symbols.filter((y) => y.kind === 'photo'))) {
+      const info = symbolInfo(site, y.kind);
+      if (!info) continue;
+      const e = kinds.get(y.kind) || { kind: y.kind, info, ids: [] };
+      e.ids.push(y.id);
+      kinds.set(y.kind, e);
+    }
+    const hidden = (k) => (site.thin || {})[k] === 'hidden';
+    const rows = [...kinds.values()]
+      .map(
+        (e) =>
+          `<button type="button" class="sd-leg-row${hidden(e.kind) ? ' off' : ''}" data-kind="${escapeHtml(e.kind)}" title="Alle ${escapeHtml(tx(e.info.name, 'de'))} im Plan zeigen">${symbolIconSvg(e.info, this.project.images, 22)}<b>${escapeHtml(e.info.code)}</b><span>${escapeHtml(tx(e.info.name, 'de'))}</span><small>${e.ids.length}${hidden(e.kind) ? ' · aus' : ''}</small></button>`,
+      )
+      .join('');
+    const extra = [];
+    if (site.links.length) extra.push(['Richtfunkstrecke', site.links.length, '<svg width="22" height="22" viewBox="0 0 22 22"><line x1="3" y1="11" x2="19" y2="11" stroke="#0891b2" stroke-width="2" stroke-dasharray="3 2"/></svg>']);
+    const fences = site.shapes.filter((z) => z.type === 'fence').length;
+    if (fences) extra.push(['Zaun / Zone', fences, '<svg width="22" height="22" viewBox="0 0 22 22"><line x1="3" y1="11" x2="19" y2="11" stroke="#475569" stroke-width="1.6"/><path d="M6 8v6M11 8v6M16 8v6" stroke="#475569" stroke-width="1.6"/></svg>']);
+    const mode = site.legend || 'below';
+    const el = htmlToElement(
+      `<div class="menu sd-legend" role="dialog" aria-label="Legende"><h5>Legende · ${escapeHtml(tx(site.title, 'de') || 'Lageplan')}</h5><div class="sd-leg-list">${
+        rows || extra.length ? rows + extra.map(([name, n, art]) => `<div class="sd-leg-row static">${art}<b></b><span>${name}</span><small>${n}</small></div>`).join('') : '<p class="sd-leg-empty">Noch keine Symbole im Plan.</p>'
+      }</div><hr><div class="sd-leg-pdf"><span>In der PDF</span><div class="sd-seg" role="radiogroup">${[
+        ['below', 'Unter dem Plan'],
+        ['page', 'Eigene Seite'],
+        ['none', 'Keine'],
+      ]
+        .map(([v, l]) => `<button type="button" role="radio" aria-checked="${mode === v}" class="${mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`)
+        .join('')}</div><small>„Unter dem Plan“ wechselt von selbst auf eine eigene Seite, wenn die Legende zu groß wird.</small></div></div>`,
+    );
+    for (const b of el.querySelectorAll('.sd-leg-row[data-kind]'))
+      b.addEventListener('click', () => {
+        const e = kinds.get(b.dataset.kind);
+        closeMenu();
+        if (e) this.pulseMany(site.id, e.ids);
+      });
+    for (const b of el.querySelectorAll('[data-mode]'))
+      b.addEventListener('click', () => {
+        const v = b.dataset.mode;
+        // nach Rückgängig ist das Projekt neu: Abschnitt jedes Mal frisch holen
+        const cur = this.section(site.id);
+        if (!cur) return;
+        this.change('Legende geändert', () => (cur.legend = v), { inspector: true });
+        for (const x of el.querySelectorAll('[data-mode]')) {
+          x.classList.toggle('on', x === b);
+          x.setAttribute('aria-checked', String(x === b));
+        }
+      });
+    showPopover(el, anchor);
+  },
+
+  /** Mehrere Symbole eines Plans aufleuchten lassen (auch ausgeblendete) und den Plan zeigen. */
+  pulseMany(sectionId, ids) {
+    for (const old of document.querySelectorAll('#sdPages .sd-pulse')) old.remove();
+    const pages = this.doc ? this.doc.pages : [];
+    const i = pages.findIndex((p) => p.section === sectionId && p.site);
+    const el = document.querySelectorAll('#sdPages .sd-page')[i];
+    if (i < 0 || !el) return;
+    const site = pages[i].site;
+    const marks = el.querySelector('.sd-marks');
+    const dots = [];
+    for (const id of ids) {
+      const m = site.symbols.find((y) => y.id === id) || (site.ghosts || []).find((y) => y.id === id);
+      if (!m) continue;
+      const dot = htmlToElement('<span class="sd-pulse sd-pulse-dot"></span>');
+      const d = Math.max((m.r + 9) * 2 * this.scale, 34);
+      dot.style.cssText = `left:${m.x * this.scale}px;top:${m.y * this.scale}px;width:${d}px;height:${d}px;margin:${-d / 2}px 0 0 ${-d / 2}px`;
+      marks.appendChild(dot);
+      dots.push(dot);
+    }
+    if (!dots.length) return;
+    // ganzen Plan zeigen, wenn mehrere; sonst das eine Symbol mittig
+    (dots.length > 1 ? el : dots[0]).scrollIntoView({ block: 'center', inline: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    setTimeout(() => {
+      for (const d of dots) d.remove();
+    }, 3900);
   },
 
   /** Symbol im Projekt finden: { s, y, label } oder null. */

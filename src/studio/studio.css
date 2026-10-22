@@ -1545,3 +1545,82 @@ textarea.fld.mono {
 .sd-sec-off .sd-thumb {
   opacity: 0.5;
 }
+
+/* Legende als Dropdown im Werkzeugband (Lageplan) */
+.sd-legend {
+  width: 380px;
+  padding: 8px;
+}
+.sd-legend h5 {
+  margin: 2px 8px 6px;
+  color: var(--ink3);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sd-leg-list {
+  max-height: min(56vh, 460px);
+  overflow: auto;
+}
+.sd-leg-row {
+  display: grid;
+  grid-template-columns: 22px 42px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.sd-leg-row:hover {
+  background: var(--hover);
+}
+.sd-leg-row.static {
+  cursor: default;
+}
+.sd-leg-row.static:hover {
+  background: transparent;
+}
+.sd-leg-row.off {
+  opacity: 0.5;
+}
+.sd-leg-row b {
+  font-weight: 700;
+  color: var(--acc);
+}
+.sd-leg-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-leg-row small {
+  color: var(--ink3);
+  font-variant-numeric: tabular-nums;
+}
+.sd-leg-empty {
+  margin: 6px 8px;
+  color: var(--ink3);
+  font-size: 12px;
+}
+.sd-leg-pdf {
+  display: grid;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  font-size: 12px;
+}
+.sd-leg-pdf > span {
+  color: var(--ink2);
+  font-weight: 600;
+}
+.sd-leg-pdf .sd-seg button {
+  white-space: nowrap;
+}
+.sd-leg-pdf small {
+  color: var(--ink3);
+  line-height: 1.4;
+}

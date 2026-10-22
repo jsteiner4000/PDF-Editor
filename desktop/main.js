@@ -684,13 +684,18 @@ function start() {
         type: 'warning',
         title: APP_NAME,
         message: 'Das Update konnte nicht geladen werden.',
-        detail: /Prüfsumme|größer/.test(String(err && err.message))
-          ? 'Die geladene Datei stimmt nicht mit dem Release überein und wurde verworfen.'
-          : err && (err.code === 'EACCES' || err.code === 'ENOENT' || err.code === 'EPERM')
-            ? 'Das Setup konnte nicht gestartet werden (evtl. vom Virenschutz blockiert). Es liegt im Ordner %TEMP%\\PlantPDF-Update.'
-            : 'Bitte die Internetverbindung prüfen und später erneut versuchen.',
-        buttons: ['OK'],
-      });
+        detail:
+          (/Prüfsumme|größer/.test(String(err && err.message))
+            ? 'Die geladene Datei stimmt nicht mit dem Release überein und wurde verworfen.'
+            : err && (err.installer || err.code === 'EACCES' || err.code === 'ENOENT' || err.code === 'EPERM' || err.code === 'EBUSY')
+              ? 'Das Setup konnte nicht gespeichert oder gestartet werden (evtl. vom Virenschutz blockiert). Ordner: %TEMP%\\PlantPDF-Update.'
+              : /^Download fehlgeschlagen/.test(String(err && err.message))
+                ? 'GitHub hat die Datei nicht geliefert. Bitte später erneut versuchen.'
+                : 'Bitte die Internetverbindung prüfen und später erneut versuchen.') +
+          // genauer Grund (hilft bei der Fehlersuche)
+          `\n\nGrund: ${String((err && (err.code || err.message)) || err).slice(0, 160)}`,
+        buttons: ['OK', 'Release-Seite öffnen'],
+      }).then(({ response }) => response === 1 && update && shell.openExternal(update.page));
       return false;
     } finally {
       updating = false;

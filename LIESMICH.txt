@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.20.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.21.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -328,6 +328,10 @@ Nutzerdaten. Die Prüfsumme schützt vor beschädigten oder unterwegs verändert
 Dateien; das Setup selbst ist nicht digital signiert (Windows kann beim ersten
 Start nachfragen).
 
+Hinweis: In den Versionen 2.18.0 bis 2.20.0 brach der Download des Updates
+fälschlich mit „Internetverbindung prüfen“ ab. Diese Versionen bitte einmal
+von Hand auf 2.21.0 (oder neuer) aktualisieren – danach klappt es im Programm.
+
 SPEICHERN
 ---------
 „Speichern“ (Strg+S) überschreibt die geöffnete Datei, „Speichern unter“
@@ -487,6 +491,15 @@ Fotos in der fertigen PDF – je Dokument wählbar:
   in der PDF nicht.
 - In der PDF sind Foto und Lageplan verknüpft: Klick auf ein Gerät bzw. einen
   Fotostandort im Plan springt zum Foto, Klick auf ein Foto zum Gerät im Plan.
+
+Legende: Im Werkzeugband des Lageplans klappt „Legende“ eine Übersicht aller
+Symbole des Plans auf (Symbol, Kürzel, Name, Anzahl). Ein Klick auf eine Zeile
+lässt alle Geräte dieser Art im Plan aufleuchten. Unten im Feld: „In der PDF –
+Unter dem Plan / Eigene Seite / Keine“ (je Plan gespeichert); „Unter dem Plan“
+weicht automatisch auf eine eigene Seite aus, wenn die Legende zu groß wird.
+
+Geräteliste: heller Tabellenkopf, nach Geräteart gegliedert („Kamera (4)“),
+vor jeder Nummer das Symbol aus dem Plan.
 
 Ein Klick auf ein Gerät in der Geräteliste öffnet es rechts zum Bearbeiten;
 Rechtsklick > „Im Lageplan zeigen“ springt zum Symbol und lässt es deutlich
