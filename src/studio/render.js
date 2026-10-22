@@ -220,13 +220,18 @@ export function renderDocument(project, { skipEmpty = false, forPdf = false } = 
   let pdf = null;
   if (forPdf) {
     const photoOf = new Map();
-    const symbols = new Set();
+    const symbols = new Set(); // in der PDF sichtbare Symbole (Sprungziele der Fotos)
+    const photosShown = project.sections.some((s) => s.type === 'photos' && inPdf(s));
     for (const s of project.sections) {
       if (!inPdf(s)) continue;
       if (s.type === 'photos') for (const p of s.items) if (p.link && !photoOf.has(p.link)) photoOf.set(p.link, p.id);
-      if (s.type === 'site') for (const y of s.symbols) symbols.add(y.id);
+      if (s.type === 'site')
+        for (const y of s.symbols) {
+          const hidden = (s.thin || {})[y.kind] === 'hidden' || (y.kind === 'photo' && (!s.photoSpotsInPdf || !photosShown));
+          if (!hidden) symbols.add(y.id);
+        }
     }
-    pdf = { photoOf, symbols };
+    pdf = { photoOf, symbols, photosShown };
   }
 
   try {
@@ -299,7 +304,7 @@ export function renderDocument(project, { skipEmpty = false, forPdf = false } = 
     } else if (section.type === 'site') {
       const title = ts.inline(section.title) || ts.label('sitePlan');
       const subtitle = [project.meta.site, project.meta.customer].find(Boolean) || '';
-      sitePages(section, ts, project.images, project, pdf && { ...pdf, noPhotoSpots: !section.photoSpotsInPdf }).forEach((p, i) =>
+      sitePages(section, ts, project.images, project, pdf && { ...pdf, noPhotoSpots: !section.photoSpotsInPdf || !pdf.photosShown }).forEach((p, i) =>
         pages.push({
           section: section.id,
           kind: p.kind === 'plan' ? 'site' : 'sitelist',

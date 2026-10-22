@@ -729,7 +729,8 @@ export const siteTools = {
       return true;
     }
     // freie Stelle im Plan: Fotostandort setzen
-    if (hit && hit.page.site && (!item || item.kind === 'plan')) {
+    const a = hit && hit.page.site && hit.page.site.area;
+    if (a && (!item || item.kind === 'plan') && hit.x >= a.x && hit.x <= a.x + a.w && hit.y >= a.y && hit.y <= a.y + a.h) {
       ev.preventDefault();
       showMenu([{ label: 'Foto hier einfügen …', icon: 'camera', run: () => this.addPhotoHere(hit) }], { x: ev.clientX, y: ev.clientY });
       return true;

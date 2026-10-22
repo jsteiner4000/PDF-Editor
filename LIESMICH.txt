@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.17.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.17.1.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien

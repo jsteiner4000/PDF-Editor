@@ -293,7 +293,7 @@ export function opacityOf(section, it) {
 export function sitePages(section, ts, images, project = null, pdf = null) {
   const kinds = usedKinds(section);
   const area = siteArea(section);
-  const labels = symbolLabels(section, project);
+  const labels = symbolLabels(section, project, !!pdf);
   const mpp = metersPerPt(section);
   const clip = (inner) =>
     inner
@@ -386,8 +386,8 @@ export function sitePages(section, ts, images, project = null, pdf = null) {
     if (photo) pdfLinks.push({ to: 'ph-' + photo, rect: [x - r - 2, y - r - 2, 2 * r + 4, 2 * r + 4] });
     marks.push({ id: sym.id, x, y, r, tip, fov: !!tip });
   }
-  // Sprungziele der PDF: jedes Symbol (auch ausgeblendete, z. B. aus der Fotodokumentation)
-  const anchors = pdf ? [...pos].map(([id, [x, y]]) => ({ id: 'sy-' + id, x: x - 40, y: y - 60 })) : [];
+  // Sprungziele der PDF: die in der PDF sichtbaren Symbole (Ziele der Fotos)
+  const anchors = pdf ? [...pos].filter(([id]) => pdf.symbols.has(id)).map(([id, [x, y]]) => ({ id: 'sy-' + id, x: x - 40, y: y - 60 })) : [];
   if (mpp && section.scaleBar) svg += scaleBarSvg(area, mpp, ts);
 
   // Legende: Symbole, dann Zaun und Richtfunk
