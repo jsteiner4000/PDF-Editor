@@ -18,8 +18,9 @@
 
 import { toast } from '../ui/dialogs.js';
 import { showUpdate, updateProgress } from '../ui/update-banner.js';
-import { readTheme } from '../ui/theme.js';
+import { applyTheme, readTheme } from '../ui/theme.js';
 import { installTitleBar } from './title-bar.js';
+import { installTabStrip } from './tab-strip.js';
 
 const desktop = typeof window !== 'undefined' ? window.pdfEditorDesktop : undefined;
 
@@ -121,8 +122,9 @@ export function notifyDocumentState() {
   stateTimer = setTimeout(() => {
     stateTimer = 0;
     const session = app.session;
-    // „Dokumentation erstellen“: Fenstertitel = Projekt; Entwürfe sichern sich selbst (nie „Bearbeitet“)
-    const project = studioActive() ? app.studio.title() : '';
+    // „Dokumentation erstellen“: Fenstertitel = Projekt; Entwürfe sichern sich selbst (nie „Bearbeitet“).
+    // Jeder Tab hat genau ein Dokument – das Projekt zählt auch, wenn es gerade nicht sichtbar ist.
+    const project = app.studio.project && (studioActive() || !session) ? app.studio.title() : '';
     desktop.setState({
       hasDocument: !!session || !!project,
       name: project || (session && app.file ? app.file.name : ''),
@@ -132,6 +134,8 @@ export function notifyDocumentState() {
       siteOpen: !!(app.studio.project && app.studio.project.sections.some((s) => s.type === 'site')),
       studioOpen: !!app.studio.project,
       workspace: app.workspace,
+      fileId: (session && app.file && app.file.handle && app.file.handle.desktopId) || '',
+      projectId: (app.studio.project && app.studio.project.id) || '',
       theme: readTheme(),
     });
   }, 0);
@@ -150,6 +154,16 @@ const inEditableField = () => {
 
 /** Befehle aus dem nativen Menü (desktop/menu.js) und Anfragen des Hauptprozesses. */
 const COMMANDS = {
+  /** Tab-Leiste des Fensters (vom Hauptprozess). */
+  tabs: (data) => app.tabHost && app.tabHost.render(data),
+  /** In diesem (neuen) Tab öffnen: PDF-Bytes ohne Datei bzw. einen Entwurf der Dokumentation. */
+  openBytes: (data) => data && data.bytes instanceof Uint8Array && app.openBytes(data.bytes, String(data.name || 'Dokument.pdf'), null),
+  openDraft: (data) => data && typeof data.id === 'string' && app.studio.openDraft(data.id),
+  setWorkspace: (ws) => app.switchWorkspace(ws),
+  /** Nur im ersten Tab nach dem Start: gesicherte Kopien anbieten. */
+  offerRecovery: () => app.recovery.offer(),
+  /** Darstellung in einem anderen Tab geändert. */
+  themeChanged: () => applyTheme(),
   /** Beim Start gefunden: dezenter Hinweis unten rechts (nur im installierten Programm). */
   updateAvailable: (data) => showUpdate(data, () => desktop.installUpdate()),
   updateProgress: (data) => updateProgress(data && data.p),
@@ -221,6 +235,11 @@ export function installDesktopBridge(appInstance) {
   // Plattform-Klasse: Stile für die Desktop-App (z. B. ohne In-App-Menü „Datei“, siehe styles.css)
   document.documentElement.classList.add('desktop');
   if (desktop.platform !== 'darwin') installTitleBar(desktop);
+  if (desktop.tabs) app.tabHost = installTabStrip(desktop.tabs, app);
+  // Fenstertasten des Systems: In einer Tab-Ansicht kennt CSS ihren Platz nicht (env(titlebar-area-*)),
+  // also fester Abstand rechts (Windows: 3 × 46 px)
+  if (desktop.platform !== 'darwin' && !(navigator.windowControlsOverlay && navigator.windowControlsOverlay.visible))
+    document.documentElement.style.setProperty('--wco-pad', '150px');
 
   window.showOpenFilePicker = async () => {
     const entry = await desktop.showOpenDialog();

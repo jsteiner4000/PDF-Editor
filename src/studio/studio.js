@@ -341,6 +341,12 @@ export class Studio {
   }
 
   async open(project, sel = null) {
+    // Desktop-App: schon ein Dokument in diesem Tab – als Entwurf sichern und in eigenem Tab öffnen
+    const host = this.app.tabHost;
+    if (host && (this.app.session || (this.project && this.project.id !== project.id))) {
+      await saveDraft(pruneImages(project), { name: documentLabel(project), sub: [project.meta.customer, project.meta.site].filter(Boolean).join(' · ') });
+      return host.open({ kind: 'draft', id: project.id, name: documentLabel(project) });
+    }
     if (this.project) await this.flush();
     // Angaben zu Geräten aus dem Lageplan, die noch nicht in den Zugangsdaten stehen
     this.drafts = new Map();
@@ -375,6 +381,7 @@ export class Studio {
     // im Arbeitsbereich „Dokumentation“ bleiben (eine offene PDF läuft im Bereich „PDF“ weiter)
     await this.app.showHome();
     this.app.setView('home');
+    if (this.app.tabHost) this.app.tabHost.closedSelf();
   }
 
   /** Stand für den Verlauf: ohne Bilder (getrennt gehalten) und ohne Änderungszeit. */

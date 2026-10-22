@@ -38,7 +38,22 @@ test.skip(noDisplay, 'Keine Anzeige (DISPLAY) – mit xvfb-run starten');
 test.skip(!existsSync(path.join(ROOT, 'dist', 'PDF-Editor.html')), 'dist/PDF-Editor.html fehlt');
 
 const mainWindowTitle = (app) =>
-  app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getTitle());
+  app.evaluate(({ BrowserWindow }) => globalThis.__plantpdf.win().getTitle());
+
+const tabCount = (app) => app.evaluate(() => globalThis.__plantpdf.tabs().length);
+
+/** Seite (Playwright) des aktiven Tabs im vorderen Fenster. */
+async function activePage(app) {
+  for (let i = 0; i < 150; i++) {
+    const id = await app.evaluate(() => (globalThis.__plantpdf.tabs().find((t) => t.active && t.win === globalThis.__plantpdf.winId()) || {}).id);
+    for (const p of app.windows()) {
+      const self = await p.evaluate(() => window.pdfEditor && window.pdfEditor.tabHost && window.pdfEditor.tabHost.self).catch(() => null);
+      if (self === id) return p;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`aktiver Tab nicht gefunden (${app.windows().length} Seiten)`);
+}
 
 async function waitForDocument(page, name) {
   await page.waitForFunction(
@@ -67,7 +82,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     cwd: ROOT,
   });
   try {
-    const page = await app.firstWindow();
+    let page = await app.firstWindow();
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => m.type() === 'error' && errors.push('console: ' + m.text())); // z. B. CSP-Verstöße
@@ -111,6 +126,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
         'setState',
         'showOpenDialog',
         'showSaveDialog',
+        'tabs',
         'writeFile',
       ].sort(),
     );
@@ -150,15 +166,18 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     expect(readFileSync(copy).length).toBeGreaterThan(1000);
     expect(readFileSync(pdf).equals(saved)).toBe(true);
 
-    // 6. Menü „Datei > Öffnen …“ mit nativem Dialog
+    // 6. Menü „Datei > Öffnen …“ mit nativem Dialog: weitere Datei → eigener Tab
     await app.evaluate(({ dialog, Menu }, file) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
       Menu.getApplicationMenu().getMenuItemById('open').click();
     }, pdf);
-    await waitForDocument(page, 'dokument.pdf');
-    expect(await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('save').enabled)).toBe(
-      true,
-    );
+    await expect.poll(() => tabCount(app)).toBe(2);
+    let tab = await activePage(app);
+    await waitForDocument(tab, 'dokument.pdf');
+    await expect(tab.locator('#tabs .xtab')).toHaveCount(2);
+    expect(await app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('save').enabled)).toBe(true);
+    // die erste Datei läuft im ersten Tab unverändert weiter
+    expect(await page.evaluate(() => window.pdfEditor.file.name)).toBe('kopie.pdf');
 
     // 6b. „Anzeigen und drucken“: eigenes Fenster mit dem PDF-Betrachter (blob:-URL), ohne Bridge
     const previewOpened = app.waitForEvent('window');
@@ -168,20 +187,38 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     expect(await preview.evaluate(() => typeof window.pdfEditorDesktop)).toBe('undefined');
     await preview.close();
 
-    // 7. Zweite Instanz mit anderer Datei → öffnet im laufenden Fenster, Prozess endet sofort
+    // 7. Zweite Instanz mit anderer Datei → neuer Tab im laufenden Fenster, Prozess endet sofort
     const child = spawn(ELECTRON, [ROOT, ...extraArgs, second], { env, cwd: ROOT, stdio: 'ignore' });
     const exitCode = await new Promise((resolve) => child.on('exit', resolve));
     expect(exitCode).toBe(0);
-    await waitForDocument(page, 'layout.pdf');
-    expect(app.windows().length).toBe(1);
+    await expect.poll(() => tabCount(app)).toBe(3);
+    await waitForDocument(await activePage(app), 'layout.pdf');
+    expect(await app.evaluate(() => globalThis.__plantpdf.windows())).toBe(1);
+    // schon offene Datei noch einmal → kein neuer Tab, der vorhandene kommt nach vorn
+    const again = spawn(ELECTRON, [ROOT, ...extraArgs, pdf], { env, cwd: ROOT, stdio: 'ignore' });
+    await new Promise((resolve) => again.on('exit', resolve));
+    await expect.poll(async () => (await activePage(app)).evaluate(() => window.pdfEditor.file.name)).toBe('dokument.pdf');
+    expect(await tabCount(app)).toBe(3);
 
-    // 8. „Zuletzt geöffnet“: Handle aus IndexedDB öffnet die Datei wieder
-    await page.evaluate(() => window.pdfEditor.close());
-    const recent = page.locator('#recentList .ri', { hasText: 'dokument.pdf' });
+    // 8. Dokument schließen schließt seinen Tab; „Zuletzt geöffnet“ auf der Startseite (Haus-Symbol)
+    tab = await activePage(app);
+    await tab
+      .evaluate(() => {
+        setTimeout(() => window.pdfEditor.close(), 0);
+      })
+      .catch(() => {});
+    await expect.poll(() => tabCount(app)).toBe(2);
+    await (await activePage(app)).locator('#tHome').click();
+    await expect.poll(() => tabCount(app)).toBe(3);
+    const start = await activePage(app);
+    await start.waitForFunction(() => window.pdfEditor && window.pdfEditor.library.items.size >= 10, null, { timeout: 30_000 });
+    const recent = start.locator('#recentList .ri', { hasText: 'dokument.pdf' });
     await recent.waitFor();
     await recent.click();
-    await waitForDocument(page, 'dokument.pdf');
-    expect(await page.evaluate(() => window.pdfEditor.session.numPages)).toBeGreaterThan(0);
+    // öffnet in der Startseite (sie wird zum Dokument-Tab)
+    await waitForDocument(start, 'dokument.pdf');
+    expect(await start.evaluate(() => window.pdfEditor.session.numPages)).toBeGreaterThan(0);
+    page = start;
 
     // 9. Ungespeicherte Änderung → native Rückfrage beim Schließen („Abbrechen“ hält das Fenster offen)
     await page.evaluate(() => {
@@ -195,16 +232,16 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
         globalThis.__asked.push(options.message);
         return { response: globalThis.__asked.length === 1 ? 2 : 1 }; // erst Abbrechen, dann Nicht speichern
       };
-      BrowserWindow.getAllWindows()[0].close();
+      globalThis.__plantpdf.win().close();
     });
     await expect.poll(() => app.evaluate(() => globalThis.__asked.length)).toBe(1);
     expect(await app.evaluate(() => globalThis.__asked[0])).toBe(
       'Möchten Sie die Änderungen an „dokument.pdf“ speichern?',
     );
-    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+    expect(await app.evaluate(({ BrowserWindow }) => globalThis.__plantpdf.windows())).toBe(1);
 
     const closed = app.waitForEvent('close');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await app.evaluate(({ BrowserWindow }) => globalThis.__plantpdf.win().close());
     await closed;
     expect(readFileSync(pdf).equals(saved)).toBe(true); // „Nicht speichern“ ändert nichts
     // erwartet: nur die beiden CSP-Meldungen des absichtlich blockierten fetch() aus Schritt 2
@@ -254,7 +291,9 @@ const makeDirty = (page) =>
   });
 
 test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
-  const { app, page, dir, paths } = await launchWith(['schreibgeschuetzt.pdf']);
+  const launched = await launchWith(['schreibgeschuetzt.pdf']);
+  const { app, dir, paths } = launched;
+  let { page } = launched;
   const [readonly] = paths;
   try {
     await waitForDocument(page, 'schreibgeschuetzt.pdf');
@@ -297,7 +336,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
       await expect(first).toHaveAttribute('aria-expanded', 'true');
       await app.evaluate(({ Menu, BrowserWindow }, compact) => {
         const menu = Menu.getApplicationMenu();
-        (compact ? menu : menu.items[0].submenu).closePopup(BrowserWindow.getAllWindows()[0]);
+        (compact ? menu : menu.items[0].submenu).closePopup(globalThis.__plantpdf.win());
       }, compact);
       await expect(first).toHaveAttribute('aria-expanded', 'false');
       // F10 setzt den Fokus in die Menüleiste, Pfeil rechts wechselt, Esc kehrt zurück
@@ -350,15 +389,22 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
         Menu.getApplicationMenu().getMenuItemById('open').click();
       }, link);
-      // ungespeicherte Änderung → In-App-Rückfrage; „Nicht speichern“
-      // (die App fragt beim Öffnen zweimal: vor dem Dialog und vor dem Laden)
-      for (let i = 0; i < 2; i++)
-        await page.locator('.backdrop .btn', { hasText: 'Nicht speichern' }).click({ timeout: 5000 });
-      await waitForDocument(page, 'verknuepfung.pdf');
-      await makeDirty(page);
-      expect(await page.evaluate(() => window.pdfEditor.save())).toBe(true);
+      // öffnet in einem eigenen Tab – die ungespeicherte Änderung im ersten Tab bleibt, keine Rückfrage
+      await expect.poll(() => tabCount(app)).toBe(2);
+      const linked = await activePage(app);
+      await waitForDocument(linked, 'verknuepfung.pdf');
+      expect(await page.evaluate(() => window.pdfEditor.session.dirty)).toBe(true);
+      await makeDirty(linked);
+      expect(await linked.evaluate(() => window.pdfEditor.save())).toBe(true);
       expect(lstatSync(link).isSymbolicLink()).toBe(true);
       expect(readFileSync(readonly).equals(before)).toBe(false);
+      // weiter im neuen Tab; die Änderung im ersten Tab verwerfen (keine Rückfrage beim Schließen)
+      await page.evaluate(() => {
+        const s = window.pdfEditor.session;
+        s.savedVersion = s.version;
+        window.pdfEditor.updateHist();
+      });
+      page = linked;
     }
 
     // Menübefehle werden bei offenem App-Dialog ignoriert; Strg+1 / Strg+2 im Menü
@@ -378,7 +424,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
 
     // Alt-Taste: Loslassen nach Alt+Klick erreicht das Menü nicht; Alt allein schon
     const alt = await app.evaluate(async ({ BrowserWindow }) => {
-      const wc = BrowserWindow.getAllWindows()[0].webContents;
+      const wc = globalThis.__plantpdf.contents();
       const seen = [];
       wc.on(
         'before-input-event',
@@ -401,7 +447,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
       window.open(URL.createObjectURL(new Blob(['<p>kein PDF</p>'], { type: 'text/html' })), '_blank'),
     );
     await page.waitForTimeout(1500);
-    expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)).toBe(1);
+    expect(await app.evaluate(({ BrowserWindow }) => globalThis.__plantpdf.windows())).toBe(1);
 
     // Renderer-Absturz: Hinweis mit „Neu laden“, danach schließt das Fenster ohne Speichern-Rückfrage
     await makeDirty(page);
@@ -411,7 +457,7 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
         globalThis.__asked.push(options.message),
         { response: 0 }
       );
-      BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer();
+      globalThis.__plantpdf.contents().forcefullyCrashRenderer();
     });
     await expect
       .poll(() => app.evaluate(() => globalThis.__asked))
@@ -419,14 +465,14 @@ test('Desktop-App: Fehlerfälle, Absturz, Alt-Taste, Menü', async () => {
     await expect
       .poll(() =>
         app.evaluate(({ BrowserWindow }) => {
-          const wc = BrowserWindow.getAllWindows()[0].webContents;
+          const wc = globalThis.__plantpdf.contents();
           return !wc.isCrashed() && !wc.isLoading() && wc.getURL();
         }),
       )
       .toBe('app://pdf-editor/');
     await expect.poll(() => mainWindowTitle(app)).toBe('PlantPDF');
     const closed = app.waitForEvent('close');
-    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await app.evaluate(({ BrowserWindow }) => globalThis.__plantpdf.win().close());
     await closed;
     expect(await app.evaluate(() => globalThis.__asked).catch(() => 'beendet')).toBe('beendet');
   } finally {
@@ -551,13 +597,18 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     expect(text).toContain('Belegung der Arduino-Anschlüsse');
     expect(text).toContain('Seite 2 von 2');
 
-    // Wieder öffnen: PlantPDF bietet die Dokumentation zum Weiterbearbeiten an
+    // Wieder öffnen (eigener Tab): PlantPDF bietet die Dokumentation zum Weiterbearbeiten an
     await page.evaluate(async (b64) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       await window.pdfEditor.openBytes(bytes, 'plan.pdf', null);
     }, b64);
-    await expect(page.locator('#sdOffer')).toBeVisible();
-    await page.locator('#sdOffer .btn.primary').click();
+    await expect.poll(() => tabCount(app)).toBe(2);
+    const pdfTab = await activePage(app);
+    await expect(pdfTab.locator('#sdOffer')).toBeVisible();
+    await pdfTab.locator('#sdOffer .btn.primary').click();
+    // dieselbe Dokumentation ist schon offen: ihr Tab kommt nach vorn (kein zweiter)
+    await expect.poll(async () => (await activePage(app)) === page).toBe(true);
+    expect(await tabCount(app)).toBe(2);
     await expect(page.locator('#studio')).toBeVisible();
     expect(await page.evaluate(() => window.pdfEditor.studio.project.sections[0].hub.pins.length)).toBe(20);
     // Menü „Werkzeuge › Lageplan“: aus, solange es keinen Lageplan gibt; danach startet es das Werkzeug
@@ -572,5 +623,74 @@ test('Desktop-App: Dokumentation erstellen – PDF mit Projektdaten, wieder bear
     expect(errors).toEqual([]);
   } finally {
     await app.close();
+  }
+});
+
+test('Desktop-App: Tabs – zweite PDF im neuen Tab, umordnen, herausziehen, zurückziehen, Rückfrage je Tab', async () => {
+  const { app, page, paths } = await launchWith(['a.pdf', 'b.pdf']);
+  try {
+    // beim Start mit zwei Dateien öffnet die letzte; die erste kommt per Menü in einen zweiten Tab
+    await waitForDocument(page, 'b.pdf');
+    await app.evaluate(({ dialog, Menu }, file) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
+      Menu.getApplicationMenu().getMenuItemById('open').click();
+    }, paths[0]);
+    await expect.poll(() => tabCount(app)).toBe(2);
+    const a = await activePage(app);
+    await waitForDocument(a, 'a.pdf');
+    const names = (p) => p.locator('#tabs .xtab .nm').allTextContents();
+    await expect.poll(() => names(a)).toEqual(['b.pdf', 'a.pdf']);
+    await expect(a.locator('#tabs .xtab.on .nm')).toHaveText('a.pdf');
+
+    // Klick auf den anderen Tab wechselt; Fenstertitel folgt
+    await a.locator('#tabs .xtab', { hasText: 'b.pdf' }).click();
+    await expect.poll(() => mainWindowTitle(app)).toBe('b.pdf – PlantPDF');
+
+    // Umordnen per Ziehen in der Leiste
+    const b = await activePage(app);
+    const box = await b.locator('#tabs .xtab', { hasText: 'b.pdf' }).boundingBox();
+    const target = await b.locator('#tabs .xtab', { hasText: 'a.pdf' }).boundingBox();
+    await b.mouse.move(box.x + 30, box.y + box.height / 2);
+    await b.mouse.down();
+    for (let i = 1; i <= 8; i++) await b.mouse.move(box.x + 30 + ((target.x + target.width - 20 - box.x - 30) * i) / 8, box.y + box.height / 2);
+    await b.mouse.up();
+    await expect.poll(() => names(b)).toEqual(['a.pdf', 'b.pdf']);
+
+    // Herausziehen (losgelassen außerhalb des Fensters): eigenes Fenster
+    const bounds = await app.evaluate(() => globalThis.__plantpdf.win().getContentBounds());
+    const id = await b.evaluate(() => window.pdfEditor.tabHost.self);
+    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.drop(id, x, y), [id, bounds.x + 200, bounds.y + bounds.height + 300]);
+    await expect.poll(() => app.evaluate(() => globalThis.__plantpdf.windows())).toBe(2);
+    const tabs = await app.evaluate(() => globalThis.__plantpdf.tabs());
+    expect(new Set(tabs.map((t) => t.win)).size).toBe(2);
+    // der verschobene Tab behält seinen Zustand (keine neue Ansicht)
+    expect(await b.evaluate(() => window.pdfEditor.file.name)).toBe('b.pdf');
+
+    // Zurückziehen auf die Tab-Leiste des ersten Fensters: wieder ein Fenster mit zwei Tabs
+    const first = await app.evaluate(() => {
+      const t = globalThis.__plantpdf.tabs().find((x) => x.name === 'a.pdf');
+      return t.win;
+    });
+    const firstBounds = await app.evaluate((_e, wid) => globalThis.__plantpdf.boundsOf(wid), first);
+    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.drop(id, x, y), [id, firstBounds.x + 400, firstBounds.y + 20]);
+    await expect.poll(() => app.evaluate(() => globalThis.__plantpdf.windows())).toBe(1);
+    expect(await tabCount(app)).toBe(2);
+
+    // Fenster schließen: Rückfrage für jeden geänderten Tab (beide), „Abbrechen“ beim zweiten hält offen
+    await makeDirty(a);
+    await makeDirty(b);
+    await app.evaluate(({ dialog }) => {
+      globalThis.__asked = [];
+      dialog.showMessageBox = async (_win, options) => {
+        globalThis.__asked.push(options.message);
+        return { response: globalThis.__asked.length === 1 ? 1 : 2 }; // erst „Nicht speichern“, dann „Abbrechen“
+      };
+      globalThis.__plantpdf.win().close();
+    });
+    await expect.poll(() => app.evaluate(() => globalThis.__asked.length)).toBe(2);
+    expect(await app.evaluate(() => globalThis.__plantpdf.windows())).toBe(1);
+  } finally {
+    await app.evaluate(({ dialog }) => (dialog.showMessageBox = async () => ({ response: 1 }))).catch(() => {});
+    await app.close().catch(() => {});
   }
 });

@@ -2469,7 +2469,7 @@ button.feat:focus-visible {
 }
 .frame #top {
   -webkit-app-region: drag;
-  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px);
+  padding-right: var(--wco-pad, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 10px));
 }
 .frame #top button,
 .frame #top input,
@@ -2942,4 +2942,33 @@ select.ff:focus {
   display: flex;
   gap: 8px;
   flex: none;
+}
+
+/* Desktop-App mit Tabs: ein Tab je Dokument (src/platform/tab-strip.js) */
+.tabbed #docTab,
+.tabbed #prjTab,
+.tabbed .ws-dot {
+  display: none !important;
+}
+.xtab {
+  flex: 0 1 220px;
+  position: relative;
+  touch-action: none;
+}
+.reordering .xtab:not(.dragging) {
+  transition: transform 0.2s var(--ease-out);
+}
+.xtab.dragging {
+  z-index: 5;
+  cursor: grabbing;
+  background: var(--panel);
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh2);
+}
+.xtab.detaching {
+  opacity: 0.9;
+  box-shadow:
+    0 0 0 1px var(--line),
+    var(--sh3);
 }
