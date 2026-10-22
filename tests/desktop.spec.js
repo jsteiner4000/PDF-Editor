@@ -100,6 +100,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     expect(security.bridge).toEqual(
       [
         'grantDroppedFile',
+        'installUpdate',
         'makePdf',
         'onCommand',
         'onOpenFile',
