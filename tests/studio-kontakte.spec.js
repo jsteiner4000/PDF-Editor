@@ -26,7 +26,7 @@ test('Ansprechpartner und Wachschutz auf dem Deckblatt', async ({ browser }) => 
         const st = window.pdfEditor.studio;
         return st.doc.pages.filter((p) => p.kind === 'cover' || p.kind === 'coverinfo').map((p) => p.svg.replace(/<[^>]+>/g, ' '));
       });
-    await expect.poll(async () => (await cover())[0]).toContain('Muster Sicherheit');
+    await expect.poll(async () => (await cover())[0]).toContain('+49 800 112');
     const c0 = (await cover())[0];
     expect(c0).toContain('Ansprechpartner');
     expect(c0).toContain('Hr. Müller');

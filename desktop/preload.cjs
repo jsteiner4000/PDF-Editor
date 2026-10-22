@@ -52,6 +52,21 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
   },
   /** Eigene Titelleiste: Untermenü `index` (−1 = ganzes Menü) bei (x, y) öffnen; erfüllt beim Schließen. */
   popupMenu: (index, x, y) => call('menu:popup', Number(index), Number(x), Number(y)),
+  /**
+   * Tabs (wie im Browser): Dokument in neuem Tab öffnen ({ kind: 'file', fileId } | { kind: 'bytes',
+   * bytes, name } | { kind: 'draft', id, name }), Tab wählen, schließen, ordnen, herausziehen.
+   */
+  tabs: {
+    open: (open) => call('tab:open', open),
+    activate: (id) => call('tab:activate', Number(id)),
+    close: (id) => call('tab:close', Number(id)),
+    closedSelf: () => call('tab:closed-self'),
+    home: (ws) => call('tab:home', ws === 'pdf' || ws === 'docs' ? ws : null),
+    reorder: (id, index) => call('tab:reorder', Number(id), Number(index)),
+    drop: (id) => call('tab:drop', Number(id)),
+    /** nur für die Tests (im ausgelieferten Programm abgelehnt) */
+    dropAt: (id, x, y) => call('tab:drop-at', Number(id), Number(x), Number(y)),
+  },
   /** Hinweis „Update verfügbar“: laden, prüfen, installieren (PlantPDF startet neu). */
   installUpdate: () => call('update:install'),
   /** „Dokumentation erstellen“: Druckfassung (HTML) als PDF-Bytes. */
@@ -62,8 +77,11 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
       name: String(state.name || ''),
       dirty: !!state.dirty,
       siteOpen: !!state.siteOpen,
+      studioOpen: !!state.studioOpen,
       stripActive: !!state.stripActive,
       pdfOpen: !!state.pdfOpen,
+      fileId: typeof state.fileId === 'string' ? state.fileId.slice(0, 64) : '',
+      projectId: typeof state.projectId === 'string' ? state.projectId.slice(0, 64) : '',
       workspace: state.workspace === 'docs' ? 'docs' : 'pdf',
       theme: ['light', 'dark', 'system'].includes(state.theme) ? state.theme : 'system',
     }),

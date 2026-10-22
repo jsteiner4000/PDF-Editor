@@ -131,14 +131,16 @@ export class App {
     this.fontsPanel = new FontsPanel(this);
     this.studio = new Studio(this);
     this.recovery = new Recovery(this);
+    /** Desktop-App: Tab-Leiste (jeder Tab ein Dokument), sonst null */
+    this.tabHost = null;
     this.view = 'home';
     this.workspace = readWorkspace();
     this.build();
     this.loadFonts();
     this.showHome();
     this.setView('home');
-    // nach einem unerwarteten Ende: gesicherte Kopie anbieten
-    setTimeout(() => this.recovery.offer(), 400);
+    // nach einem unerwarteten Ende: gesicherte Kopie anbieten (Desktop: nur im ersten Tab, auf Zuruf)
+    if (!window.pdfEditorDesktop) setTimeout(() => this.recovery.offer(), 400);
   }
   build() {
     this.root.innerHTML = `
@@ -590,7 +592,8 @@ export class App {
     if (this.session) await this.setTool(tool);
   }
   async openDialog() {
-    if (!(await this.confirmDiscard())) return;
+    // Desktop-App: die Datei öffnet in einem eigenen Tab – nichts wird verworfen
+    if (!this.tabHost && !(await this.confirmDiscard())) return;
     if (window.showOpenFilePicker)
       try {
         const [handle] = await window.showOpenFilePicker({
@@ -623,8 +626,17 @@ export class App {
     const bytes = new Uint8Array(await file.arrayBuffer());
     return this.openBytes(bytes, file.name, handle);
   }
+  /** Ist in diesem Fenster bzw. Tab schon ein Dokument (PDF oder Dokumentation) offen? */
+  hasDocument() {
+    return !!this.session || !!this.studio.project;
+  }
   async openBytes(bytes, name, handle) {
     closeMenu();
+    // Desktop-App: ein weiteres Dokument öffnet in einem eigenen Tab
+    if (this.tabHost && this.hasDocument()) {
+      await this.tabHost.open(handle && handle.desktopId ? { kind: 'file', fileId: handle.desktopId, name } : { kind: 'bytes', bytes, name });
+      return true;
+    }
     if (this.session && !(await this.confirmDiscard())) return false;
     let failure = null;
     const ok = await withBusy(async () => {
@@ -733,12 +745,14 @@ export class App {
         // im Arbeitsbereich „PDF“ bleiben – eine offene Dokumentation läuft im anderen Bereich weiter
         this.showHome();
         this.setView('home');
+        if (this.tabHost) this.tabHost.closedSelf();
       }
     }
   }
   /** Reiter „Start“: Startseite zeigen (ein geöffnetes Dokument bleibt geöffnet). */
   async showStart() {
     if (this.view === 'home') return;
+    if (this.tabHost && this.hasDocument()) return this.tabHost.home();
     await this.finishEdit();
     if (this.view === 'studio') await this.studio.flush();
     this.showHome();
@@ -750,6 +764,11 @@ export class App {
    */
   async switchWorkspace(ws) {
     if (ws !== 'pdf' && ws !== 'docs') return;
+    // Desktop-App: Tab mit Dokument – der andere Bereich ist die Startseite des Fensters
+    if (this.tabHost && this.hasDocument()) {
+      if (ws === this.workspace) return;
+      return this.tabHost.home(ws);
+    }
     if (ws === this.workspace) {
       // erneuter Klick auf den aktiven Bereich: zu seiner Startseite bzw. seinem Dokument
       if (this.view === 'home') return;
