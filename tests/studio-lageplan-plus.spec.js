@@ -265,23 +265,30 @@ test('Benutzer je Gerät, Zugangsdaten beidseitig verknüpft, Richtfunk-WLAN, Au
     expect(acc.devices.find((d) => d.sym === 'nv').users).toHaveLength(1);
 
     // Geräteliste im Dokument: Klick auf eine Zeile zeigt das Gerät im Plan und lässt es aufleuchten
-    const listRow = await page.evaluate(() => {
-      const st = window.pdfEditor.studio;
-      const s = st.project.sections.find((x) => x.type === 'site');
-      const i = st.doc.pages.findIndex((p) => p.section === s.id && !p.site && p.hits.some((h) => h.kind === 'sym'));
-      const hit = st.doc.pages[i].hits.find((h) => h.kind === 'sym' && h.id === 'r2');
-      const el = document.querySelectorAll('#sdPages .sd-page')[i];
-      el.scrollIntoView();
-      const r = el.getBoundingClientRect();
-      const k = r.width / 595.276;
-      return [r.left + (hit.rect[0] + 30) * k, r.top + (hit.rect[1] + hit.rect[3] / 2) * k];
-    });
+    const listRow = () =>
+      page.evaluate(() => {
+        const st = window.pdfEditor.studio;
+        const s = st.project.sections.find((x) => x.type === 'site');
+        const i = st.doc.pages.findIndex((p) => p.section === s.id && !p.site && p.hits.some((h) => h.kind === 'sym'));
+        const hit = st.doc.pages[i].hits.find((h) => h.kind === 'sym' && h.id === 'r2');
+        const el = document.querySelectorAll('#sdPages .sd-page')[i];
+        el.scrollIntoView();
+        const r = el.getBoundingClientRect();
+        const k = r.width / 595.276;
+        return [r.left + (hit.rect[0] + 30) * k, r.top + (hit.rect[1] + hit.rect[3] / 2) * k];
+      });
     // Klick: Gerät bearbeiten (kein Sprung); Rechtsklick > „Im Lageplan zeigen“: springt und leuchtet auf
-    await page.mouse.click(...listRow);
-    expect(await page.evaluate(() => window.pdfEditor.studio.sel)).toMatchObject({ kind: 'sym', id: 'r2' });
+    // (Lage jedes Mal frisch messen – nach dem Rückgängig kann die Seite noch neu gesetzt werden)
+    await expect(async () => {
+      await page.mouse.click(...(await listRow()));
+      expect(await page.evaluate(() => window.pdfEditor.studio.sel)).toMatchObject({ kind: 'sym', id: 'r2' });
+    }).toPass({ timeout: 10_000 });
     await expect(page.locator('.sd-pulse-dot')).toHaveCount(0);
-    await page.mouse.click(...listRow, { button: 'right' });
-    await page.locator('.menu .mi', { hasText: 'Im Lageplan zeigen' }).click();
+    await expect(async () => {
+      await page.keyboard.press('Escape');
+      await page.mouse.click(...(await listRow()), { button: 'right' });
+      await page.locator('.menu .mi', { hasText: 'Im Lageplan zeigen' }).click({ timeout: 2000 });
+    }).toPass({ timeout: 15_000 });
     await expect(page.locator('.sd-pulse-dot')).toHaveCount(1);
     // Geräteliste: IP aus den Zugangsdaten
     text = await page.evaluate(() => window.pdfEditor.studio.doc.pages.filter((p) => p.section === window.pdfEditor.studio.project.sections.find((x) => x.type === 'site').id).map((p) => p.svg).join(''));
