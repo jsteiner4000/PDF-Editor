@@ -650,7 +650,11 @@ function start() {
 
   /** Laden, prüfen, PlantPDF schließen (mit Rückfrage je geänderten Tab), Installer starten. */
   async function installUpdate() {
-    const reset = () => command('updateProgress', { data: { p: -1 } });
+    // alle Meldungen an den Tab, in dem das Update gestartet wurde (er zeigt die Ladeanzeige)
+    const tab = activeTab();
+    const reset = () => {
+      for (const t of allTabs()) if (t.ready) command('updateProgress', { tab: t, data: { p: -1 } });
+    };
     if (updating) return false;
     if (!update || !focusedWin()) return reset(), false;
     // ohne Prüfsumme nichts automatisch installieren: Release-Seite im Browser öffnen
@@ -667,11 +671,13 @@ function start() {
       // höchstens ~200 Meldungen je Download an die Ladeanzeige
       if (p < 1 && p - last < 0.005) return;
       last = p;
-      command('updateProgress', { data: { p, total: info.size, version: info.version } });
+      command('updateProgress', { tab, data: { p, total: info.size, version: info.version } });
     };
     try {
-      command('updateProgress', { data: { p: 0, total: info.size, version: info.version } });
+      command('updateProgress', { tab, data: { p: 0, total: info.size, version: info.version } });
       const file = await downloadUpdate(info, progress);
+      // kurz vor Schluss abgebrochen: trotzdem nicht installieren
+      if (cancelled) return reset(), false;
       progress(1);
       // Programm inzwischen beendet: nichts mehr installieren
       if (quitting || !focusedWin()) return reset(), false;
@@ -681,8 +687,9 @@ function start() {
           return false;
         }
       // Häkchen zeigen, dann installieren (der Installer schließt PlantPDF und startet es neu)
-      command('updateProgress', { data: { phase: 'install', version: info.version } });
-      await new Promise((r) => setTimeout(r, 900));
+      command('updateProgress', { tab, data: { phase: 'install', version: info.version } });
+      // Ring voll, Haken und Glitzer abwarten
+      await new Promise((r) => setTimeout(r, 1500));
       await runInstaller(file);
       for (const w of wins) w.allowClose = true;
       app.quit();
