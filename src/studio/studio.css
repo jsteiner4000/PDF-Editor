@@ -1425,3 +1425,26 @@ textarea.fld.mono {
 .sd-sel.sd-in {
   animation: sd-sel-in 0.2s var(--ease-out);
 }
+
+/* Abschnitt nicht in der fertigen PDF (z. B. Fotodokumentation nur für die Arbeit im Programm) */
+.sd-page.sd-off .sd-svg {
+  opacity: 0.55;
+  filter: grayscale(0.4);
+}
+.sd-page.sd-off::before {
+  content: 'Nicht in der PDF';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ink2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.sd-sec-off .sd-thumb {
+  opacity: 0.5;
+}

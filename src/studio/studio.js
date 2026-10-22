@@ -749,6 +749,9 @@ export class Studio {
       el.style.height = h + 'px';
       el.dataset.index = i;
       el.dataset.section = page.section;
+      // Fotodokumentation „nicht in die PDF“: sichtbar, aber gekennzeichnet
+      const sec = this.section(page.section);
+      el.classList.toggle('sd-off', !!(sec && sec.type === 'photos' && sec.inPdf === false));
       if (el._svg !== page.svg) {
         el.firstChild.innerHTML = page.svg;
         el._svg = page.svg;
@@ -942,6 +945,8 @@ export class Studio {
         : pages.length === 1
           ? `Seite ${first[1] + 1}`
           : `Seite ${first[1] + 1}–${pages[pages.length - 1][1] + 1}`;
+      if (section.type === 'photos' && section.inPdf === false) li.querySelector('small').textContent += ' · nicht in der PDF';
+      li.classList.toggle('sd-sec-off', section.type === 'photos' && section.inPdf === false);
       li.setAttribute('aria-label', `${li.querySelector('b').textContent}, ${li.querySelector('small').textContent}`);
       const thumb = li.querySelector('.sd-thumb');
       const svg = first ? first[0].svg : '';
@@ -2311,7 +2316,7 @@ ${toPdf}
   async buildPdf(showSecrets = null) {
     if (this.project.font === 'barlow' || this.project.design === 'manual') await ensureBarlow();
     const source = this.withSecrets(showSecrets);
-    const doc = renderDocument(source, { skipEmpty: true });
+    const doc = renderDocument(source, { skipEmpty: true, forPdf: true });
     if (doc.skipped.length) toast(`Leere Abschnitte nicht aufgenommen: ${doc.skipped.join(', ')}`, '', 5000);
     const ts = typesetter(this.project);
     const html = printHtml({ pages: doc.pages, font: this.project.font, design: this.project.design, lang: ts.lang }, doc.label);
@@ -2406,7 +2411,7 @@ ${toPdf}
       return;
     }
     // Browser: Druckfassung in einem unsichtbaren Rahmen drucken
-    const doc = renderDocument(this.withSecrets(show), { skipEmpty: true });
+    const doc = renderDocument(this.withSecrets(show), { skipEmpty: true, forPdf: true });
     const frame = document.createElement('iframe');
     frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden';
     frame.sandbox = 'allow-same-origin allow-modals'; // keine Skripte in der Druckfassung

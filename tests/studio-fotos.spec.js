@@ -93,3 +93,77 @@ test('Fotos zum Gerät, Fotostandort per Rechtsklick, „Im Lageplan zeigen“, 
     await context.close();
   }
 });
+
+test('PDF: Fotodokumentation und Fotostandorte je Dokument ein/aus, Sprünge Foto ↔ Lageplan', async ({ browser }) => {
+  const { PDFDocument, PDFName } = await import('pdf-lib');
+  const { page, context, errors } = await launch(browser, 'neubau');
+  try {
+    await page.exposeFunction('__pdfixMakePdf', async (html) => {
+      const printer = await context.newPage();
+      try {
+        await printer.setContent(html);
+        return Buffer.from(await printer.pdf({ preferCSSPageSize: true, printBackground: true })).toString('base64');
+      } finally {
+        await printer.close();
+      }
+    });
+    await page.locator('#wsDocs').click();
+    await page.locator('.tpl[data-tpl="documentation"]').click();
+    await page.locator('.dlg .btn.primary', { hasText: 'Erstellen' }).click();
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      const s = st.project.sections.find((x) => x.type === 'site');
+      const mk = (id, kind, x) => ({ id, kind, x, y: 0.5, name: { de: '', en: '' }, note: { de: '', en: '' }, scale: 1, fov: true, dir: 0, angle: 60, range: 50 });
+      st.change('x', (p) => {
+        s.symbols.push(mk('k1', 'camera', 0.3), mk('f1', 'photo', 0.7));
+        st.photosTarget(p).items.push(
+          { id: 'p1', image: null, caption: { de: 'Einfahrt', en: '' }, date: '', link: 'k1' },
+          { id: 'p2', image: null, caption: { de: 'Hof', en: '' }, date: '', link: 'f1' },
+        );
+      });
+    });
+    const build = async () => {
+      const b64 = await page.evaluate(async () => {
+        const bytes = await window.pdfEditor.studio.buildPdf();
+        let s = '';
+        for (const b of bytes) s += String.fromCharCode(b);
+        return btoa(s);
+      });
+      const doc = await PDFDocument.load(Buffer.from(b64, 'base64'));
+      const dests = doc.catalog.lookup(PDFName.of('Dests'));
+      const links = doc.getPages().flatMap((pg) => {
+        const a = pg.node.lookup(PDFName.of('Annots'));
+        return a ? a.asArray().map((r) => String(doc.context.lookup(r).get(PDFName.of('Dest')))) : [];
+      });
+      return { pages: doc.getPageCount(), dests: dests ? dests.keys().map(String) : [], links };
+    };
+    const all = await build();
+    // Kamera → Foto 1, Fotostandort → Foto 2; Foto 1 → Kamera, Foto 2 → Standort
+    expect(all.links.sort()).toEqual(['/ph-p1', '/ph-p2', '/sy-f1', '/sy-k1']);
+    expect(all.dests).toEqual(expect.arrayContaining(['/ph-p1', '/ph-p2', '/sy-k1', '/sy-f1']));
+
+    // Fotostandorte nicht in der PDF: kein Sprung vom Standort, Foto führt trotzdem zur Stelle
+    const site = page.locator('#sdIBody .sd-check', { hasText: 'Fotostandorte in der fertigen PDF' });
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      st.select({ kind: 'section', id: st.project.sections.find((x) => x.type === 'site').id });
+    });
+    await site.click();
+    expect((await build()).links.sort()).toEqual(['/ph-p1', '/sy-f1', '/sy-k1']);
+
+    // Fotodokumentation nicht in der PDF: Seiten fehlen, im Programm gekennzeichnet
+    await page.evaluate(() => {
+      const st = window.pdfEditor.studio;
+      st.select({ kind: 'section', id: st.project.sections.find((x) => x.type === 'photos').id });
+    });
+    await page.locator('#sdIBody .sd-check', { hasText: 'In die fertige PDF übernehmen' }).click();
+    await expect(page.locator('#sdPages .sd-page.sd-off')).toHaveCount(1);
+    await expect(page.locator('.sd-sec', { hasText: 'nicht in der PDF' })).toHaveCount(1);
+    const none = await build();
+    expect(none.pages).toBe(all.pages - 1);
+    expect(none.links).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
