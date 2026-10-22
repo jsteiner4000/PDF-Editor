@@ -1,6 +1,7 @@
 /**
  * Tab-Leiste der Desktop-App (wie Chrome/Edge): ein Tab je geöffnetem Dokument, das Haus-Symbol ist
- * die Startseite. Jeder Tab ist im Hauptprozess eine eigene Programmansicht; diese Leiste zeigt die
+ * die Startseite. Sichtbar sind nur die Tabs des aktuellen Bereichs – im Bereich „PDF“ die PDFs, in
+ * „Dokumentation“ die Dokumentationen. Jeder Tab ist im Hauptprozess eine eigene Programmansicht; diese Leiste zeigt die
  * Tabs des Fensters an und meldet Klicks, Schließen, Umordnen und Herausziehen zurück.
  *
  * Ziehen: waagerecht ordnet um (die Nachbarn rücken weich zur Seite); weiter als 40 px nach unten
@@ -16,7 +17,7 @@ export function installTabStrip(tabs, app) {
   document.documentElement.classList.add('tabbed');
   const nav = document.getElementById('tabs');
   const home = document.getElementById('tHome');
-  let state = { tabs: [], active: 0, self: 0 };
+  let state = { tabs: [], active: 0, self: 0, ws: '' };
   let drag = null;
 
   function render(data) {
@@ -26,7 +27,8 @@ export function installTabStrip(tabs, app) {
     const activeTab = state.tabs.find((t) => t.id === state.active);
     home.classList.toggle('on', !activeTab || activeTab.kind === 'home');
     for (const t of state.tabs) {
-      if (t.kind === 'home') continue;
+      // nur die Tabs des aktuellen Bereichs (PDF bzw. Dokumentation)
+      if (t.kind === 'home' || (state.ws && t.kind !== state.ws)) continue;
       const on = t.id === state.active;
       const el = htmlToElement(
         `<div class="doctab xtab${on ? ' on' : ''}" role="tab" aria-selected="${on}" tabindex="0" data-id="${t.id}" title="${escapeHtml(t.name)}"><span class="ti ${t.kind === 'docs' ? 'c6' : 'c1'}">${icon(t.kind === 'docs' ? 'binder' : 'file', 's')}</span><span class="nm">${escapeHtml(t.name)}</span>${t.dirty ? '<span class="dot" title="Ungespeicherte Änderungen"></span>' : ''}<button class="btn ic" title="Tab schließen (Strg+W)" aria-label="${escapeHtml(t.name)} schließen">${icon('close', 's')}</button></div>`,

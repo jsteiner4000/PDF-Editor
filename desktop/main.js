@@ -308,11 +308,23 @@ function start() {
     const w = tab.win;
     const i = w.tabs.indexOf(tab);
     if (i < 0) return;
+    const ws = wsOf(tab);
     w.tabs.splice(i, 1);
     disposeTab(tab);
     if (!w.tabs.length) createTab(w);
-    else if (w.active === tab) activateTab(w.tabs[Math.min(i, w.tabs.length - 1)]);
+    else if (w.active === tab) activateNear(w, i, ws);
     broadcastTabs(w);
+  }
+
+  /** Art eines Tabs und sein Arbeitsbereich (die Startseite gehört zum dort gewählten Bereich). */
+  const kindOf = (t) => (t.state.studioOpen ? 'docs' : t.state.hasDocument ? 'pdf' : 'home');
+  const wsOf = (t) => (kindOf(t) === 'home' ? (t.state.workspace === 'docs' ? 'docs' : 'pdf') : kindOf(t));
+
+  /** Nach dem Entfernen an Stelle `i`: nächster Tab desselben Bereichs, sonst dessen Startseite. */
+  function activateNear(w, i, ws) {
+    const same = w.tabs.filter((t) => kindOf(t) === ws);
+    if (!same.length) return homeTab(w, ws);
+    activateTab(same.reduce((a, b) => (Math.abs(w.tabs.indexOf(b) - i) < Math.abs(w.tabs.indexOf(a) - i) ? b : a)));
   }
 
   /** Tab schließen mit Rückfrage bei Änderungen. */
@@ -351,7 +363,7 @@ function start() {
       from.allowClose = true;
       from.base.close();
     } else {
-      if (from.active === tab) activateTab(from.tabs[Math.min(i, from.tabs.length - 1)]);
+      if (from.active === tab) activateNear(from, i, wsOf(tab));
       broadcastTabs(from);
     }
   }
@@ -400,12 +412,14 @@ function start() {
   /** Startseite eines Fensters zeigen (vorhandene oder neue); `ws`: Arbeitsbereich dort. */
   function homeTab(w, ws = null) {
     let start = w.tabs.find((t) => !t.state.hasDocument);
-    if (!start) start = createTab(w, { activate: true });
-    else activateTab(start);
+    if (!start) start = createTab(w, { activate: false });
     if (ws === 'pdf' || ws === 'docs') {
+      // gleich vormerken, damit die Tab-Leiste sofort die Tabs dieses Bereichs zeigt
+      start.state.workspace = ws;
       if (start.ready) command('setWorkspace', { tab: start, data: ws });
       else start.workspace = ws;
     }
+    activateTab(start);
   }
 
   /** Allen Tabs eines Fensters die Tab-Leiste schicken. */
@@ -413,8 +427,10 @@ function start() {
     if (!alive(w)) return;
     const list = w.tabs
       .filter((t) => !t.closed)
-      .map((t) => ({ id: t.id, name: t.state.name, dirty: !!t.state.dirty, kind: t.state.studioOpen ? 'docs' : t.state.hasDocument ? 'pdf' : 'home' }));
-    for (const t of w.tabs) if (t.ready && usable(t)) t.view.webContents.send('app:command', { command: 'tabs', data: { tabs: list, active: w.active ? w.active.id : 0, self: t.id } });
+      .map((t) => ({ id: t.id, name: t.state.name, dirty: !!t.state.dirty, kind: kindOf(t) }));
+    // die Leiste zeigt nur die Tabs des Bereichs, in dem man gerade ist (PDF bzw. Dokumentation)
+    const ws = w.active ? wsOf(w.active) : 'pdf';
+    for (const t of w.tabs) if (t.ready && usable(t)) t.view.webContents.send('app:command', { command: 'tabs', data: { tabs: list, active: w.active ? w.active.id : 0, self: t.id, ws } });
   }
 
   function openPath(filePath) {
@@ -774,9 +790,12 @@ function start() {
       if (input.type !== 'keyDown' || input.isAutoRepeat || input.alt || input.meta) return;
       const key = input.key.toLowerCase();
       const w = tab.win;
+      // nur durch die Tabs des aktuellen Bereichs (samt Startseite)
       const step = (d) => {
-        const i = w.tabs.indexOf(w.active);
-        activateTab(w.tabs[(i + d + w.tabs.length) % w.tabs.length]);
+        const ws = wsOf(w.active);
+        const list = w.tabs.filter((t) => kindOf(t) === 'home' || kindOf(t) === ws);
+        const i = list.indexOf(w.active);
+        activateTab(list[(i + d + list.length) % list.length]);
       };
       const action =
         key === 'tab' && input.control
@@ -788,7 +807,7 @@ function start() {
               : input.control && key === 'w'
                 ? () => (tab.state.hasDocument || w.tabs.length > 1 ? closeTab(tab) : w.base.close())
                 : input.control && key === 't'
-                  ? () => homeTab(w)
+                  ? () => homeTab(w, wsOf(w.active))
                   : input.control && key === 'm'
                     ? () => w.base.minimize()
                     : null;
@@ -952,12 +971,13 @@ function start() {
       if (tab.win.tabs.length > 1) removeTab(tab);
       else broadcastTabs(tab.win);
     });
-    handle('tab:home', (tab, ws) => homeTab(tab.win, ws === 'pdf' || ws === 'docs' ? ws : null));
+    handle('tab:home', (tab, ws) => homeTab(tab.win, ws === 'pdf' || ws === 'docs' ? ws : wsOf(tab)));
     handle('tab:reorder', (tab, id, index) => {
       const t = tabById(id);
       if (!t || t.win !== tab.win || !Number.isInteger(index)) return;
       const w = tab.win;
-      const docs = w.tabs.filter((x) => x.state.hasDocument);
+      // Stelle unter den sichtbaren Tabs, also denen desselben Bereichs
+      const docs = w.tabs.filter((x) => x.state.hasDocument && kindOf(x) === kindOf(t));
       const before = docs.filter((x) => x !== t)[index] || null;
       w.tabs.splice(w.tabs.indexOf(t), 1);
       w.tabs.splice(before ? w.tabs.indexOf(before) : w.tabs.length, 0, t);
@@ -989,7 +1009,8 @@ function start() {
         stripActive: !!state.stripActive,
         fileId: typeof state.fileId === 'string' ? state.fileId : '',
         projectId: typeof state.projectId === 'string' ? state.projectId : '',
-        workspace: state.workspace === 'docs' ? 'docs' : 'pdf',
+        // (ein vorgemerkter Bereich gilt, bis die Startseite ihn übernommen hat)
+        workspace: tab.workspace || (state.workspace === 'docs' ? 'docs' : 'pdf'),
       };
       updateTitle(tab.win);
       broadcastTabs(tab.win);
