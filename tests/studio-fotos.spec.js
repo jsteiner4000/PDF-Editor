@@ -142,14 +142,14 @@ test('PDF: Fotodokumentation und Fotostandorte je Dokument ein/aus, Sprünge Fot
     expect(all.links.sort()).toEqual(['/ph-p1', '/ph-p2', '/sy-f1', '/sy-k1']);
     expect(all.dests).toEqual(expect.arrayContaining(['/ph-p1', '/ph-p2', '/sy-k1', '/sy-f1']));
 
-    // Fotostandorte nicht in der PDF: kein Sprung vom Standort, Foto führt trotzdem zur Stelle
+    // Fotostandorte nicht in der PDF: kein Sprung vom Standort und keiner ins Leere (Foto 2 ohne Ziel)
     const site = page.locator('#sdIBody .sd-check', { hasText: 'Fotostandorte in der fertigen PDF' });
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       st.select({ kind: 'section', id: st.project.sections.find((x) => x.type === 'site').id });
     });
     await site.click();
-    expect((await build()).links.sort()).toEqual(['/ph-p1', '/sy-f1', '/sy-k1']);
+    expect((await build()).links.sort()).toEqual(['/ph-p1', '/sy-k1']);
 
     // Fotodokumentation nicht in der PDF: Seiten fehlen, im Programm gekennzeichnet
     await page.evaluate(() => {

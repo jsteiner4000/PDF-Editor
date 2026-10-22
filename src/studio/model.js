@@ -341,28 +341,30 @@ function codeOffsets(site, project) {
 }
 
 /** Nummern der Symbole: Kennung → „K 1“ (je Kürzel lückenlos, über alle Lagepläne durchgehend). */
-export function symbolLabels(site, project = null) {
+/** `forPdf`: nur Fotos zählen, die in die fertige PDF kommen. */
+export function symbolLabels(site, project = null, forPdf = false) {
   const off = codeOffsets(site, project);
   const out = new Map();
   for (const [code, list] of numberedGroups(site)) list.forEach((sym, i) => out.set(sym.id, `${code}${codeSep(code)}${(off.get(code) || 0) + i + 1}`));
   if (site.symbols.some((y) => y.kind === 'photo')) {
-    const nums = photoNumbers(project);
+    const nums = photoNumbers(project, forPdf);
     for (const y of site.symbols) if (y.kind === 'photo') out.set(y.id, photoLabel(nums.get(y.id)));
   }
   return out;
 }
 
 /** Nummern der Fotos je verknüpftem Symbol: Kennung → [3, 4] (wie in der Fotodokumentation). */
-export function photoNumbers(project) {
+export function photoNumbers(project, forPdf = false) {
   const out = new Map();
   for (const s of project ? project.sections : [])
-    if (s.type === 'photos') s.items.forEach((p, i) => p.link && (out.get(p.link) || out.set(p.link, []).get(p.link)).push(i + 1));
+    if (s.type === 'photos' && !(forPdf && s.inPdf === false)) s.items.forEach((p, i) => p.link && (out.get(p.link) || out.set(p.link, []).get(p.link)).push(i + 1));
   return out;
 }
 
 /** „F 3“, „F 3, 5“, „F 3–5“; ohne Foto nur „F“. */
 function photoLabel(list) {
   if (!list || !list.length) return 'F';
+  list = [...new Set(list)].sort((a, b) => a - b);
   const parts = [];
   for (let i = 0; i < list.length; i++) {
     let j = i;

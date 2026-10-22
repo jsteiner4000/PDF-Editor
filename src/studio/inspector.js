@@ -1209,7 +1209,7 @@ Object.assign(Inspector.prototype, {
     }
   },
 
-  /** „Plan ausdünnen“: ganze Arten blass oder aus (die Legende bleibt vollständig). */
+  /** „Plan ausdünnen“: ganze Arten blass oder aus (die Legende bleibt vollständig, außer bei ausgeblendeten Fotostandorten). */
   thinGroup(s) {
     const studio = this.studio;
     const lang = langsOf(this.project)[0];
