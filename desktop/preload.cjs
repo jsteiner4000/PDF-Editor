@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
   },
   /** Hinweis „Update verfügbar“: laden, prüfen, installieren (PlantPDF startet neu). */
   installUpdate: () => call('update:install'),
+  /** Laufenden Download abbrechen (Ladeanzeige › Abbrechen). */
+  cancelUpdate: () => call('update:cancel'),
   /** „Dokumentation erstellen“: Druckfassung (HTML) als PDF-Bytes. */
   makePdf: (html) => call('studio:pdf', String(html)),
   setState: (state) =>

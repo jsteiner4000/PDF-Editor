@@ -605,6 +605,7 @@ function start() {
   const updatesEnabled = () => app.isPackaged && process.platform === 'win32' && !process.env.PDF_EDITOR_NO_UPDATES;
   let update = null; // gefundenes Update
   let updating = false;
+  let cancelled = false;
   let quitting = false;
   app.on('before-quit', () => {
     quitting = true;
@@ -658,12 +659,19 @@ function start() {
       return reset(), false;
     }
     updating = true;
+    cancelled = false;
+    const info = update;
+    let last = -1;
     const progress = (p) => {
       for (const w of wins) if (alive(w)) w.base.setProgressBar(p);
-      command('updateProgress', { data: { p } });
+      // höchstens ~200 Meldungen je Download an die Ladeanzeige
+      if (p < 1 && p - last < 0.005) return;
+      last = p;
+      command('updateProgress', { data: { p, total: info.size, version: info.version } });
     };
     try {
-      const file = await downloadUpdate(update, progress);
+      command('updateProgress', { data: { p: 0, total: info.size, version: info.version } });
+      const file = await downloadUpdate(info, progress);
       progress(1);
       // Programm inzwischen beendet: nichts mehr installieren
       if (quitting || !focusedWin()) return reset(), false;
@@ -672,14 +680,18 @@ function start() {
           reset();
           return false;
         }
+      // Häkchen zeigen, dann installieren (der Installer schließt PlantPDF und startet es neu)
+      command('updateProgress', { data: { phase: 'install', version: info.version } });
+      await new Promise((r) => setTimeout(r, 900));
       await runInstaller(file);
       for (const w of wins) w.allowClose = true;
       app.quit();
       return true;
     } catch (err) {
-      console.error('Update', err);
       reset();
-      if (quitting || !focusedWin()) return false;
+      // „Abbrechen“ in der Ladeanzeige: keine Fehlermeldung
+      if (cancelled || quitting || !focusedWin()) return false;
+      console.error('Update', err);
       showMessage(baseOf(null), {
         type: 'warning',
         title: APP_NAME,
@@ -883,6 +895,12 @@ function start() {
     handle('file:read', (_tab, id) => files.read(id));
     // Hinweis „Update verfügbar“ > „Jetzt aktualisieren“
     handle('update:install', () => installUpdate());
+    handle('update:cancel', () => {
+      if (!updating) return false;
+      cancelled = true;
+      abortDownload();
+      return true;
+    });
     // „Dokumentation erstellen“: Druckfassung → PDF (höchstens 200 MB Text, z. B. mit Fotos)
     handle('studio:pdf', async (_tab, html) => {
       if (typeof html !== 'string' || !html.startsWith('<!doctype html>') || html.length > 200 * 1024 * 1024) throw new Error('Ungültige Druckfassung');
