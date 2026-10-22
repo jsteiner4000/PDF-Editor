@@ -51,6 +51,7 @@ const GLYPHS = {
   cabinet: '<rect x="6" y="4" width="12" height="16" rx="1.5"/><path d="M12.8 7.5 10.2 12.2h3.6l-2.6 4.6"/>',
   junction: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M3.5 12h3M17.5 12h3M12 3.5v3M12 17.5v3"/>',
   rack: '<rect x="6" y="3.5" width="12" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h7"/>',
+  ap: '<path d="M5.5 9.5a9.2 9.2 0 0 1 13 0M8 12a5.6 5.6 0 0 1 8 0M10.4 14.5a2.2 2.2 0 0 1 3.2 0"/><circle cx="12" cy="17.6" r="1.1" fill="#fff"/>',
   radio: '<path d="M6.5 6.5a8 8 0 0 0 11 11z"/><path d="M12 12l4.5-4.5"/><path d="M15.5 4.5a4 4 0 0 1 4 4"/><path d="M9 20h6"/>',
 };
 
@@ -250,7 +251,7 @@ function usedKinds(site) {
   for (const sym of site.symbols) {
     const info = symbolInfo(site, sym.kind);
     if (!info) continue;
-    const entry = map.get(sym.kind) || { info, count: 0 };
+    const entry = map.get(sym.kind) || { info, kind: sym.kind, count: 0 };
     entry.count++;
     map.set(sym.kind, entry);
   }
@@ -392,13 +393,15 @@ export function sitePages(section, ts, images, project = null, pdf = null) {
 
   // Legende: Symbole, dann Zaun und Richtfunk
   // ausgeblendete Fotostandorte: auch nicht in der Legende (der Plan bleibt ruhig)
-  const shownKinds = (section.thin || {}).photo === 'hidden' || (pdf && pdf.noPhotoSpots) ? kinds.filter(({ info }) => info.id !== 'photo') : kinds;
+  // ausgeblendete Arten (Werkzeugband › Legende) stehen auch nicht in der Legende
+  const thin = section.thin || {};
+  const shownKinds = kinds.filter(({ info, kind }) => thin[kind] !== 'hidden' && !(info.id === 'photo' && pdf && pdf.noPhotoSpots));
   const entries = shownKinds.map(({ info, count }) => ({
     head: `${info.code}  ${ts.inline(info.name)}`,
     tail: `  (${count})`,
     draw: (x, y) => symbolSvg(info, x + 6, y - 3, 6, images),
   }));
-  const fences = section.shapes.filter((z) => z.type === 'fence');
+  const fences = section.shapes.filter((z) => z.type === 'fence' && thin[z.closed ? 'zone' : 'fence'] !== 'hidden');
   if (fences.length) {
     const col = color(fences[0].color);
     entries.push({
@@ -407,7 +410,7 @@ export function sitePages(section, ts, images, project = null, pdf = null) {
       draw: (x, y) => `<line x1="${n(x)}" y1="${n(y - 3)}" x2="${n(x + 12)}" y2="${n(y - 3)}" stroke="${col}" stroke-width="1.5"/>` + posts([[x, y - 3], [x + 12, y - 3]], false, col),
     });
   }
-  if (links.length)
+  if (links.length && thin.link !== 'hidden')
     entries.push({
       head: ts.label('radioLink'),
       tail: `  (${links.length})`,

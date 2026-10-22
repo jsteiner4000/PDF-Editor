@@ -202,6 +202,7 @@ export const SYMBOLS = [
   { id: 'intercom', code: 'TS', name: T('Türsprechstelle', 'Door intercom'), color: '#4d7c0f', glyph: 'intercom' },
   { id: 'router', code: 'NW', name: T('Router / Switch', 'Router / switch'), color: '#334155', glyph: 'router' },
   { id: 'recorder', code: 'NVR', name: T('Rekorder', 'Recorder'), color: '#1e3a8a', glyph: 'recorder' },
+  { id: 'ap', code: 'AP', name: T('Access Point', 'Access point'), color: '#0369a1', glyph: 'ap' },
   // Installation: Module, Masten, Kästen (Galerie-Gruppe „Installation“)
   { id: 'mgm', code: 'MGM', name: T('Meldegruppenmodul', 'Zone module'), color: '#9f1239', glyph: 'mgm', group: 'infra' },
   { id: 'mast', code: 'MA', name: T('Mast', 'Pole'), color: '#57534e', glyph: 'mast', group: 'infra' },
@@ -440,14 +441,14 @@ export function renumberByPosition(site, row = 0.06) {
 /* ---------- Lageplan ↔ Zugangsdaten ---------- */
 
 /** Symbolarten mit Netzwerkzugang: erscheinen automatisch in „Zugangsdaten › Geräte-Zugänge“. */
-export const NET_KINDS = ['camera', 'recorder', 'radio', 'router', 'intercom', 'access', 'panel'];
+export const NET_KINDS = ['camera', 'recorder', 'radio', 'router', 'ap', 'intercom', 'access', 'panel'];
 
 /** Melder und Teilnehmer der Alarmanlage: Bus, Adresse, Meldegruppe und Bereich (auch eigene Symbole). */
 export const BUS_KINDS = ['motion', 'smoke', 'contact', 'glass', 'barrier', 'siren', 'keypad', 'keyswitch', 'access', 'opener'];
 export const isBusKind = (kind) => BUS_KINDS.includes(kind) || String(kind).startsWith('custom:');
 
 /** Arten mit Montagehöhe. */
-export const isHeightKind = (kind) => kind === 'camera' || kind === 'mast' || kind === 'radio' || isBusKind(kind);
+export const isHeightKind = (kind) => kind === 'camera' || kind === 'mast' || kind === 'radio' || kind === 'ap' || isBusKind(kind);
 
 /** Montage- und Anschlussangaben eines Symbols (Texte; leer = nicht angegeben). */
 export const SYMBOL_DETAILS = { bus: 20, addr: 20, group: 40, area: 60, channel: 10, height: 20 };

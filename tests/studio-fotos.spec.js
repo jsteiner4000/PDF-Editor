@@ -81,7 +81,9 @@ test('Fotos zum Gerät, Fotostandort per Rechtsklick, „Im Lageplan zeigen“, 
     expect(listText).not.toContain('Fotostandort');
 
     // Fotostandorte ausblenden: nicht im Plan, „Im Lageplan zeigen“ findet ihn trotzdem
-    await page.locator('#sdIBody .sd-f', { hasText: 'Fotostandorte im Plan' }).locator('button', { hasText: 'Aus' }).click();
+    await page.locator('.rb[data-act="legend"]').click();
+    await page.locator('.sd-legend .sd-leg-row', { hasText: 'Fotostandort' }).locator('input').uncheck();
+    await page.keyboard.press('Escape');
     await expect.poll(() => page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.site).site.symbols.map((y) => y.id))).toEqual(['k1']);
     const photo2 = await screenAt(page, "p.hits.some((h) => h.kind === 'photo')", "(() => { const h = p.hits.filter((h) => h.kind === 'photo')[2]; return [h.rect[0] + h.rect[2] / 2, h.rect[1] + h.rect[3] / 3]; })()");
     await page.mouse.click(...photo2, { button: 'right' });

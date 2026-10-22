@@ -1188,7 +1188,6 @@ Object.assign(Inspector.prototype, {
         this.note('Je Art zeilenweise von links oben nach rechts unten. Eine einzelne Nummer ändert man am Symbol – die anderen rücken nach.'),
       );
     }
-    this.thinGroup(s);
     if (s.links.length)
       this.group(
         `Richtfunk (${s.links.length})`,
@@ -1249,38 +1248,6 @@ Object.assign(Inspector.prototype, {
           ),
         );
     }
-  },
-
-  /** „Plan ausdünnen“: ganze Arten blass oder aus (die Legende bleibt vollständig, außer bei ausgeblendeten Fotostandorten). */
-  thinGroup(s) {
-    const studio = this.studio;
-    const lang = langsOf(this.project)[0];
-    const kinds = [];
-    const seen = new Set();
-    const add = (key, name) => !seen.has(key) && (seen.add(key), kinds.push([key, name]));
-    for (const y of s.symbols) {
-      const info = symbolInfo(s, y.kind);
-      if (info) add(y.kind, tx(info.name, lang));
-    }
-    if (s.links.length) add('link', 'Richtfunkstrecken');
-    for (const z of s.shapes) add(z.closed ? 'zone' : z.type, tx(SHAPE_TYPES[z.closed ? 'zone' : z.type], lang));
-    if (kinds.length < 2) return;
-    const group = this.group('Plan ausdünnen');
-    group.appendChild(this.note('Arten blass stellen oder ausblenden, damit Wichtiges hervortritt. Die Legende bleibt vollständig.'));
-    for (const [key, name] of kinds)
-      group.appendChild(
-        this.seg(name, [['', 'Normal'], ['faded', 'Blass'], ['hidden', 'Aus']], (s.thin || {})[key] || '', (v) =>
-          studio.change(
-            'Plan ausgedünnt',
-            () => {
-              s.thin ||= {};
-              if (v) s.thin[key] = v;
-              else delete s.thin[key];
-            },
-            { inspector: true },
-          ),
-        ),
-      );
   },
 
   /** Zahl (z. B. Meter); leere oder ungültige Eingaben ändern nichts. */
@@ -1600,22 +1567,9 @@ Object.assign(Inspector.prototype, {
     const addPhoto = htmlToElement(`<button type="button" class="btn outline sd-wide">${icon('camera', 's')}Foto hinzufügen …</button>`);
     addPhoto.addEventListener('click', () => studio.addPhotosFor(y.id));
     fotos.appendChild(addPhoto);
-    // Fotostandorte: alle auf einmal blass oder aus (Plan bleibt übersichtlich), in der PDF ja/nein
+    // Fotostandorte in der PDF ja/nein (Ein-/Ausblenden im Plan: Werkzeugband › Legende)
     if (y.kind === 'photo')
-      fotos.append(
-        this.check('Fotostandorte in der fertigen PDF', s.photoSpotsInPdf !== false, (v) => studio.change('Fotostandorte in der PDF geändert', () => (s.photoSpotsInPdf = v))),
-        this.seg('Fotostandorte im Plan', [['', 'Zeigen'], ['faded', 'Blass'], ['hidden', 'Aus']], (s.thin || {}).photo || '', (v) =>
-          studio.change(
-            'Fotostandorte ' + (v === 'hidden' ? 'ausgeblendet' : v === 'faded' ? 'blass' : 'gezeigt'),
-            () => {
-              s.thin ||= {};
-              if (v) s.thin.photo = v;
-              else delete s.thin.photo;
-            },
-            { inspector: true },
-          ),
-        ),
-      );
+      fotos.append(this.check('Fotostandorte in der fertigen PDF', s.photoSpotsInPdf !== false, (v) => studio.change('Fotostandorte in der PDF geändert', () => (s.photoSpotsInPdf = v))));
     this.lookGroup(y, 'sym', info && info.fov && y.fov);
     this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);
   },

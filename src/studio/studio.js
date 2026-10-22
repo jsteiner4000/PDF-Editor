@@ -1789,7 +1789,11 @@ ${toPdf}
     // Meldegruppenmodul: Typ wie das zuletzt gesetzte
     const lastMgm = sym.kind === 'mgm' && this.project.sections.flatMap((x) => (x.type === 'site' ? x.symbols : [])).filter((y) => y.kind === 'mgm').at(-1);
     if (lastMgm) sym.groups = lastMgm.groups;
-    this.change('Symbol gesetzt', () => s.symbols.push(sym));
+    this.change('Symbol gesetzt', () => {
+      s.symbols.push(sym);
+      // Art war ausgeblendet: wieder zeigen, sonst wäre das neue Symbol unsichtbar
+      if (s.thin && s.thin[sym.kind] === 'hidden') delete s.thin[sym.kind];
+    });
     // Setzen endet: das neue Symbol ist gewählt und lässt sich sofort verschieben und ausrichten
     this.disarm();
     this.select({ kind: 'sym', id: sym.id, section: s.id });

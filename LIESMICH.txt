@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.21.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.21.1.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -436,8 +436,8 @@ aus einer PDF, Entfernen, Drehen, Einpassen/Füllen und Aufhellen.
 Darstellung je Objekt (rechts unter „Darstellung“ oder per Rechtsklick):
 Deckkraft 100/60/30 %, Ebene (ganz hinten, hinten, vorne, ganz vorne; auch
 Strg+Umschalt+↑/↓), bei Symbolen die Lage der Nummer und den
-Erfassungsbereich nur als Umriss. „Plan ausdünnen“ (Lageplan wählen) stellt
-ganze Arten blass oder blendet sie aus – die Legende bleibt vollständig.
+Erfassungsbereich nur als Umriss. Ganze Arten blendet „Legende“ im
+Werkzeugband per Häkchen aus und wieder ein.
 
 Nummern ändern: Symbol wählen und rechts unter „Nummer“ die neue Zahl eingeben
 (z. B. K 5 → 2) – die übrigen Symbole dieser Art rücken nach, die Nummern
@@ -458,7 +458,7 @@ Beim Meldegruppenmodul wählt man rechts den Typ (MGM 2, MGM 5 oder eine andere
 Zahl); die Bezeichnung lautet dann MGM-2-1, MGM-2-2, MGM-5-1 … – jeder Typ zählt
 für sich.
 
-Zugangsdaten: Bei Kameras, Rekordern, Antennen, Routern, Türsprechstellen,
+Zugangsdaten: Bei Kameras, Rekordern, Antennen, Routern, Access Points, Türsprechstellen,
 Zutrittslesern und Alarmzentralen stehen rechts IP-Adresse, Benutzer
 (beliebig viele, je mit Passwort und Rolle) und Seriennummer. Unter
 „Zugangsdaten“ erscheint ein Gerät erst, wenn dort etwas eingetragen ist –
@@ -477,8 +477,8 @@ Bild direkt auf das Symbol ziehen. Das Foto kommt in die Fotodokumentation
 (wird bei Bedarf angelegt) und ist mit dem Gerät verknüpft. Ist kein Gerät in
 der Nähe: Rechtsklick auf eine freie Stelle im Plan > „Foto hier einfügen …“
 setzt einen Fotostandort (Kamera-Symbol mit Blickrichtung, Nummer wie das
-Foto, z. B. „F 3“). Fotostandorte lassen sich gemeinsam blass stellen oder
-ausblenden (rechts beim Fotostandort oder unter „Plan ausdünnen“); sie stehen
+Foto, z. B. „F 3“). Fotostandorte lassen sich gemeinsam ausblenden
+(Werkzeugband › Legende › Häkchen bei „Fotostandort“); sie stehen
 nicht in der Geräteliste. Rechtsklick auf ein Foto der Fotodokumentation >
 „Im Lageplan zeigen“ springt zum Gerät bzw. Fotostandort – auch wenn er
 ausgeblendet ist.
@@ -492,11 +492,14 @@ Fotos in der fertigen PDF – je Dokument wählbar:
 - In der PDF sind Foto und Lageplan verknüpft: Klick auf ein Gerät bzw. einen
   Fotostandort im Plan springt zum Foto, Klick auf ein Foto zum Gerät im Plan.
 
-Legende: Im Werkzeugband des Lageplans klappt „Legende“ eine Übersicht aller
-Symbole des Plans auf (Symbol, Kürzel, Name, Anzahl). Ein Klick auf eine Zeile
-lässt alle Geräte dieser Art im Plan aufleuchten. Unten im Feld: „In der PDF –
-Unter dem Plan / Eigene Seite / Keine“ (je Plan gespeichert); „Unter dem Plan“
-weicht automatisch auf eine eigene Seite aus, wenn die Legende zu groß wird.
+Legende und Sichtbarkeit: Im Werkzeugband des Lageplans klappt „Legende“ eine
+Übersicht aller Arten im Plan auf – Geräte, Access Points, Fotostandorte,
+Richtfunkstrecken, Zäune, Zonen, Linien – mit Symbol, Kürzel und Anzahl. Jede
+Art hat ein Häkchen: abgewählt ist sie im Plan und in der PDF ausgeblendet
+(„Alle zeigen“ holt alles zurück). Die Lupe am Ende einer Zeile lässt alle
+Objekte dieser Art im Plan aufleuchten. Unten: „Legende in der PDF – Unter dem
+Plan / Eigene Seite / Keine“ (je Plan gespeichert); „Unter dem Plan“ weicht
+automatisch auf eine eigene Seite aus, wenn die Legende zu groß wird.
 
 Geräteliste: heller Tabellenkopf, nach Geräteart gegliedert („Kamera (4)“),
 vor jeder Nummer das Symbol aus dem Plan.
