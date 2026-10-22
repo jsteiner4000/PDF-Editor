@@ -8,8 +8,8 @@
  * Sicherheit (Electron Security Checklist): contextIsolation, sandbox, kein nodeIntegration,
  * strikte CSP (Skript nur per Hash), keine Remote-Inhalte (http/https/ws/file werden
  * blockiert), Navigation und neue Fenster gesperrt (Ausnahme: die eigene PDF-Vorschau als
- * blob:-URL), alle Berechtigungsanfragen abgelehnt, IPC-Absender werden geprüft, kein
- * Auto-Update, keine Telemetrie.
+ * blob:-URL), alle Berechtigungsanfragen abgelehnt, IPC-Absender werden geprüft, keine
+ * Telemetrie. Updates: nur die Versionsabfrage bei GitHub in eigener Sitzung (desktop/updater.js).
  */
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
@@ -21,6 +21,7 @@ import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } f
 import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS, SITE_TOOLS, STUDIO_TOOLS } from './menu.js';
 import { loadWindowState, rememberTheme, trackWindowState, MIN_SIZE } from './window-state.js';
+import { autoCheckDue, checkForUpdate, downloadUpdate, runInstaller } from './updater.js';
 
 const APP_NAME = 'PlantPDF';
 /**
@@ -246,7 +247,7 @@ function start() {
       message: `PlantPDF ${app.getVersion()}`,
       detail: [
         'PDFs bearbeiten, ordnen und unterschreiben.',
-        'Läuft vollständig offline – es werden keine Daten übertragen.',
+        'Arbeitet offline – nur die Suche nach Updates fragt bei GitHub die neueste Versionsnummer ab.',
         '',
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
         '',
@@ -296,6 +297,91 @@ function start() {
       return (await command('saveDocument', { wait: true })) === true;
     } catch {
       return false;
+    }
+  }
+
+  /* ---------- Updates (GitHub-Releases) ---------- */
+
+  /** Nur im installierten Windows-Programm (nicht beim Entwickeln, nicht im Schnelldruck). */
+  const updatesEnabled = () => app.isPackaged && process.platform === 'win32' && !process.env.PDF_EDITOR_NO_UPDATES;
+  let update = null; // gefundenes Update
+  let updating = false;
+
+  /** Beim Start (höchstens einmal je 20 Stunden): still nachsehen, nur bei Fund ein Hinweis. */
+  async function autoCheck() {
+    if (!updatesEnabled() || printOnly || !autoCheckDue()) return;
+    try {
+      update = await checkForUpdate();
+    } catch {
+      return; // offline: kein Hinweis
+    }
+    if (update) command('updateAvailable', { data: { version: update.version, current: app.getVersion() } });
+  }
+
+  /** „Hilfe › Nach Updates suchen …“ */
+  async function manualCheck() {
+    if (!updatesEnabled())
+      return dialog.showMessageBox(win, { type: 'info', title: APP_NAME, message: 'Updates gibt es nur im installierten Programm unter Windows.', buttons: ['OK'] });
+    try {
+      update = await checkForUpdate();
+    } catch {
+      return dialog.showMessageBox(win, { type: 'warning', title: APP_NAME, message: 'Keine Verbindung zu GitHub.', detail: 'Bitte die Internetverbindung prüfen und später erneut versuchen.', buttons: ['OK'] });
+    }
+    if (!update)
+      return dialog.showMessageBox(win, { type: 'info', title: APP_NAME, message: `PlantPDF ${app.getVersion()} ist aktuell.`, buttons: ['OK'] });
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      title: APP_NAME,
+      message: `PlantPDF ${update.version} ist verfügbar.`,
+      detail: `Installiert ist ${app.getVersion()}. PlantPDF lädt das Update, prüft es und startet danach neu.`,
+      buttons: ['Jetzt aktualisieren', 'Später'],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    });
+    if (response === 0) await installUpdate();
+  }
+
+  /** Laden, prüfen, PlantPDF schließen (mit Rückfrage bei Änderungen), Installer starten. */
+  async function installUpdate() {
+    if (updating || !update || !win) return false;
+    // ohne Prüfsumme nichts automatisch installieren: Release-Seite im Browser öffnen
+    if (!update.sha256) {
+      shell.openExternal(update.page);
+      return false;
+    }
+    updating = true;
+    const progress = (p) => {
+      if (win && !win.isDestroyed()) win.setProgressBar(p);
+      command('updateProgress', { data: { p } });
+    };
+    try {
+      const file = await downloadUpdate(update, progress);
+      progress(1);
+      if (!(await confirmClose())) {
+        command('updateProgress', { data: { p: -1 } });
+        return false;
+      }
+      runInstaller(file);
+      allowClose = true;
+      app.quit();
+      return true;
+    } catch (err) {
+      console.error('Update', err);
+      command('updateProgress', { data: { p: -1 } });
+      dialog.showMessageBox(win, {
+        type: 'warning',
+        title: APP_NAME,
+        message: 'Das Update konnte nicht geladen werden.',
+        detail: /Prüfsumme|größer/.test(String(err && err.message))
+          ? 'Die geladene Datei stimmt nicht mit dem Release überein und wurde verworfen.'
+          : 'Bitte die Internetverbindung prüfen und später erneut versuchen.',
+        buttons: ['OK'],
+      });
+      return false;
+    } finally {
+      updating = false;
+      if (win && !win.isDestroyed()) win.setProgressBar(-1);
     }
   }
 
@@ -518,6 +604,8 @@ function start() {
       return files.grant(target);
     });
     handle('file:read', (id) => files.read(id));
+    // Hinweis „Update verfügbar“ > „Jetzt aktualisieren“
+    handle('update:install', () => installUpdate());
     // „Dokumentation erstellen“: Druckfassung → PDF (höchstens 200 MB Text, z. B. mit Fotos)
     handle('studio:pdf', async (html) => {
       if (typeof html !== 'string' || !html.startsWith('<!doctype html>') || html.length > 200 * 1024 * 1024)
@@ -726,6 +814,7 @@ function start() {
     menu = buildMenu({
       command: (name) => command(name, { fromMenu: true }),
       about: showAbout,
+      updates: () => manualCheck(),
       licenses: showLicenses,
       fonts: () => shell.openPath(FONT_DIR),
       devTools: !app.isPackaged,
@@ -734,6 +823,7 @@ function start() {
     nativeTheme.on('updated', applyFrameColors);
     createWindow();
     updateTitle();
+    setTimeout(autoCheck, 8000);
   });
 }
 

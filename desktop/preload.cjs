@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
   },
   /** Eigene Titelleiste: Untermenü `index` (−1 = ganzes Menü) bei (x, y) öffnen; erfüllt beim Schließen. */
   popupMenu: (index, x, y) => call('menu:popup', Number(index), Number(x), Number(y)),
+  /** Hinweis „Update verfügbar“: laden, prüfen, installieren (PlantPDF startet neu). */
+  installUpdate: () => call('update:install'),
   /** „Dokumentation erstellen“: Druckfassung (HTML) als PDF-Bytes. */
   makePdf: (html) => call('studio:pdf', String(html)),
   setState: (state) =>

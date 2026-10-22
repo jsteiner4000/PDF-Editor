@@ -17,6 +17,7 @@
  */
 
 import { toast } from '../ui/dialogs.js';
+import { showUpdate, updateProgress } from '../ui/update-banner.js';
 import { readTheme } from '../ui/theme.js';
 import { installTitleBar } from './title-bar.js';
 
@@ -149,6 +150,9 @@ const inEditableField = () => {
 
 /** Befehle aus dem nativen Menü (desktop/menu.js) und Anfragen des Hauptprozesses. */
 const COMMANDS = {
+  /** Beim Start gefunden: dezenter Hinweis unten rechts (nur im installierten Programm). */
+  updateAvailable: (data) => showUpdate(data, () => desktop.installUpdate()),
+  updateProgress: (data) => updateProgress(data && data.p),
   open: () => app.openDialog(),
   save: () => (app.session || studioActive() ? app.save() : false),
   saveAs: () => (app.session || studioActive() ? app.saveAs() : false),

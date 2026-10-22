@@ -76,6 +76,7 @@ jobs:
           $pdf = Join-Path $env:RUNNER_TEMP 'smoke.pdf'
           Copy-Item 'tests\fixtures\dokument.pdf' $pdf
           $env:PDF_EDITOR_USER_DATA = Join-Path $env:RUNNER_TEMP 'pdf-editor-smoke'
+          $env:PDF_EDITOR_NO_UPDATES = '1'
           $p = Start-Process -FilePath $exe -ArgumentList "`"$pdf`"" -PassThru
           $title = ''
           for ($i = 0; $i -lt 60 -and -not $p.HasExited; $i++) {
