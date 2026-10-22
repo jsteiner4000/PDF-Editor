@@ -20,6 +20,25 @@ const fetchNet = (url, init) => {
   return net.fetch(url, { ...init, headers: { 'User-Agent': `PlantPDF/${app.getVersion()}`, ...(init && init.headers) } });
 };
 
+/** Abbruch einer hängenden Verbindung: nach `ms` ohne neue Daten. */
+function stallGuard(ms) {
+  const ctrl = new AbortController();
+  let timer = setTimeout(() => ctrl.abort(), ms);
+  return {
+    signal: ctrl.signal,
+    alive() {
+      clearTimeout(timer);
+      timer = setTimeout(() => ctrl.abort(), ms);
+    },
+    done: () => clearTimeout(timer),
+    abort: () => ctrl.abort(),
+  };
+}
+
+/** Laufender Download (zum Abbrechen beim Beenden). */
+let current = null;
+export const abortDownload = () => current && current.abort();
+
 const stateFile = () => path.join(app.getPath('userData'), 'update.json');
 function readState() {
   try {
@@ -29,19 +48,27 @@ function readState() {
   }
 }
 
-/** Ist eine Prüfung beim Start fällig? Merkt sich den Zeitpunkt. */
+/** Ist eine Prüfung beim Start fällig? */
 export function autoCheckDue() {
-  const last = Number(readState().lastCheck) || 0;
-  if (Date.now() - last < AUTO_INTERVAL) return false;
+  return Date.now() - (Number(readState().lastCheck) || 0) >= AUTO_INTERVAL;
+}
+
+/** Erfolgreiche Prüfung merken (offline zählt nicht – dann beim nächsten Start erneut). */
+export function rememberCheck() {
   try {
     writeFileSync(stateFile(), JSON.stringify({ lastCheck: Date.now() }));
   } catch {}
-  return true;
 }
 
 /** Neueres Release oder null; wirft bei fehlender Verbindung. */
 export async function checkForUpdate() {
-  const r = await fetchNet(LATEST_URL, { headers: { Accept: 'application/vnd.github+json' } });
+  const guard = stallGuard(20000);
+  let r;
+  try {
+    r = await fetchNet(LATEST_URL, { headers: { Accept: 'application/vnd.github+json' }, signal: guard.signal });
+  } finally {
+    guard.done();
+  }
   if (r.status === 404) return null; // noch kein Release
   if (!r.ok) throw new Error(`GitHub antwortet nicht (${r.status})`);
   return pickUpdate(await r.json(), app.getVersion());
@@ -52,17 +79,23 @@ export async function downloadUpdate(info, onProgress = () => {}) {
   const dir = path.join(app.getPath('temp'), 'PlantPDF-Update');
   await fs.mkdir(dir, { recursive: true });
   const file = path.join(dir, `PlantPDF-Setup-${info.version}.exe`);
+  // ältere Setups aufräumen
+  for (const name of await fs.readdir(dir).catch(() => []))
+    if (name !== path.basename(file) && /^PlantPDF-Setup-.*\.exe(\.part)?$/.test(name)) await fs.rm(path.join(dir, name), { force: true }).catch(() => {});
   // schon geladen und unverändert: nicht noch einmal laden
   if (existsSync(file) && (await sha256File(file)) === info.sha256) return file;
-  const r = await fetchNet(info.url);
-  if (!r.ok || !r.body || !allowedUrl(r.url)) throw new Error('Download fehlgeschlagen');
+  const guard = (current = stallGuard(30000));
   const hash = createHash('sha256');
-  const out = await fs.open(file + '.part', 'w');
+  let out = null;
   let got = 0;
   try {
+    const r = await fetchNet(info.url, { signal: guard.signal });
+    if (!r.ok || !r.body || !allowedUrl(r.url)) throw new Error('Download fehlgeschlagen');
+    out = await fs.open(file + '.part', 'w');
     const reader = r.body.getReader();
     for (;;) {
       const { done, value } = await reader.read();
+      guard.alive();
       if (done) break;
       got += value.length;
       if (got > info.size) throw new Error('Datei größer als angekündigt');
@@ -71,7 +104,9 @@ export async function downloadUpdate(info, onProgress = () => {}) {
       onProgress(got / info.size);
     }
   } finally {
-    await out.close();
+    guard.done();
+    current = null;
+    if (out) await out.close();
   }
   if (got !== info.size || hash.digest('hex') !== info.sha256) {
     await fs.rm(file + '.part', { force: true });
@@ -87,7 +122,14 @@ async function sha256File(file) {
   return hash.digest('hex');
 }
 
-/** Installer still starten; er schließt PlantPDF, installiert und startet es neu. */
+/** Installer still starten (er schließt PlantPDF, installiert und startet es neu); erfüllt, sobald er läuft. */
 export function runInstaller(file) {
-  spawn(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' });
+    child.once('error', reject);
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
 }

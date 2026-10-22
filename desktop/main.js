@@ -21,7 +21,7 @@ import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } f
 import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS, SITE_TOOLS, STUDIO_TOOLS } from './menu.js';
 import { loadWindowState, rememberTheme, trackWindowState, MIN_SIZE } from './window-state.js';
-import { autoCheckDue, checkForUpdate, downloadUpdate, runInstaller } from './updater.js';
+import { abortDownload, autoCheckDue, checkForUpdate, downloadUpdate, rememberCheck, runInstaller } from './updater.js';
 
 const APP_NAME = 'PlantPDF';
 /**
@@ -247,7 +247,7 @@ function start() {
       message: `PlantPDF ${app.getVersion()}`,
       detail: [
         'PDFs bearbeiten, ordnen und unterschreiben.',
-        'Arbeitet offline – nur die Suche nach Updates fragt bei GitHub die neueste Versionsnummer ab.',
+        'Arbeitet offline – nur die Update-Suche verbindet sich mit GitHub (Versionsabfrage, Download).',
         '',
         `Electron ${process.versions.electron} · Chromium ${process.versions.chrome}`,
         '',
@@ -306,14 +306,20 @@ function start() {
   const updatesEnabled = () => app.isPackaged && process.platform === 'win32' && !process.env.PDF_EDITOR_NO_UPDATES;
   let update = null; // gefundenes Update
   let updating = false;
+  let quitting = false;
+  app.on('before-quit', () => {
+    quitting = true;
+    abortDownload();
+  });
 
   /** Beim Start (höchstens einmal je 20 Stunden): still nachsehen, nur bei Fund ein Hinweis. */
   async function autoCheck() {
     if (!updatesEnabled() || printOnly || !autoCheckDue()) return;
     try {
       update = await checkForUpdate();
+      rememberCheck();
     } catch {
-      return; // offline: kein Hinweis
+      return; // offline: kein Hinweis, beim nächsten Start erneut
     }
     if (update) command('updateAvailable', { data: { version: update.version, current: app.getVersion() } });
   }
@@ -344,11 +350,13 @@ function start() {
 
   /** Laden, prüfen, PlantPDF schließen (mit Rückfrage bei Änderungen), Installer starten. */
   async function installUpdate() {
-    if (updating || !update || !win) return false;
+    const reset = () => command('updateProgress', { data: { p: -1 } });
+    if (updating) return false;
+    if (!update || !win) return reset(), false;
     // ohne Prüfsumme nichts automatisch installieren: Release-Seite im Browser öffnen
     if (!update.sha256) {
       shell.openExternal(update.page);
-      return false;
+      return reset(), false;
     }
     updating = true;
     const progress = (p) => {
@@ -358,24 +366,28 @@ function start() {
     try {
       const file = await downloadUpdate(update, progress);
       progress(1);
-      if (!(await confirmClose())) {
-        command('updateProgress', { data: { p: -1 } });
+      // Fenster inzwischen geschlossen bzw. Programm beendet: nichts mehr installieren
+      if (quitting || !win || win.isDestroyed() || !(await confirmClose())) {
+        reset();
         return false;
       }
-      runInstaller(file);
+      await runInstaller(file);
       allowClose = true;
       app.quit();
       return true;
     } catch (err) {
       console.error('Update', err);
-      command('updateProgress', { data: { p: -1 } });
+      reset();
+      if (quitting || !win || win.isDestroyed()) return false;
       dialog.showMessageBox(win, {
         type: 'warning',
         title: APP_NAME,
         message: 'Das Update konnte nicht geladen werden.',
         detail: /Prüfsumme|größer/.test(String(err && err.message))
           ? 'Die geladene Datei stimmt nicht mit dem Release überein und wurde verworfen.'
-          : 'Bitte die Internetverbindung prüfen und später erneut versuchen.',
+          : err && (err.code === 'EACCES' || err.code === 'ENOENT' || err.code === 'EPERM')
+            ? 'Das Setup konnte nicht gestartet werden (evtl. vom Virenschutz blockiert). Es liegt im Ordner %TEMP%\\PlantPDF-Update.'
+            : 'Bitte die Internetverbindung prüfen und später erneut versuchen.',
         buttons: ['OK'],
       });
       return false;
