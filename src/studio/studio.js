@@ -344,7 +344,10 @@ export class Studio {
     // Desktop-App: schon ein Dokument in diesem Tab – als Entwurf sichern und in eigenem Tab öffnen
     const host = this.app.tabHost;
     if (host && (this.app.session || (this.project && this.project.id !== project.id))) {
-      await saveDraft(pruneImages(project), { name: documentLabel(project), sub: [project.meta.customer, project.meta.site].filter(Boolean).join(' · ') });
+      // einen neueren Stand (z. B. in einem anderen Tab offen und schon gesichert) nicht überschreiben
+      const existing = await loadDraft(project.id).catch(() => null);
+      if (!existing || (existing.modified || 0) <= (project.modified || 0))
+        await saveDraft(pruneImages(project), { name: documentLabel(project), sub: [project.meta.customer, project.meta.site].filter(Boolean).join(' · ') });
       return host.open({ kind: 'draft', id: project.id, name: documentLabel(project) });
     }
     if (this.project) await this.flush();

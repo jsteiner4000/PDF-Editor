@@ -112,7 +112,7 @@ export class Recovery {
       body:
         `PlantPDF wurde nicht ordnungsgemäß beendet. Diese ungespeicherten Änderungen wurden automatisch gesichert:<ul class="rec-list">${rows}</ul>` +
         (list.length > 1 ? '<span class="hint">Das neueste wird geöffnet, die übrigen danach angeboten.</span> ' : '') +
-        (this.app.session ? `<span class="hint">„${escapeHtml(this.app.file.name)}“ wird dabei geschlossen.</span>` : ''),
+        (this.app.session && !this.app.tabHost ? `<span class="hint">„${escapeHtml(this.app.file.name)}“ wird dabei geschlossen.</span>` : ''),
       buttons: [
         { label: 'Später', value: 'later' },
         { label: list.length > 1 ? 'Alle verwerfen' : 'Verwerfen', value: 'discard' },
@@ -128,9 +128,22 @@ export class Recovery {
     }
   }
 
+  /** In einem neuen Tab: die Kopie mit dieser Kennung wiederherstellen. */
+  async restoreById(id) {
+    const meta = (await orphanCopies().catch(() => [])).find((m) => m.id === id);
+    if (meta) return this.restore(meta);
+    toast('Die gesicherte Kopie ist nicht mehr vorhanden.', 'warn', 4000);
+    return false;
+  }
+
   /** Kopie öffnen: ungespeichert, mit Strg+S in die ursprüngliche Datei (falls bekannt). */
   async restore(meta) {
     const app = this.app;
+    // Desktop-App mit offenem Dokument: im eigenen Tab wiederherstellen
+    if (app.tabHost && app.hasDocument()) {
+      await app.tabHost.open({ kind: 'recover', id: meta.id, name: meta.name });
+      return true;
+    }
     let data;
     try {
       data = await loadCopy(meta.id);

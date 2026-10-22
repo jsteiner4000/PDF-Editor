@@ -2474,6 +2474,7 @@ button.feat:focus-visible {
 .frame #top button,
 .frame #top input,
 .frame #top [role='button'],
+.frame #top [role='tab'],
 .frame .menu,
 .frame .backdrop,
 .frame #toasts,

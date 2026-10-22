@@ -116,8 +116,10 @@ let app = null;
 let stateTimer = 0;
 
 /** Meldet Dokumentname und „Bearbeitet“-Zustand an den Hauptprozess (Fenstertitel, Rückfrage). */
-export function notifyDocumentState() {
-  if (!desktop || !app || stateTimer) return;
+export function notifyDocumentState(force = false) {
+  if (!desktop || !app) return;
+  if (force) clearTimeout(stateTimer), (stateTimer = 0);
+  if (stateTimer) return;
   // verzögert, damit Titel und Dateiname nach dem auslösenden Vorgang feststehen
   stateTimer = setTimeout(() => {
     stateTimer = 0;
@@ -153,12 +155,16 @@ const inEditableField = () => {
 };
 
 /** Befehle aus dem nativen Menü (desktop/menu.js) und Anfragen des Hauptprozesses. */
+const settle = (promise) => Promise.resolve(promise).finally(() => notifyDocumentState(true));
+
 const COMMANDS = {
   /** Tab-Leiste des Fensters (vom Hauptprozess). */
   tabs: (data) => app.tabHost && app.tabHost.render(data),
   /** In diesem (neuen) Tab öffnen: PDF-Bytes ohne Datei bzw. einen Entwurf der Dokumentation. */
-  openBytes: (data) => data && data.bytes instanceof Uint8Array && app.openBytes(data.bytes, String(data.name || 'Dokument.pdf'), null),
-  openDraft: (data) => data && typeof data.id === 'string' && app.studio.openDraft(data.id),
+  // danach immer den Stand melden – auch wenn das Öffnen scheitert (der Tab zeigt dann die Startseite)
+  openBytes: (data) => settle(data && data.bytes instanceof Uint8Array && app.openBytes(data.bytes, String(data.name || 'Dokument.pdf'), null)),
+  openDraft: (data) => settle(data && typeof data.id === 'string' && app.studio.openDraft(data.id)),
+  restoreRecovery: (data) => settle(data && typeof data.id === 'string' && app.recovery.restoreById(data.id)),
   setWorkspace: (ws) => app.switchWorkspace(ws),
   /** Nur im ersten Tab nach dem Start: gesicherte Kopien anbieten. */
   offerRecovery: () => app.recovery.offer(),
@@ -272,7 +278,7 @@ export function installDesktopBridge(appInstance) {
     ev.preventDefault();
     if (app.session && !document.querySelector('.backdrop')) app.print();
   });
-  desktop.onOpenFile((entry) => app.openHandle(toHandle(entry)));
+  desktop.onOpenFile((entry) => settle(app.openHandle(toHandle(entry))));
 
   const title = document.querySelector('title');
   if (title) new MutationObserver(notifyDocumentState).observe(title, { childList: true });

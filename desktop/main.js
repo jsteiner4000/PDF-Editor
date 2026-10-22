@@ -11,7 +11,7 @@
  * blob:-URL), alle Berechtigungsanfragen abgelehnt, IPC-Absender werden geprüft, keine
  * Telemetrie. Updates: nur die Versionsabfrage bei GitHub in eigener Sitzung (desktop/updater.js).
  */
-import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, session, shell, WebContentsView } from 'electron';
+import { app, BaseWindow, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, protocol, screen, session, shell, WebContentsView } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
@@ -203,7 +203,7 @@ function start() {
           if (ok && alive(w)) {
             w.allowClose = true;
             base.close();
-          }
+          } else quitting = false; // Beenden abgebrochen
         })
         .finally(() => (w.closing = false));
     });
@@ -317,8 +317,15 @@ function start() {
 
   /** Tab schließen mit Rückfrage bei Änderungen. */
   async function closeTab(tab) {
-    activateTab(tab);
-    if (!(await confirmClose(tab))) return false;
+    if (tab.closing) return false;
+    tab.closing = true;
+    try {
+      // (confirmClose holt den Tab nur nach vorn, wenn er wirklich fragen muss)
+      if (!(await confirmClose(tab))) return false;
+    } finally {
+      tab.closing = false;
+    }
+    if (tab.closed) return true;
     if (tab.win.tabs.length === 1 && !tab.state.hasDocument) return true;
     if (tab.win.tabs.length === 1) {
       // einziger Tab: Startseite daneben öffnen, dann diesen entfernen
@@ -387,6 +394,7 @@ function start() {
     if (open.kind === 'file') tab.view.webContents.send('app:open-file', open.entry);
     else if (open.kind === 'bytes') command('openBytes', { tab, data: { bytes: open.bytes, name: open.name } });
     else if (open.kind === 'draft') command('openDraft', { tab, data: { id: open.id } });
+    else if (open.kind === 'recover') command('restoreRecovery', { tab, data: { id: open.id } });
   }
 
   /** Startseite eines Fensters zeigen (vorhandene oder neue); `ws`: Arbeitsbereich dort. */
@@ -896,6 +904,7 @@ function start() {
       if (open.kind === 'bytes' && open.bytes instanceof Uint8Array && open.bytes.length <= 1024 * 1024 * 1024)
         return openInTab(tab.win, { kind: 'bytes', bytes: open.bytes, name: name || 'Dokument.pdf' }), true;
       if (open.kind === 'draft' && typeof open.id === 'string' && ID_RE.test(open.id)) return openInTab(tab.win, { kind: 'draft', id: open.id, name: name || 'Dokumentation' }), true;
+      if (open.kind === 'recover' && typeof open.id === 'string' && ID_RE.test(open.id)) return focusTab(createTab(tab.win, { open: { kind: 'recover', id: open.id, name: name || 'Dokument' } })), true;
       return false;
     });
     const tabById = (id) => allTabs().find((t) => t.id === id && !t.closed) || null;
@@ -924,10 +933,18 @@ function start() {
       w.tabs.splice(before ? w.tabs.indexOf(before) : w.tabs.length, 0, t);
       broadcastTabs(w);
     });
-    handle('tab:drop', (tab, id, x, y) => {
+    // Lage des Zeigers vom System (DIP, auch bei Monitoren mit unterschiedlicher Skalierung)
+    handle('tab:drop', (tab, id) => {
       const t = tabById(id);
-      if (t && Number.isFinite(x) && Number.isFinite(y)) dropTab(t, x, y);
+      const p = screen.getCursorScreenPoint();
+      if (t) dropTab(t, p.x, p.y);
     });
+    // Nur für die Tests: Ablegen an einer festen Stelle
+    if (!app.isPackaged)
+      handle('tab:drop-at', (tab, id, x, y) => {
+        const t = tabById(id);
+        if (t && Number.isFinite(x) && Number.isFinite(y)) dropTab(t, x, y);
+      });
 
     ipcMain.on('app:state', (event, state) => {
       const tab = senderTab(event);

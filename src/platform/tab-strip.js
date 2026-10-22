@@ -100,7 +100,7 @@ export function installTabStrip(tabs, app) {
         if (d.t.id !== state.self) tabs.activate(d.t.id);
         return render();
       }
-      if (e.type === 'pointerup' && d.detached) tabs.drop(d.t.id, e.screenX, e.screenY);
+      if (e.type === 'pointerup' && d.detached) tabs.drop(d.t.id);
       else if (d.to !== d.from) tabs.reorder(d.t.id, d.to);
       render();
     };

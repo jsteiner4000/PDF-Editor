@@ -63,7 +63,9 @@ contextBridge.exposeInMainWorld('pdfEditorDesktop', {
     closedSelf: () => call('tab:closed-self'),
     home: (ws) => call('tab:home', ws === 'pdf' || ws === 'docs' ? ws : null),
     reorder: (id, index) => call('tab:reorder', Number(id), Number(index)),
-    drop: (id, x, y) => call('tab:drop', Number(id), Number(x), Number(y)),
+    drop: (id) => call('tab:drop', Number(id)),
+    /** nur für die Tests (im ausgelieferten Programm abgelehnt) */
+    dropAt: (id, x, y) => call('tab:drop-at', Number(id), Number(x), Number(y)),
   },
   /** Hinweis „Update verfügbar“: laden, prüfen, installieren (PlantPDF startet neu). */
   installUpdate: () => call('update:install'),

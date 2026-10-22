@@ -659,7 +659,7 @@ test('Desktop-App: Tabs – zweite PDF im neuen Tab, umordnen, herausziehen, zur
     // Herausziehen (losgelassen außerhalb des Fensters): eigenes Fenster
     const bounds = await app.evaluate(() => globalThis.__plantpdf.win().getContentBounds());
     const id = await b.evaluate(() => window.pdfEditor.tabHost.self);
-    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.drop(id, x, y), [id, bounds.x + 200, bounds.y + bounds.height + 300]);
+    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.dropAt(id, x, y), [id, bounds.x + 200, bounds.y + bounds.height + 300]);
     await expect.poll(() => app.evaluate(() => globalThis.__plantpdf.windows())).toBe(2);
     const tabs = await app.evaluate(() => globalThis.__plantpdf.tabs());
     expect(new Set(tabs.map((t) => t.win)).size).toBe(2);
@@ -672,7 +672,7 @@ test('Desktop-App: Tabs – zweite PDF im neuen Tab, umordnen, herausziehen, zur
       return t.win;
     });
     const firstBounds = await app.evaluate((_e, wid) => globalThis.__plantpdf.boundsOf(wid), first);
-    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.drop(id, x, y), [id, firstBounds.x + 400, firstBounds.y + 20]);
+    await b.evaluate(([id, x, y]) => window.pdfEditorDesktop.tabs.dropAt(id, x, y), [id, firstBounds.x + 400, firstBounds.y + 20]);
     await expect.poll(() => app.evaluate(() => globalThis.__plantpdf.windows())).toBe(1);
     expect(await tabCount(app)).toBe(2);
 
