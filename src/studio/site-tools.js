@@ -810,7 +810,10 @@ export const siteTools = {
     for (const b of el.querySelectorAll('[data-mode]'))
       b.addEventListener('click', () => {
         const v = b.dataset.mode;
-        this.change('Legende geändert', () => (site.legend = v), { inspector: true });
+        // nach Rückgängig ist das Projekt neu: Abschnitt jedes Mal frisch holen
+        const cur = this.section(site.id);
+        if (!cur) return;
+        this.change('Legende geändert', () => (cur.legend = v), { inspector: true });
         for (const x of el.querySelectorAll('[data-mode]')) {
           x.classList.toggle('on', x === b);
           x.setAttribute('aria-checked', String(x === b));

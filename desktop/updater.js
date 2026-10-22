@@ -129,7 +129,10 @@ async function sha256File(file) {
 export function runInstaller(file) {
   return new Promise((resolve, reject) => {
     const child = spawn(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore' });
-    child.once('error', reject);
+    child.once('error', (err) => {
+      err.installer = true;
+      reject(err);
+    });
     child.once('spawn', () => {
       child.unref();
       resolve();

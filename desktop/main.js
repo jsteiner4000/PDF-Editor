@@ -687,7 +687,7 @@ function start() {
         detail:
           (/Prüfsumme|größer/.test(String(err && err.message))
             ? 'Die geladene Datei stimmt nicht mit dem Release überein und wurde verworfen.'
-            : err && (err.code === 'EACCES' || err.code === 'ENOENT' || err.code === 'EPERM' || err.code === 'EBUSY')
+            : err && (err.installer || err.code === 'EACCES' || err.code === 'ENOENT' || err.code === 'EPERM' || err.code === 'EBUSY')
               ? 'Das Setup konnte nicht gespeichert oder gestartet werden (evtl. vom Virenschutz blockiert). Ordner: %TEMP%\\PlantPDF-Update.'
               : /^Download fehlgeschlagen/.test(String(err && err.message))
                 ? 'GitHub hat die Datei nicht geliefert. Bitte später erneut versuchen.'

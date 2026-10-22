@@ -555,7 +555,10 @@ function listPages(section, ts, labels, project) {
   svg += text(PAGE.left, y, ts.label('deviceList'), { size: 12, weight: 700 });
   y += 22;
   head();
-  const list = symbolsInOrder(section);
+  // nach Geräteart zusammen (gleiche Kürzel verschiedener Arten nicht verschränkt), innerhalb in Nummernfolge
+  const all = symbolsInOrder(section);
+  const kindOrder = [...new Set(all.map((y) => y.kind))];
+  const list = [...all].sort((a, b) => kindOrder.indexOf(a.kind) - kindOrder.indexOf(b.kind));
   const counts = new Map();
   for (const sym of list) counts.set(sym.kind, (counts.get(sym.kind) || 0) + 1);
   let lastKind = null;
