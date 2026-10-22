@@ -1,0 +1,46 @@
+# Automatisches Release: Steht auf main eine Version in package.json, die es noch nicht als Tag
+# gibt, setzt dieser Workflow den Tag vX.Y.Z und startet „Release (Windows)“ für diesen Tag
+# (baut, testet und veröffentlicht das Setup). Tags, die GitHub Actions selbst setzt, lösen keine
+# weiteren Workflows aus – deshalb der ausdrückliche Start per workflow_dispatch.
+name: Auto-Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write # Tag setzen
+  actions: write # Release-Workflow starten
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Version lesen, Tag setzen, Release starten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Keine gültige Version: $version"; exit 1
+          fi
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "$tag gibt es schon – nichts zu tun."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "PlantPDF $version" "$GITHUB_SHA"
+          git push origin "$tag"
+          gh workflow run release.yml --ref "$tag"
+          echo "Release $tag gestartet."
