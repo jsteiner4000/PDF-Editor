@@ -139,7 +139,7 @@ test('Darstellung je Objekt: Ebene, Aufhellen, Beschriftung, Umriss; Plan ausdü
     await page.keyboard.press('Control+z');
     expect((await site()).symbols.find((y) => y.id === 'ya').cone).toBeUndefined();
 
-    // Ausblenden: Bewegungsmelder aus – nicht mehr im Plan, Legende vollständig
+    // Ausblenden: Bewegungsmelder aus – nicht im Plan und nicht in der Legende
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       const s = st.project.sections.find((x) => x.type === 'site');
@@ -154,7 +154,8 @@ test('Darstellung je Objekt: Ebene, Aufhellen, Beschriftung, Umriss; Plan ausdü
     await expect.poll(async () => (await site()).thin.motion).toBe('hidden');
     const hits = () => page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.site).hits.filter((h) => h.kind === 'sym').map((h) => h.id));
     await expect.poll(hits).toEqual(['ya']);
-    expect(await svg()).toContain('Bewegungsmelder');
+    // ausgeblendet: auch nicht in der Legende
+    await expect.poll(svg).not.toContain('Bewegungsmelder');
     // wieder anhaken: wieder im Plan; „Alle zeigen“ setzt alles zurück
     await box.check();
     await expect.poll(async () => (await site()).thin.motion).toBeUndefined();

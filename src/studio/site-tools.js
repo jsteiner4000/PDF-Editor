@@ -812,17 +812,20 @@ export const siteTools = {
         ['none', 'Keine'],
       ]
         .map(([v, l]) => `<button type="button" role="radio" aria-checked="${mode === v}" class="${mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`)
-        .join('')}</div><small>Abgewählte Arten fehlen im Plan und in der PDF. „Unter dem Plan“ wechselt von selbst auf eine eigene Seite, wenn die Legende zu groß wird.</small></div></div>`,
+        .join('')}</div><small>Abgewählte Arten fehlen im Plan, in der Legende und in der PDF. „Unter dem Plan“ wechselt von selbst auf eine eigene Seite, wenn die Legende zu groß wird.</small></div></div>`,
     );
     // nach Rückgängig ist das Projekt neu: Abschnitt jedes Mal frisch holen
     const setShown = (keys, on) => {
       const cur = this.section(site.id);
       if (!cur) return;
       this.change(on ? 'Im Plan gezeigt' : 'Im Plan ausgeblendet', () => {
-        cur.thin ||= {};
-        for (const k of keys) {
-          if (on) delete cur.thin[k];
-          else cur.thin[k] = 'hidden';
+        if (on && keys === null) cur.thin = {}; // „Alle zeigen“: auch Reste gelöschter Arten
+        else {
+          cur.thin ||= {};
+          for (const k of keys) {
+            if (on) delete cur.thin[k];
+            else cur.thin[k] = 'hidden';
+          }
         }
       });
     };
@@ -843,7 +846,7 @@ export const siteTools = {
     const all = el.querySelector('[data-all]');
     if (all)
       all.addEventListener('click', () => {
-        setShown(entries.map((e) => e.key), true);
+        setShown(null, true);
         for (const row of el.querySelectorAll('.sd-leg-row[data-key]')) {
           row.classList.remove('off');
           row.querySelector('input').checked = true;
