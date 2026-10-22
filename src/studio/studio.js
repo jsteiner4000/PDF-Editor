@@ -882,7 +882,9 @@ export class Studio {
           (kind === 'hub' && hit.kind === 'hub') ||
           (kind === 'overlay' && hit.kind === 'overlay' && hit.id === id);
         if (!match) continue;
-        const mark = this.markEl(hit.rect, fresh ? 'sd-sel sd-in' : 'sd-sel');
+        // Zeile einer Tabelle (Geräteliste, Zugangsdaten): Zeilenmarkierung statt Rahmen
+        const row = !page.site && (page.kind === 'sitelist' || page.kind === 'access') && ['sym', 'device', 'wifi', 'remote'].includes(hit.kind);
+        const mark = this.markEl(hit.rect, `sd-sel${row ? ' sd-row' : ''}${fresh ? ' sd-in' : ''}`);
         if (kind === 'box' && hit.kind === 'box') mark.appendChild(htmlToElement('<span class="sd-grip" title="Höhe ziehen"></span>'));
         if (kind === 'overlay') mark.appendChild(htmlToElement('<span class="sd-ogrip" title="Größe ziehen"></span>'));
         marks.appendChild(mark);
