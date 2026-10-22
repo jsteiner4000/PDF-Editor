@@ -5,7 +5,7 @@ PlantPDF – ein PDF-Editor für Windows: Texte und Bilder in PDF-Dateien bearbe
 einfügen, löschen und ordnen, Dokumente unterschreiben. Im Bereich „Dokumentation“ entstehen
 Kundendokumentationen (Lageplan, Anschlussplan, Zugangsdaten, Fotos) sowie
 Bedienungsanleitungen und Technische Beschreibungen als PDF. Alles bleibt auf Ihrem
-Rechner – es werden keine Daten ins Internet übertragen.
+Rechner – ins Internet geht nur die Suche nach Updates (siehe UPDATES).
 
 Bis Version 2.13 hieß das Programm „PDFix“. Ein Update übernimmt Einstellungen,
 Unterschriften, eigene Schriften, Entwürfe und die Wahl als Standardprogramm.
@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.17.1.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.18.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -46,8 +46,9 @@ Deinstallieren: Windows-Einstellungen > Apps > „PlantPDF“ > Deinstallieren.
 Die persönlichen Einstellungen liegen in %APPDATA%\PDF-Editor und können danach
 von Hand gelöscht werden.
 
-PlantPDF stellt keine Verbindung zum Internet her, sucht nicht nach
-Updates und sendet keine Daten.
+PlantPDF verbindet sich nur für die Update-Suche mit GitHub (neueste
+Versionsnummer, ggf. Download des Setups) und sendet keine Dokumente oder
+Nutzerdaten.
 
 Zwei Arbeitsbereiche – oben links umschalten:
 - „PDF“: PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.
@@ -297,6 +298,20 @@ DARSTELLUNG
 Menü „Datei“ > „Einstellungen …“ (Strg+,): Hell, Dunkel oder „Wie System“
 (folgt der Windows-Einstellung). Dokumentseiten bleiben immer weiß wie Papier.
 
+
+UPDATES
+-------
+PlantPDF sucht beim Start (höchstens einmal am Tag) nach einer neuen Version
+auf GitHub – jederzeit auch über „Hilfe > Nach Updates suchen …“. Gibt es
+eine, erscheint unten rechts ein Hinweis: „Jetzt aktualisieren“ lädt das
+Setup, prüft es (Größe und SHA-256-Prüfsumme des Releases), fragt bei
+ungespeicherten Änderungen nach, installiert und startet PlantPDF neu.
+„Später“ blendet den Hinweis aus. Übertragen wird dabei nur die Anfrage nach
+der neuesten Versionsnummer und ggf. der Download des Setups (dabei sieht
+GitHub wie bei jedem Webseitenaufruf die IP-Adresse) – keine Dokumente, keine
+Nutzerdaten. Die Prüfsumme schützt vor beschädigten oder unterwegs veränderten
+Dateien; das Setup selbst ist nicht digital signiert (Windows kann beim ersten
+Start nachfragen).
 
 SPEICHERN
 ---------

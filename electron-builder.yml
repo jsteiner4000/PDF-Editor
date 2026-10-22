@@ -17,6 +17,8 @@ files:
   - desktop/quick-print.js
   - desktop/menu.js
   - desktop/window-state.js
+  - desktop/updater.js
+  - desktop/update-check.js
   - desktop/preload.cjs
   - dist/PDF-Editor.html
   - assets/icon/icon.ico
@@ -47,7 +49,7 @@ electronFuses:
   grantFileProtocolExtraPrivileges: false
 # Nur deutsche und englische Chromium-Sprachdateien ausliefern (Dialoge, Kontextmenüs)
 electronLanguages: [de, en-US]
-# Kein Auto-Update: keine app-update.yml, keine Veröffentlichung
+# Updates: eigene Prüfung über GitHub-Releases (desktop/updater.js), keine app-update.yml
 publish: null
 
 win:

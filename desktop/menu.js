@@ -15,11 +15,12 @@ const isMac = process.platform === 'darwin';
  * @param {object} actions
  * @param {(command: string) => void} actions.command  Befehl an die Web-App senden
  * @param {() => void} actions.about                  „Über PlantPDF“
+ * @param {() => void} actions.updates                „Nach Updates suchen …“
  * @param {() => void} actions.licenses               Lizenzhinweise öffnen
  * @param {() => void} actions.fonts                  Ordner mit den Schriftdateien öffnen
  * @param {boolean} actions.devTools                  Entwicklerwerkzeuge anbieten (nur Entwicklung)
  */
-export function buildMenu({ command, about, licenses, fonts, devTools }) {
+export function buildMenu({ command, about, updates, licenses, fonts, devTools }) {
   // Kürzel, die die Web-App selbst behandelt: nur anzeigen
   const shown = (accelerator) => ({ accelerator, registerAccelerator: false });
   const cmd = (id, label, extra = {}) => ({ id, label, click: () => command(id), ...extra });
@@ -154,6 +155,7 @@ export function buildMenu({ command, about, licenses, fonts, devTools }) {
         { label: 'Schriftdateien anzeigen', click: fonts },
         { label: 'Lizenzhinweise', click: licenses },
         { type: 'separator' },
+        { label: 'Nach Updates suchen …', click: updates },
         { label: 'Über PlantPDF', click: about },
       ],
     },

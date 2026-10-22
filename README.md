@@ -229,5 +229,5 @@ Schreibrechte nach einem Neustart erfordern Berechtigungsabfragen ohne Oberfläc
 | Dateizugriff              | nur vom Nutzer gewählte Dateien, Schreiben nur in `.pdf`                                                        |
 | Electron-Fuses            | RunAsNode, NODE_OPTIONS, `--inspect` aus; nur aus `app.asar`, Integrität geprüft                                |
 | Entwicklerwerkzeuge       | im Paket deaktiviert                                                                                            |
-| Updates / Telemetrie      | keine (kein Auto-Updater, `publish: null`)                                                                      |
+| Updates / Telemetrie      | keine Telemetrie; Update-Suche über GitHub-Releases in eigener Sitzung, Setup per SHA-256 geprüft (`desktop/updater.js`) |
 | Aktuelle Electron-Version | exakt gepinnt (`electron` in `package.json`)                                                                    |
