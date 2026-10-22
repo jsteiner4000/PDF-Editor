@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.18.0.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.19.0.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -49,6 +49,12 @@ von Hand gelöscht werden.
 PlantPDF verbindet sich nur für die Update-Suche mit GitHub (neueste
 Versionsnummer, ggf. Download des Setups) und sendet keine Dokumente oder
 Nutzerdaten.
+
+Ansprechpartner und Wachschutz (Dokumentation > Projektangaben, rechts):
+„+ Ansprechpartner hinzufügen“ legt beliebig viele Kontakte an (Name, Funktion,
+Telefon, E-Mail); darunter der Wachschutz (Firma, Notruf, Kunden-/Objekt-Nr.,
+Leitstelle). Beides steht auf dem Deckblatt unter den Projektangaben – nur was
+ausgefüllt ist; bei vielen Kontakten geht es auf einer Folgeseite weiter.
 
 Zwei Arbeitsbereiche – oben links umschalten:
 - „PDF“: PDF-Dateien öffnen, bearbeiten, ausfüllen und unterschreiben.
