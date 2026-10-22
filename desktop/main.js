@@ -605,6 +605,7 @@ function start() {
   const updatesEnabled = () => app.isPackaged && process.platform === 'win32' && !process.env.PDF_EDITOR_NO_UPDATES;
   let update = null; // gefundenes Update
   let updating = false;
+  let cancelled = false;
   let quitting = false;
   app.on('before-quit', () => {
     quitting = true;
@@ -649,7 +650,11 @@ function start() {
 
   /** Laden, prüfen, PlantPDF schließen (mit Rückfrage je geänderten Tab), Installer starten. */
   async function installUpdate() {
-    const reset = () => command('updateProgress', { data: { p: -1 } });
+    // alle Meldungen an den Tab, in dem das Update gestartet wurde (er zeigt die Ladeanzeige)
+    const tab = activeTab();
+    const reset = () => {
+      for (const t of allTabs()) if (t.ready) command('updateProgress', { tab: t, data: { p: -1 } });
+    };
     if (updating) return false;
     if (!update || !focusedWin()) return reset(), false;
     // ohne Prüfsumme nichts automatisch installieren: Release-Seite im Browser öffnen
@@ -658,12 +663,21 @@ function start() {
       return reset(), false;
     }
     updating = true;
+    cancelled = false;
+    const info = update;
+    let last = -1;
     const progress = (p) => {
       for (const w of wins) if (alive(w)) w.base.setProgressBar(p);
-      command('updateProgress', { data: { p } });
+      // höchstens ~200 Meldungen je Download an die Ladeanzeige
+      if (p < 1 && p - last < 0.005) return;
+      last = p;
+      command('updateProgress', { tab, data: { p, total: info.size, version: info.version } });
     };
     try {
-      const file = await downloadUpdate(update, progress);
+      command('updateProgress', { tab, data: { p: 0, total: info.size, version: info.version } });
+      const file = await downloadUpdate(info, progress);
+      // kurz vor Schluss abgebrochen: trotzdem nicht installieren
+      if (cancelled) return reset(), false;
       progress(1);
       // Programm inzwischen beendet: nichts mehr installieren
       if (quitting || !focusedWin()) return reset(), false;
@@ -672,14 +686,19 @@ function start() {
           reset();
           return false;
         }
+      // Häkchen zeigen, dann installieren (der Installer schließt PlantPDF und startet es neu)
+      command('updateProgress', { tab, data: { phase: 'install', version: info.version } });
+      // Ring voll, Haken und Glitzer abwarten
+      await new Promise((r) => setTimeout(r, 1500));
       await runInstaller(file);
       for (const w of wins) w.allowClose = true;
       app.quit();
       return true;
     } catch (err) {
-      console.error('Update', err);
       reset();
-      if (quitting || !focusedWin()) return false;
+      // „Abbrechen“ in der Ladeanzeige: keine Fehlermeldung
+      if (cancelled || quitting || !focusedWin()) return false;
+      console.error('Update', err);
       showMessage(baseOf(null), {
         type: 'warning',
         title: APP_NAME,
@@ -883,6 +902,12 @@ function start() {
     handle('file:read', (_tab, id) => files.read(id));
     // Hinweis „Update verfügbar“ > „Jetzt aktualisieren“
     handle('update:install', () => installUpdate());
+    handle('update:cancel', () => {
+      if (!updating) return false;
+      cancelled = true;
+      abortDownload();
+      return true;
+    });
     // „Dokumentation erstellen“: Druckfassung → PDF (höchstens 200 MB Text, z. B. mit Fotos)
     handle('studio:pdf', async (_tab, html) => {
       if (typeof html !== 'string' || !html.startsWith('<!doctype html>') || html.length > 200 * 1024 * 1024) throw new Error('Ungültige Druckfassung');

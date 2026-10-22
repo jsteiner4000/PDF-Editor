@@ -114,6 +114,7 @@ test('Desktop-App: öffnen per Kommandozeile, bearbeiten, speichern, schließen'
     expect(Object.keys(JSON.parse(security.handle)).sort()).toEqual(['desktopId', 'kind', 'name']); // kein Pfad
     expect(security.bridge).toEqual(
       [
+        'cancelUpdate',
         'grantDroppedFile',
         'installUpdate',
         'makePdf',

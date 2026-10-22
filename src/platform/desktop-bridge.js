@@ -17,7 +17,7 @@
  */
 
 import { toast } from '../ui/dialogs.js';
-import { showUpdate, updateProgress } from '../ui/update-banner.js';
+import { setUpdateCancel, showUpdate, updateProgress } from '../ui/update-banner.js';
 import { applyTheme, readTheme } from '../ui/theme.js';
 import { installTitleBar } from './title-bar.js';
 import { installTabStrip } from './tab-strip.js';
@@ -171,8 +171,11 @@ const COMMANDS = {
   /** Darstellung in einem anderen Tab geändert. */
   themeChanged: () => applyTheme(),
   /** Beim Start gefunden: dezenter Hinweis unten rechts (nur im installierten Programm). */
-  updateAvailable: (data) => showUpdate(data, () => desktop.installUpdate()),
-  updateProgress: (data) => updateProgress(data && data.p),
+  updateAvailable: (data) => showUpdate(data, () => desktop.installUpdate(), () => desktop.cancelUpdate()),
+  updateProgress: (data) => {
+    setUpdateCancel(() => desktop.cancelUpdate());
+    updateProgress(data);
+  },
   open: () => app.openDialog(),
   save: () => (app.session || studioActive() ? app.save() : false),
   saveAs: () => (app.session || studioActive() ? app.saveAs() : false),
