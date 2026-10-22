@@ -583,7 +583,7 @@ test('Lageplan: Hintergrund aus Bild und aus PDF-Seite, eigenes Symbol', async (
 
     // 3. Symbol-Galerie: Symbol wählen, dann eigenes Symbol hochladen
     await page.locator('.rb[data-act="symbols"]').click();
-    await expect(page.locator('.sd-gallery .sd-symbol')).toHaveCount(20);
+    await expect(page.locator('.sd-gallery .sd-symbol')).toHaveCount(21);
     await page.locator('.sd-gallery .sd-symbol', { hasText: 'Kamera' }).click();
     await expect(page.locator('#sdArm')).toContainText('Kamera');
     await expect(page.locator('.sd-gallery')).toHaveCount(0);

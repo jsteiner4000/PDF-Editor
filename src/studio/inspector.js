@@ -1543,13 +1543,32 @@ Object.assign(Inspector.prototype, {
     const photos = [];
     for (const sec of this.project.sections)
       if (sec.type === 'photos') for (const p of sec.items) if (p.link === y.id) photos.push({ p, sec });
-    if (photos.length)
-      this.group(
-        `Fotos (${photos.length})`,
-        this.rows(photos, {
-          render: ({ p }) => `<span class="t">${escapeHtml(tx(p.caption, lang) || 'Foto')}</span>`,
-          onOpen: ({ p, sec }) => studio.select({ kind: 'photo', id: p.id, section: sec.id }, { reveal: true }),
-        }),
+    const fotos = this.group(
+      photos.length ? `Fotos (${photos.length})` : 'Fotos',
+      photos.length
+        ? this.rows(photos, {
+            render: ({ p }) => `<span class="t">${escapeHtml(tx(p.caption, lang) || 'Foto')}</span>`,
+            onOpen: ({ p, sec }) => studio.select({ kind: 'photo', id: p.id, section: sec.id }, { reveal: true }),
+          })
+        : this.note(y.kind === 'photo' ? 'Foto für diesen Standort wählen – es kommt in die Fotodokumentation.' : 'Fotos zu diesem Gerät kommen in die Fotodokumentation (auch per Ziehen aufs Symbol).'),
+    );
+    const addPhoto = htmlToElement(`<button type="button" class="btn outline sd-wide">${icon('camera', 's')}Foto hinzufügen …</button>`);
+    addPhoto.addEventListener('click', () => studio.addPhotosFor(y.id));
+    fotos.appendChild(addPhoto);
+    // Fotostandorte: alle auf einmal blass oder aus (Plan bleibt übersichtlich)
+    if (y.kind === 'photo')
+      fotos.appendChild(
+        this.seg('Fotostandorte im Plan', [['', 'Zeigen'], ['faded', 'Blass'], ['hidden', 'Aus']], (s.thin || {}).photo || '', (v) =>
+          studio.change(
+            'Fotostandorte ' + (v === 'hidden' ? 'ausgeblendet' : v === 'faded' ? 'blass' : 'gezeigt'),
+            () => {
+              s.thin ||= {};
+              if (v) s.thin.photo = v;
+              else delete s.thin.photo;
+            },
+            { inspector: true },
+          ),
+        ),
       );
     this.lookGroup(y, 'sym', info && info.fov && y.fov);
     this.actions(['Löschen', 'trash', () => studio.removeSelected(), true]);

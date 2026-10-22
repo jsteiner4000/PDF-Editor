@@ -625,7 +625,7 @@ export const siteTools = {
       if (!site || !els[i]) return false;
       const marks = els[i].querySelector('.sd-marks');
       if (sel.kind === 'sym') {
-        const m = site.symbols.find((y) => y.id === sel.id);
+        const m = site.symbols.find((y) => y.id === sel.id) || (site.ghosts || []).find((y) => y.id === sel.id);
         if (!m) return false;
         target = htmlToElement('<span class="sd-pulse sd-pulse-dot"></span>');
         const d = Math.max((m.r + 9) * 2 * this.scale, 34);
@@ -712,6 +712,28 @@ export const siteTools = {
       showMenu([{ label: 'Im Lageplan zeigen', icon: 'map', run: () => this.select(sel, { pulse: true }) }], { x: ev.clientX, y: ev.clientY });
       return true;
     }
+    // Foto der Fotodokumentation: zum Gerät bzw. Fotostandort im Lageplan
+    if (item && item.kind === 'photo') {
+      ev.preventDefault();
+      const sec = this.section(hit.page.section);
+      const photo = sec && sec.items.find((p) => p.id === item.id);
+      this.select({ kind: 'photo', id: item.id, section: hit.page.section });
+      const found = photo && photo.link && this.findSymbol(photo.link);
+      showMenu(
+        [
+          { label: 'Im Lageplan zeigen', icon: 'map', disabled: !found, run: () => this.select({ kind: 'sym', id: found.y.id, section: found.s.id }, { pulse: true }) },
+          ...(found ? [] : [{ label: 'Nicht mit dem Lageplan verknüpft – rechts „Gerät im Lageplan“ wählen', disabled: true }]),
+        ],
+        { x: ev.clientX, y: ev.clientY },
+      );
+      return true;
+    }
+    // freie Stelle im Plan: Fotostandort setzen
+    if (hit && hit.page.site && (!item || item.kind === 'plan')) {
+      ev.preventDefault();
+      showMenu([{ label: 'Foto hier einfügen …', icon: 'camera', run: () => this.addPhotoHere(hit) }], { x: ev.clientX, y: ev.clientY });
+      return true;
+    }
     if (!item || !['sym', 'shape', 'link'].includes(item.kind) || !hit.page.site) return false;
     ev.preventDefault();
     this.select({ kind: item.kind, id: item.id, section: hit.page.section });
@@ -720,6 +742,7 @@ export const siteTools = {
     const fade = cur.obj.fade || 0;
     showMenu(
       [
+        ...(item.kind === 'sym' ? [{ label: 'Foto hinzufügen …', icon: 'camera', run: () => this.addPhotosFor(item.id) }, '-'] : []),
         { label: 'In den Vordergrund', run: () => this.moveLayer('front') },
         { label: 'Eine Ebene nach vorne', key: 'Strg+Umschalt+↑', run: () => this.moveLayer('forward') },
         { label: 'Eine Ebene nach hinten', key: 'Strg+Umschalt+↓', run: () => this.moveLayer('backward') },
