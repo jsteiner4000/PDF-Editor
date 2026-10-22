@@ -415,9 +415,8 @@ function start() {
     if (!start) start = createTab(w, { activate: false });
     if (ws === 'pdf' || ws === 'docs') {
       // gleich vormerken, damit die Tab-Leiste sofort die Tabs dieses Bereichs zeigt
-      start.state.workspace = ws;
+      start.state.workspace = start.workspace = ws;
       if (start.ready) command('setWorkspace', { tab: start, data: ws });
-      else start.workspace = ws;
     }
     activateTab(start);
   }
@@ -793,7 +792,8 @@ function start() {
       // nur durch die Tabs des aktuellen Bereichs (samt Startseite)
       const step = (d) => {
         const ws = wsOf(w.active);
-        const list = w.tabs.filter((t) => kindOf(t) === 'home' || kindOf(t) === ws);
+        const start = w.tabs.find((t) => kindOf(t) === 'home' && wsOf(t) === ws);
+        const list = w.tabs.filter((t) => t === w.active || t === start || kindOf(t) === ws);
         const i = list.indexOf(w.active);
         activateTab(list[(i + d + list.length) % list.length]);
       };
@@ -1012,6 +1012,7 @@ function start() {
         // (ein vorgemerkter Bereich gilt, bis die Startseite ihn übernommen hat)
         workspace: tab.workspace || (state.workspace === 'docs' ? 'docs' : 'pdf'),
       };
+      if (tab.workspace === state.workspace || state.hasDocument) tab.workspace = null;
       updateTitle(tab.win);
       broadcastTabs(tab.win);
       // Darstellung der App auch für Titelleiste, Menü, Systemdialoge und die anderen Tabs
@@ -1043,7 +1044,6 @@ function start() {
       broadcastTabs(tab.win);
       if (tab.workspace) {
         command('setWorkspace', { tab, data: tab.workspace });
-        tab.workspace = null;
       }
       if (tab.open) {
         const open = tab.open;
