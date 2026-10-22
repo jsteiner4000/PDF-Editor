@@ -139,22 +139,29 @@ test('Darstellung je Objekt: Ebene, Aufhellen, Beschriftung, Umriss; Plan ausdü
     await page.keyboard.press('Control+z');
     expect((await site()).symbols.find((y) => y.id === 'ya').cone).toBeUndefined();
 
-    // Plan ausdünnen: Bewegungsmelder aus – nicht mehr im Plan, Legende vollständig
+    // Ausblenden: Bewegungsmelder aus – nicht mehr im Plan, Legende vollständig
     await page.evaluate(() => {
       const st = window.pdfEditor.studio;
       const s = st.project.sections.find((x) => x.type === 'site');
       st.select({ kind: 'section', id: s.id });
     });
-    const row = page.locator('.sd-grp', { hasText: 'Plan ausdünnen' }).locator('.sd-f', { hasText: 'Bewegungsmelder' });
-    await row.locator('button', { hasText: 'Aus' }).click();
-    s = await site();
-    expect(s.thin.motion).toBe('hidden');
+    // im Werkzeugband: „Legende“ › Häkchen weg (rechts gibt es dafür nichts mehr)
+    await expect(page.locator('.sd-grp', { hasText: 'Plan ausdünnen' })).toHaveCount(0);
+    await page.locator('.rb[data-act="legend"]').click();
+    const box = page.locator('.sd-legend .sd-leg-row', { hasText: 'Bewegungsmelder' }).locator('input');
+    await expect(box).toBeChecked();
+    await box.uncheck();
+    await expect.poll(async () => (await site()).thin.motion).toBe('hidden');
     const hits = () => page.evaluate(() => window.pdfEditor.studio.doc.pages.find((p) => p.site).hits.filter((h) => h.kind === 'sym').map((h) => h.id));
     await expect.poll(hits).toEqual(['ya']);
     expect(await svg()).toContain('Bewegungsmelder');
-    await row.locator('button', { hasText: 'Blass' }).click();
-    expect((await site()).thin.motion).toBe('faded');
-    await expect.poll(svg).toContain('opacity="0.35"');
+    // wieder anhaken: wieder im Plan; „Alle zeigen“ setzt alles zurück
+    await box.check();
+    await expect.poll(async () => (await site()).thin.motion).toBeUndefined();
+    await box.uncheck();
+    await page.locator('.sd-legend [data-all]').click();
+    await expect.poll(async () => Object.keys((await site()).thin || {}).length).toBe(0);
+    await page.keyboard.press('Escape');
     expect(errors).toEqual([]);
   } finally {
     await context.close();
@@ -314,8 +321,9 @@ test('Legende: Dropdown im Werkzeugband, Klick zeigt Geräte, in der PDF unter d
     });
     await page.locator('.rb[data-act="legend"]').click();
     await expect(page.locator('.sd-legend .sd-leg-row')).toHaveCount(2);
+    await expect(page.locator('.sd-legend .sd-leg-row input:checked')).toHaveCount(2);
     await expect(page.locator('.sd-legend .sd-leg-row').first()).toContainText('Kamera');
-    await page.locator('.sd-legend .sd-leg-row', { hasText: 'Kamera' }).click();
+    await page.locator('.sd-legend .sd-leg-row', { hasText: 'Kamera' }).locator('.sd-leg-find').click();
     await expect(page.locator('.sd-pulse-dot')).toHaveCount(2);
     const kinds = () =>
       page.evaluate(() => {

@@ -51,6 +51,7 @@ const GLYPHS = {
   cabinet: '<rect x="6" y="4" width="12" height="16" rx="1.5"/><path d="M12.8 7.5 10.2 12.2h3.6l-2.6 4.6"/>',
   junction: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><path d="M3.5 12h3M17.5 12h3M12 3.5v3M12 17.5v3"/>',
   rack: '<rect x="6" y="3.5" width="12" height="17" rx="1.5"/><path d="M8.5 8h7M8.5 12h7M8.5 16h7"/>',
+  ap: '<path d="M5.5 9.5a9.2 9.2 0 0 1 13 0M8 12a5.6 5.6 0 0 1 8 0M10.4 14.5a2.2 2.2 0 0 1 3.2 0"/><circle cx="12" cy="17.6" r="1.1" fill="#fff"/>',
   radio: '<path d="M6.5 6.5a8 8 0 0 0 11 11z"/><path d="M12 12l4.5-4.5"/><path d="M15.5 4.5a4 4 0 0 1 4 4"/><path d="M9 20h6"/>',
 };
 

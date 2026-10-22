@@ -764,53 +764,94 @@ export const siteTools = {
   },
 
   /**
-   * Legende als Dropdown (Ansichtshilfe): jede Symbolart dieses Plans mit Kürzel, Name und Anzahl,
-   * nach Geräten geordnet. Klick lässt alle Geräte dieser Art im Plan aufleuchten. Unten: ob und
-   * wo die Legende in der PDF erscheint.
+   * Legende und Sichtbarkeit als Dropdown im Werkzeugband: jede Art im Plan (Geräte, Fotostandorte,
+   * Richtfunk, Zäune, Zonen, Linien) mit Häkchen – abgewählt ist sie im Plan und in der PDF
+   * ausgeblendet. Die Lupe zeigt alle Objekte dieser Art im Plan. Unten: Legende in der PDF.
    */
   legendMenu(anchor, site) {
     if (!site) return;
-    const kinds = new Map();
+    const lang = 'de';
+    const entries = [];
+    const byKey = new Map();
+    const add = (key, art, code, name, ids) => {
+      if (byKey.has(key)) return byKey.get(key).ids.push(...ids);
+      const e = { key, art, code, name, ids: [...ids] };
+      byKey.set(key, e);
+      entries.push(e);
+    };
     for (const y of symbolsInOrder(site).concat(site.symbols.filter((y) => y.kind === 'photo'))) {
       const info = symbolInfo(site, y.kind);
-      if (!info) continue;
-      const e = kinds.get(y.kind) || { kind: y.kind, info, ids: [] };
-      e.ids.push(y.id);
-      kinds.set(y.kind, e);
+      if (info) add(y.kind, symbolIconSvg(info, this.project.images, 22), info.code, tx(info.name, lang), [y.id]);
     }
-    const hidden = (k) => (site.thin || {})[k] === 'hidden';
-    const rows = [...kinds.values()]
-      .map(
-        (e) =>
-          `<button type="button" class="sd-leg-row${hidden(e.kind) ? ' off' : ''}" data-kind="${escapeHtml(e.kind)}" title="Alle ${escapeHtml(tx(e.info.name, 'de'))} im Plan zeigen">${symbolIconSvg(e.info, this.project.images, 22)}<b>${escapeHtml(e.info.code)}</b><span>${escapeHtml(tx(e.info.name, 'de'))}</span><small>${e.ids.length}${hidden(e.kind) ? ' · aus' : ''}</small></button>`,
-      )
-      .join('');
-    const extra = [];
-    if (site.links.length) extra.push(['Richtfunkstrecke', site.links.length, '<svg width="22" height="22" viewBox="0 0 22 22"><line x1="3" y1="11" x2="19" y2="11" stroke="#0891b2" stroke-width="2" stroke-dasharray="3 2"/></svg>']);
-    const fences = site.shapes.filter((z) => z.type === 'fence').length;
-    if (fences) extra.push(['Zaun / Zone', fences, '<svg width="22" height="22" viewBox="0 0 22 22"><line x1="3" y1="11" x2="19" y2="11" stroke="#475569" stroke-width="1.6"/><path d="M6 8v6M11 8v6M16 8v6" stroke="#475569" stroke-width="1.6"/></svg>']);
+    const line = (stroke, dash = '', posts = false) =>
+      `<svg width="22" height="22" viewBox="0 0 22 22"><line x1="3" y1="11" x2="19" y2="11" stroke="${stroke}" stroke-width="2"${dash ? ` stroke-dasharray="${dash}"` : ''}/>${posts ? `<path d="M6 7.5v7M11 7.5v7M16 7.5v7" stroke="${stroke}" stroke-width="1.6"/>` : ''}</svg>`;
+    if (site.links.length) add('link', line('#0891b2', '3 2'), '', 'Richtfunkstrecken', []);
+    for (const z of site.shapes) {
+      const key = z.closed ? 'zone' : z.type;
+      const art = key === 'zone' ? '<svg width="22" height="22" viewBox="0 0 22 22"><rect x="4" y="5" width="14" height="12" rx="2" fill="#1d4ed81f" stroke="#1d4ed8" stroke-width="1.6"/></svg>' : key === 'fence' ? line('#475569', '', true) : key === 'dim' ? line('#334155', '1 0') : line('#1d4ed8');
+      add(key, art, '', tx(SHAPE_TYPES[key], lang) || key, []);
+    }
+    for (const e of entries) e.count = e.ids.length || (e.key === 'link' ? site.links.length : site.shapes.filter((z) => (z.closed ? 'zone' : z.type) === e.key).length);
+    const shown = (key) => (site.thin || {})[key] !== 'hidden';
     const mode = site.legend || 'below';
     const el = htmlToElement(
-      `<div class="menu sd-legend" role="dialog" aria-label="Legende"><h5>Legende · ${escapeHtml(tx(site.title, 'de') || 'Lageplan')}</h5><div class="sd-leg-list">${
-        rows || extra.length ? rows + extra.map(([name, n, art]) => `<div class="sd-leg-row static">${art}<b></b><span>${name}</span><small>${n}</small></div>`).join('') : '<p class="sd-leg-empty">Noch keine Symbole im Plan.</p>'
-      }</div><hr><div class="sd-leg-pdf"><span>In der PDF</span><div class="sd-seg" role="radiogroup">${[
+      `<div class="menu sd-legend" role="dialog" aria-label="Legende und Sichtbarkeit"><h5>Legende · im Plan zeigen</h5><div class="sd-leg-list">${
+        entries.length
+          ? entries
+              .map(
+                (e) =>
+                  `<div class="sd-leg-row${shown(e.key) ? '' : ' off'}" data-key="${escapeHtml(e.key)}"><label><input type="checkbox"${shown(e.key) ? ' checked' : ''} aria-label="${escapeHtml(e.name)} im Plan zeigen">${e.art}<b>${escapeHtml(e.code)}</b><span>${escapeHtml(e.name)}</span><small>${e.count}</small></label>${
+                    e.ids.length ? `<button type="button" class="btn ic sd-leg-find" title="Im Plan zeigen" aria-label="${escapeHtml(e.name)} im Plan zeigen">${icon('zin', 's')}</button>` : '<span class="sd-leg-find"></span>'
+                  }</div>`,
+              )
+              .join('')
+          : '<p class="sd-leg-empty">Noch nichts im Plan.</p>'
+      }</div>${entries.length > 1 ? '<div class="sd-leg-all"><button type="button" class="btn sd-link" data-all="1">Alle zeigen</button></div>' : ''}<hr><div class="sd-leg-pdf"><span>Legende in der PDF</span><div class="sd-seg" role="radiogroup">${[
         ['below', 'Unter dem Plan'],
         ['page', 'Eigene Seite'],
         ['none', 'Keine'],
       ]
         .map(([v, l]) => `<button type="button" role="radio" aria-checked="${mode === v}" class="${mode === v ? 'on' : ''}" data-mode="${v}">${l}</button>`)
-        .join('')}</div><small>„Unter dem Plan“ wechselt von selbst auf eine eigene Seite, wenn die Legende zu groß wird.</small></div></div>`,
+        .join('')}</div><small>Abgewählte Arten fehlen im Plan und in der PDF. „Unter dem Plan“ wechselt von selbst auf eine eigene Seite, wenn die Legende zu groß wird.</small></div></div>`,
     );
-    for (const b of el.querySelectorAll('.sd-leg-row[data-kind]'))
-      b.addEventListener('click', () => {
-        const e = kinds.get(b.dataset.kind);
-        closeMenu();
-        if (e) this.pulseMany(site.id, e.ids);
+    // nach Rückgängig ist das Projekt neu: Abschnitt jedes Mal frisch holen
+    const setShown = (keys, on) => {
+      const cur = this.section(site.id);
+      if (!cur) return;
+      this.change(on ? 'Im Plan gezeigt' : 'Im Plan ausgeblendet', () => {
+        cur.thin ||= {};
+        for (const k of keys) {
+          if (on) delete cur.thin[k];
+          else cur.thin[k] = 'hidden';
+        }
+      });
+    };
+    for (const row of el.querySelectorAll('.sd-leg-row[data-key]')) {
+      const key = row.dataset.key;
+      const box = row.querySelector('input');
+      box.addEventListener('change', () => {
+        row.classList.toggle('off', !box.checked);
+        setShown([key], box.checked);
+      });
+      const find = row.querySelector('button.sd-leg-find');
+      if (find)
+        find.addEventListener('click', () => {
+          closeMenu();
+          this.pulseMany(site.id, byKey.get(key).ids);
+        });
+    }
+    const all = el.querySelector('[data-all]');
+    if (all)
+      all.addEventListener('click', () => {
+        setShown(entries.map((e) => e.key), true);
+        for (const row of el.querySelectorAll('.sd-leg-row[data-key]')) {
+          row.classList.remove('off');
+          row.querySelector('input').checked = true;
+        }
       });
     for (const b of el.querySelectorAll('[data-mode]'))
       b.addEventListener('click', () => {
         const v = b.dataset.mode;
-        // nach Rückgängig ist das Projekt neu: Abschnitt jedes Mal frisch holen
         const cur = this.section(site.id);
         if (!cur) return;
         this.change('Legende geändert', () => (cur.legend = v), { inspector: true });
