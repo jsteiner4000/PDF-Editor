@@ -53,11 +53,27 @@ export function autoCheckDue() {
   return Date.now() - (Number(readState().lastCheck) || 0) >= AUTO_INTERVAL;
 }
 
-/** Erfolgreiche Prüfung merken (offline zählt nicht – dann beim nächsten Start erneut). */
-export function rememberCheck() {
+function writeState(patch) {
   try {
-    writeFileSync(stateFile(), JSON.stringify({ lastCheck: Date.now() }));
+    writeFileSync(stateFile(), JSON.stringify({ ...readState(), ...patch }));
   } catch {}
+}
+
+/** Erfolgreiche Prüfung merken (offline zählt nicht – dann beim nächsten Start erneut). */
+export const rememberCheck = () => writeState({ lastCheck: Date.now() });
+
+/** Vor dem Start des Installers: diese Version wird gerade installiert. */
+export const rememberInstall = (version) => writeState({ installing: String(version) });
+
+/**
+ * Beim Start: Version, die das Update gerade installiert hat (sonst null); nur einmal. Schlug die
+ * Installation fehl (noch die alte Version), wird die Markierung still verworfen.
+ */
+export function takeInstalled() {
+  const { installing } = readState();
+  if (!installing) return null;
+  writeState({ installing: undefined });
+  return installing === app.getVersion() ? installing : null;
 }
 
 /** Neueres Release oder null; wirft bei fehlender Verbindung. */

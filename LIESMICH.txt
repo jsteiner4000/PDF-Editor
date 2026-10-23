@@ -15,7 +15,7 @@ STARTEN
 -------
 Windows 10/11
 
-Installation: „PlantPDF-Setup-2.22.1.exe“ ausführen. PlantPDF wird nur
+Installation: „PlantPDF-Setup-2.22.2.exe“ ausführen. PlantPDF wird nur
 für den eigenen Benutzer installiert – Administratorrechte sind nicht nötig.
 Danach gibt es ihn im Startmenü und als Symbol auf dem Desktop.
 Im Installer gibt es die Option „PlantPDF zum Standardprogramm für PDF-Dateien
@@ -324,8 +324,9 @@ auf GitHub – jederzeit auch über „Hilfe > Nach Updates suchen …“. Gibt 
 eine, erscheint unten rechts ein Hinweis: „Jetzt aktualisieren“ lädt das
 Setup, prüft es (Größe und SHA-256-Prüfsumme des Releases), fragt bei
 ungespeicherten Änderungen nach, installiert und startet PlantPDF neu. Während
-des Ladens zeigt eine Ladeanzeige Fortschritt und Megabyte; „Abbrechen“ stoppt
-den Download.
+des Ladens zeigt eine Anzeige in zwei Schritten „wird heruntergeladen“
+(Fortschritt und Megabyte; „Abbrechen“ stoppt den Download) und „wird
+installiert“; nach dem Neustart bestätigt PlantPDF „ist installiert“.
 „Später“ blendet den Hinweis aus. Übertragen wird dabei nur die Anfrage nach
 der neuesten Versionsnummer und ggf. der Download des Setups (dabei sieht
 GitHub wie bei jedem Webseitenaufruf die IP-Adresse) – keine Dokumente, keine
