@@ -3121,6 +3121,19 @@ select.ff:focus {
 .updx.done .updx-sheen {
   display: none;
 }
+/* Installieren: Ring läuft langsam noch einmal voll, ohne Prozent */
+.updx.installing .updx-arc {
+  transition-duration: 2.4s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+.updx.installing .updx-pct,
+.updx.installed .updx-pct {
+  opacity: 0;
+  transform: scale(0.8);
+}
+.updx.installed .updx-sheen {
+  display: none;
+}
 /* Fertig: Prozent weg, Häkchen zeichnet sich */
 .updx.done .updx-pct {
   opacity: 0;

@@ -712,3 +712,33 @@ test('Desktop-App: Tabs – zweite PDF im neuen Tab, umordnen, herausziehen, zur
     await app.close().catch(() => {});
   }
 });
+
+test('Desktop-App: Update-Anzeige – herunterladen, installieren, nach dem Neustart „ist installiert“', async () => {
+  const { app, page } = await launchWith([]);
+  try {
+    const send = (data) => app.evaluate((_e, data) => globalThis.__plantpdf.contents().send('app:command', { command: 'updateProgress', data }), data);
+    const card = page.locator('.updx');
+    await send({ p: 0.42, total: 90 * 1048576, version: '9.9.9' });
+    await expect(card.locator('h3')).toHaveText('PlantPDF 9.9.9 wird heruntergeladen');
+    await expect(card.locator('.updx-sub')).toHaveText('37,8 von 90,0 MB');
+    await expect(card.locator('.updx-pct b')).toHaveText('42');
+    if (process.env.UPDX_SHOTS) await page.screenshot({ path: path.join(process.env.UPDX_SHOTS, '1-laden.png') });
+    await send({ phase: 'install', version: '9.9.9' });
+    await expect(card.locator('h3')).toHaveText('PlantPDF 9.9.9 wird installiert');
+    await expect(card.locator('.updx-cancel')).toBeHidden();
+    await page.waitForTimeout(1200);
+    if (process.env.UPDX_SHOTS) await page.screenshot({ path: path.join(process.env.UPDX_SHOTS, '2-installieren.png') });
+    // Abbruch/Fehler schließt die Karte; nach dem Neustart zeigt die neue Version den Haken
+    await send({ p: -1 });
+    await expect(card).toHaveCount(0);
+    await send({ phase: 'installed', version: '9.9.9' });
+    await expect(card.locator('h3')).toHaveText('PlantPDF 9.9.9 ist installiert');
+    await expect(card).toHaveClass(/done/);
+    await page.waitForTimeout(1200);
+    if (process.env.UPDX_SHOTS) await page.screenshot({ path: path.join(process.env.UPDX_SHOTS, '3-installiert.png') });
+    await card.locator('.updx-cancel', { hasText: 'Fertig' }).click();
+    await expect(card).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});

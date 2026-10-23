@@ -1,7 +1,9 @@
 /**
  * Update in der Desktop-App: Hinweis „Update verfügbar“ unten rechts (nicht blockierend) und – sobald
- * geladen wird – eine eigene Ladeanzeige mittig: Fortschrittsring mit Prozent und Megabyte, kurzes
- * Prüfen (Ring dreht), zum Schluss ein Häkchen „PlantPDF startet neu …“. Laden lässt sich abbrechen.
+ * geladen wird – eine eigene Anzeige mittig in zwei Schritten: „wird heruntergeladen“ (Ring mit
+ * Prozent und Megabyte, danach kurzes Prüfen) und „wird installiert“ (derselbe Ring läuft noch
+ * einmal, dann schließt sich PlantPDF). Nach dem Neustart zeigt die neue Version dieselbe Karte mit
+ * dem Häkchen „ist installiert“. Laden lässt sich abbrechen.
  * Der Hauptprozess meldet den Stand über `updateProgress({ p, total, version, phase })`.
  */
 import { escapeHtml, htmlToElement } from './dom.js';
@@ -56,7 +58,7 @@ export const setUpdateCancel = (fn) => (cancel = fn);
 function ensureOverlay(version) {
   if (overlay) return overlay;
   overlay = htmlToElement(
-    `<div class="updx" role="dialog" aria-modal="true" aria-label="Update wird geladen">
+    `<div class="updx" role="dialog" aria-modal="true" aria-label="Update">
       <div class="updx-card">
         <div class="updx-ring">
           <svg viewBox="0 0 120 120" aria-hidden="true">
@@ -76,13 +78,14 @@ function ensureOverlay(version) {
           </svg>
           <div class="updx-pct"><b>0</b><span>%</span></div>
         </div>
-        <h3>PlantPDF ${escapeHtml(String(version || ''))} wird geladen</h3>
+        <h3>PlantPDF ${escapeHtml(String(version || ''))} wird heruntergeladen</h3>
         <p class="updx-sub" aria-live="polite">Verbindung wird aufgebaut …</p>
         <button type="button" class="btn updx-cancel">Abbrechen</button>
       </div>
     </div>`,
   );
   overlay.querySelector('.updx-cancel').addEventListener('click', () => {
+    if (overlay.classList.contains('installed')) return closeOverlay();
     overlay.querySelector('.updx-cancel').disabled = true;
     overlay.querySelector('.updx-sub').textContent = 'Wird abgebrochen …';
     if (cancel) cancel();
@@ -102,7 +105,8 @@ function closeOverlay() {
 
 /**
  * Stand des Updates: `p` 0…1 beim Laden (mit `total` Bytes), `phase: 'install'` nach dem Prüfen,
- * `p: -1` abgebrochen/fehlgeschlagen (Anzeige schließt, Hinweis wieder bedienbar).
+ * `phase: 'installed'` nach dem Neustart in der neuen Version, `p: -1` abgebrochen/fehlgeschlagen
+ * (Anzeige schließt, Hinweis wieder bedienbar).
  */
 export function updateProgress(data = {}) {
   const { p = 0, total = 0, version = '', phase = '' } = typeof data === 'number' ? { p: data } : data || {};
@@ -117,19 +121,38 @@ export function updateProgress(data = {}) {
   const pct = el.querySelector('.updx-pct b');
   const sub = el.querySelector('.updx-sub');
   if (phase === 'install') {
-    if (el.classList.contains('done')) return;
+    if (el.classList.contains('installing')) return;
+    // zweiter Schritt: Ring leert sich und läuft noch einmal voll, danach schließt sich PlantPDF
     el.classList.remove('verify');
-    // erst den Ring vollaufen lassen, dann Haken zeichnen und „Hurra“-Glitzer
-    arc.style.strokeDashoffset = '0';
+    el.classList.add('installing');
     el.querySelector('.updx-cancel').hidden = true;
+    el.querySelector('h3').textContent = `PlantPDF ${version} wird installiert`;
+    sub.textContent = 'PlantPDF startet gleich neu …';
+    arc.style.transition = 'none';
+    arc.style.strokeDashoffset = String(LEN);
+    void arc.getBoundingClientRect();
+    arc.style.transition = '';
+    requestAnimationFrame(() => (arc.style.strokeDashoffset = '0'));
+    return;
+  }
+  if (phase === 'installed') {
+    // nach dem Neustart: Ring voll, Haken zeichnet sich
+    el.classList.add('installed');
+    arc.style.strokeDashoffset = '0';
+    el.querySelector('h3').textContent = `PlantPDF ${version} ist installiert`;
+    sub.textContent = 'Alles ist bereit.';
+    const ok = el.querySelector('.updx-cancel');
+    ok.textContent = 'Fertig';
+    ok.classList.add('primary');
     setTimeout(() => {
       if (!el.isConnected) return;
       el.classList.add('done');
-      el.querySelector('h3').textContent = 'Update bereit';
-      sub.textContent = 'PlantPDF startet neu …';
       // leuchtende Stiftspitze fährt den Haken entlang
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.querySelector('.updx-tip animateMotion')?.beginElement();
-    }, 380);
+      ok.focus();
+    }, 420);
+    // schließt sich nach ein paar Sekunden von selbst
+    setTimeout(() => el === overlay && closeOverlay(), 6000);
     return;
   }
   const f = Math.max(0, Math.min(1, p));

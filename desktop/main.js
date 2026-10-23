@@ -21,7 +21,7 @@ import { FileAccess, FileAccessError, pdfPathsFromArgv, printRequestFromArgv } f
 import { htmlToPdf, printPages, printResponse } from './quick-print.js';
 import { buildMenu, DOCUMENT_ITEMS, PDF_TOOLS, SITE_TOOLS, STUDIO_TOOLS } from './menu.js';
 import { loadWindowState, rememberTheme, trackWindowState, DEFAULT_SIZE, MIN_SIZE } from './window-state.js';
-import { abortDownload, autoCheckDue, checkForUpdate, downloadUpdate, rememberCheck, runInstaller } from './updater.js';
+import { abortDownload, autoCheckDue, checkForUpdate, downloadUpdate, rememberCheck, rememberInstall, runInstaller, takeInstalled } from './updater.js';
 
 const APP_NAME = 'PlantPDF';
 /**
@@ -701,10 +701,11 @@ function start() {
           reset();
           return false;
         }
-      // Häkchen zeigen, dann installieren (der Installer schließt PlantPDF und startet es neu)
+      // zweiter Schritt „wird installiert“ (Ring läuft noch einmal voll), dann installieren: der
+      // Installer schließt PlantPDF und startet es neu; die neue Version zeigt dann den Haken
       command('updateProgress', { tab, data: { phase: 'install', version: info.version } });
-      // Ring voll, Haken und Glitzer abwarten
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 2600));
+      rememberInstall(info.version);
       await runInstaller(file);
       for (const w of wins) w.allowClose = true;
       app.quit();
@@ -1054,6 +1055,9 @@ function start() {
       if (tab.primary) {
         tab.primary = false;
         command('offerRecovery', { tab });
+        // gerade per Update installiert: dieselbe Karte mit dem Haken „ist installiert“
+        const installed = updatesEnabled() ? takeInstalled() : null;
+        if (installed) command('updateProgress', { tab, data: { phase: 'installed', version: installed } });
       }
       if (firstReady) return;
       firstReady = true;
