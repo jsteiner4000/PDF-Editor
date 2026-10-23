@@ -705,6 +705,8 @@ function start() {
       // Installer schließt PlantPDF und startet es neu; die neue Version zeigt dann den Haken
       command('updateProgress', { tab, data: { phase: 'install', version: info.version } });
       await new Promise((r) => setTimeout(r, 2600));
+      // währenddessen beendet: nicht mehr installieren
+      if (quitting || !focusedWin()) return reset(), false;
       rememberInstall(info.version);
       await runInstaller(file);
       for (const w of wins) w.allowClose = true;

@@ -115,7 +115,12 @@ export function updateProgress(data = {}) {
     if (banner) for (const b of banner.querySelectorAll('button')) b.disabled = false;
     return;
   }
-  if (banner) for (const b of banner.querySelectorAll('button')) b.disabled = true;
+  if (phase !== 'installed' && banner) for (const b of banner.querySelectorAll('button')) b.disabled = true;
+  // neues Update, während die Karte „ist installiert“ noch steht: frische Karte
+  if (overlay && overlay.classList.contains('installed') !== (phase === 'installed')) {
+    overlay.remove();
+    overlay = null;
+  }
   const el = ensureOverlay(version);
   const arc = el.querySelector('.updx-arc');
   const pct = el.querySelector('.updx-pct b');
@@ -149,7 +154,8 @@ export function updateProgress(data = {}) {
       el.classList.add('done');
       // leuchtende Stiftspitze fährt den Haken entlang
       if (!matchMedia('(prefers-reduced-motion: reduce)').matches) el.querySelector('.updx-tip animateMotion')?.beginElement();
-      ok.focus();
+      // keinen Fokus wegnehmen (z. B. dem Angebot, gesicherte Kopien wiederherzustellen)
+      if (document.activeElement === document.body || el.contains(document.activeElement)) ok.focus();
     }, 420);
     // schließt sich nach ein paar Sekunden von selbst
     setTimeout(() => el === overlay && closeOverlay(), 6000);
